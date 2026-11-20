@@ -51,6 +51,7 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
   **closed**: fork HEAD is **10 % faster** (81.24 vs 90.30 ms at N=1000, 392.06 vs 436.43 at N=5000), control
   arm within 0.03 % of shipped so the recipe is neutral, symbol set a strict superset. Its profiler also showed
   257 submissions/frame and 2,725 µs/frame of command-list wait
-- [Sprint 006 — Decide, and make the choice reproducible](../sprints/006-phase3-decide.md) — adopt / keep /
-  cherry-pick, with a build script for anything adopted, the command-list size experiment, and an exercised
-  restore path
+- [Sprint 006 — Adopt the fork, reproducibly](../sprints/006-phase3-decide.md) — the decision is taken by
+  sprint 005's data, so this sprint makes it durable: `tools/pspgl-build.sh` pinned by commit and sha256, the
+  command-list size experiment the profiler motivated, the baseline re-published on the adopted library, and the
+  restore path walked
