@@ -120,6 +120,20 @@ and state become `ceil(N / capacity)` submissions.
 profiling, configurable command-list capacity, corrected profiling accounting, cached texture-matrix
 adjustment, raw depth range, presented framebuffer. `[measured: git merge-base, 2026-11-20]`
 
+**Measured: those 11 commits are worth 10 %.** Three arms at N=1000 / N=5000, two runs each:
+shipped 90.29 / 436.42 ms; `de4260ad` built here 90.30 / 436.43 (control, within 0.03 % of shipped, so the
+build recipe is neutral); fork HEAD **81.24 / 392.06 (−10.03 % / −10.17 %)**. Marginal cost per sprite falls
+from 86.5 to **77.7 µs** — about 215 sprites per 16.7 ms frame instead of 181. The symbol set is a strict
+superset: 287 identical plus 6 added, nothing removed. `[measured: PSP-1000, sprint 005]`
+
+**What the fork's profiler showed** (the first instrument that sees inside pspGL): at N=1000 there are
+**257 command-list submissions per frame** for 1,025 primitives — ~4 primitives each at the default 512-word
+list — with **2,725 µs/frame of command-list reuse wait**. That is the wait sprint 004 could not locate: it is
+in list reuse, not in `eglSwapBuffers`. Texture binds are 2,050/frame with **zero redundant**, so there is
+nothing for a duplicate-bind optimisation to save yet. `draw_calls` reads 0 — the fork's draw counters cover
+the array paths, not `glBegin`; submissions is the counter that sees the immediate path. A profiling build is
+**18.6 % slower**, so it is never an A/B arm. `[measured: PSP-1000, sprint 005]`
+
 A proven upper bound for both, from a working GU renderer (`PSPRuntime`, see §7): 2 vertices per sprite
 with `GU_SPRITES` gives **1024 sprites per draw call**, quads (4 v + 6 i) give 512, and its bunnymark
 therefore issues `ceil(N/1024)` calls per frame. `[measured: code scan]` That is the structure our
