@@ -47,4 +47,9 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+- [Sprint 005 — pspGL from source, and an A/B that means something](../sprints/005-phase3-pspgl-ab.md) — three
+  arms (shipped package, `de4260ad` built here, fork HEAD built here) at two counts, with the control arm
+  proving the build recipe is neutral, plus the fork's own `pspgl_profile_snapshot()` counters
+- [Sprint 006 — Decide, and make the choice reproducible](../sprints/006-phase3-decide.md) — adopt / keep /
+  cherry-pick, with a build script for anything adopted, the command-list size experiment, and an exercised
+  restore path

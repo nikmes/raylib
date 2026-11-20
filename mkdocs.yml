@@ -78,6 +78,8 @@ nav:
           - psp/sprints/002-phase1-samples-green.md
           - psp/sprints/003-phase2-counters.md
           - psp/sprints/004-phase2-baselines.md
+          - psp/sprints/005-phase3-pspgl-ab.md
+          - psp/sprints/006-phase3-decide.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md
