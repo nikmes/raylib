@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation.md) |
 | Branch / base commit | `master` @ `52ee5b1a` (counters closed, 6.5-dev validated) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `t1`, `t2` |
-| Tasks | 0/7 done |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -98,19 +98,26 @@ corpus samples.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | settle vsync: `TARGET_FPS` as a build parameter; `#if defined(PSP_DISABLE_VSYNC) eglSwapInterval(platform.device, 0); #endif` next to the commented line in `src/platforms/rcore_psp.c` | `todo` | N=10 with `TARGET_FPS=0`: frame time with and without the switch; default build behaves exactly as before | — |
-| T2 | per-frame distribution in the app: store each frame's time, log `STAT median= p95= worst= min= n=` at `DONE` | `todo` | median ≈ the `AVG` line from sprint 003 on the same workload; worst ≥ p95 ≥ median | — |
-| T3 | run matrix with `TARGET_FPS=0`: 100 / 1,000 / 5,000 / 10,000, two runs each | `todo` | 8 runs logged; each ends in `DONE`, no exception | — |
-| T4 | repeatability floor: difference between the two runs of the same count, per count, as a % | `todo` | a single number adopted as the "measurable" threshold | — |
-| T5 | **fill-rate experiment**: `SPRITE_SCALE` as a build parameter, N=1,000 drawn at 1× (32×32) and 4× (128×128, 16× the pixels) via `DrawTexturePro` with a scaled dest rect — still one primitive per sprite | `todo` | **`glEnd`/frame identical in both builds** (the counters prove the experiment changes fill only); then: unchanged frame time → submission-bound, growth → fill matters and phase 4 must be re-scoped | — |
-| T6 | publish `docs/psp/baselines.md`: table, protocol, hardware, build sha, repeatability floor, the fill answer | `todo` | page in the nav, `--strict` clean | — |
-| T7 | archive the exact binary + sha256 into `/home/psp/evidence/sprint004/`; record the crossover facts in [§4](../memory-map.md#4-where-the-time-goes-today) | `todo` | sha in the page matches the archived file | — |
+| T1 | settle vsync | `done` | **the swap blocks**: N=10, `TARGET_FPS=0`, median 16.683 ms. `eglSwapInterval(0)` does not uncap it (median 16.685) but `min` falls to 4.2–12.2 ms; swap call itself is 0.15 ms, so the wait is deferred inside pspGL | §9 |
+| T2 | per-frame distribution | `done` | `STAT n= min= median= p95= worst= avg=` at `DONE`; worst ≥ p95 ≥ median in every run | logs |
+| T3 | run matrix, two runs each | `done` | 8 runs, all `DONE`, no exceptions; medians 16.683 / 90.29 / 436.45 / 869.4 ms | [baselines](../baselines.md) |
+| T4 | repeatability floor | `done` | worst case **0.02 %** (100 bunnies), 0.003–0.008 % above; threshold adopted at **0.1 %** | [baselines](../baselines.md) |
+| T5 | **fill-rate experiment** | `done` | submissions identical (1,024.95 vs 1,024.93); median 90.279 → 95.438 ms for **16× the pixels = +5.7 %** → **submission-bound** | §7 |
+| T6 | publish `docs/psp/baselines.md` | `done` | page in the nav, `--strict` clean, protocol + sha + floor + fill answer | [baselines](../baselines.md) |
+| T7 | archive binary + sha; record in §4 | `done` | `bunnymark-n1000.prx` sha256 `b4160cad…` in `/home/psp/evidence/sprint004/`, matches the page | evidence dir |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — sprint opened; T1 first: `eglSwapInterval` placed *before* `eglMakeCurrent` faulted exactly like
+  sprint 001's `SetupViewport` (bus error, no current context); moved after `MakeCurrent`, then re-measured
+- 2026-11-20 — T1 `done`: the swap blocks (16.683 ms at 10 bunnies); `eglSwapInterval(0)` does not uncap it;
+  swap call itself is 0.15 ms, so pspGL blocks later, not inside the swap
+- 2026-11-20 — T2 `done`; T3 `done`: 8 runs, two per count
+- 2026-11-20 — T4 `done`: floor 0.02 % worst case; threshold 0.1 %
+- 2026-11-20 — T5 `done`: fill is +5.7 % for 16× the pixels, submissions identical → submission-bound
+- 2026-11-20 — T6/T7 `done`: baselines page published, binary archived
 
 ## 6. Budgets
 
@@ -126,41 +133,60 @@ Sweep (`t2`, `TARGET_FPS=0`, two runs per count):
 
 | bunnies | run | median ms | p95 ms | worst ms | `glEnd`/frame | notes |
 |---|---|---|---|---|---|---|
-| 100 | A | | | | | |
-| 100 | B | | | | | |
-| 1,000 | A | | | | | |
-| 1,000 | B | | | | | |
-| 5,000 | A | | | | | |
-| 5,000 | B | | | | | |
-| 10,000 | A | | | | | expected ~940 ms/frame: note frame count, do not pretend it is a window |
-| 10,000 | B | | | | | |
+| 100 | A | 16.683 | 16.779 | 33.744 | 124.0 | pacing, not cost |
+| 100 | B | 16.686 | 16.784 | 34.706 | 124.0 | |
+| 1,000 | A | 90.291 | 90.503 | 120.780 | 1,024.97 | |
+| 1,000 | B | 90.284 | 90.467 | 121.916 | 1,024.97 | |
+| 5,000 | A | 436.450 | 510.061 | 510.061 | 5,024.0 | 20 frames |
+| 5,000 | B | 436.455 | 508.268 | 508.268 | 5,024.0 | 20 frames |
+| 10,000 | A | 869.408 | 989.942 | 989.942 | 10,025.0 | 12 frames: too few for a percentile |
+| 10,000 | B | 869.385 | 991.352 | 991.352 | 10,025.0 | 12 frames |
 
 Repeatability floor per count (|A−B| / mean):
 
 | 100 | 1,000 | 5,000 | 10,000 |
 |---|---|---|---|
-| | | | |
+| 0.02 % | 0.008 % | 0.001 % | 0.003 % |
 
 Fill-rate experiment (N=1,000, same submissions, 4× sprite scale):
 
-| build | median ms | note |
-|---|---|---|
-| 1× (32×32 sprites) | | reference |
-| 4× (128×128 sprites) | | 16× the pixels |
+| build | `glEnd`/frame | median ms | note |
+|---|---|---|---|
+| 1× (32×32 sprites) | 1,024.95 | 90.279 | reference |
+| 4× (128×128 sprites) | 1,024.93 | 95.438 | 16× the pixels, **+5.7 %** |
 
 ## 8. Exit criteria
 
-- [ ] the vsync question is answered, and the sweep is run in the state that actually measures cost
-- [ ] percentiles (not just averages) for every count, from two runs
-- [ ] repeatability floor stated as one number and used as the threshold for future claims
-- [ ] the CPU-vs-GE question answered by the fill experiment, not by intuition
-- [ ] `docs/psp/baselines.md` published with build sha256 and protocol
-- [ ] Phase 2 exit criteria recorded in the phase page
+- [x] the vsync question is answered: the swap blocks, `eglSwapInterval(0)` does not uncap it, and the wait is
+      deferred inside pspGL rather than spent in the swap call
+- [x] percentiles for every count, two runs each
+- [x] repeatability floor: 0.02 % worst case, threshold adopted at 0.1 %
+- [x] CPU-vs-GE answered by the fill experiment: submission-bound (+5.7 % for 16× the pixels)
+- [x] `docs/psp/baselines.md` published with sha256 and protocol
+- [x] Phase 2 exit criteria recorded in the phase page
 
 ## 9. Result
 
-(To fill in on close. A negative result is valuable: if 1,000 sprites is fill-bound, phase 4's submission
-batching will not show on this workload and the plan changes before any code is written.)
+**The baseline exists, it is stable, and the wall is submission — not fill.**
+
+- Frame times, two runs per count: 16.68 / 90.29 / 436.45 / 869.4 ms for 100 / 1,000 / 5,000 / 10,000 bunnies.
+  Repeatability floor **0.02 %** worst case; the threshold for a reportable difference is set at **0.1 %**.
+- Marginal cost **86.5 µs per sprite** (86.6 measured across a different range), constant across counts, with a
+  fixed 31 primitives/frame of chrome.
+- **Fill is not the wall**: 16× the pixels cost **+5.7 %** while holding submissions constant at 1,024.9/frame.
+
+Two things went wrong and are now facts rather than surprises:
+
+1. **`eglSwapInterval` before `eglMakeCurrent` faults** — the same failure as sprint 001's `SetupViewport`, a bus
+   error with no current context. Moved after `MakeCurrent`; the guard is `PSP_DISABLE_VSYNC` so shipped
+   behaviour is unchanged.
+2. **The swap is not where the wait happens.** Wrapping `eglSwapBuffers` showed 0.15 ms inside it while the
+   frame takes 16.68 ms at low counts. pspGL returns from the swap and blocks later, on the next buffer use. So
+   separating CPU cost from display wait needs pspGL-level timing (phase 3), and until then the low-count row is
+   an upper bound.
+
+**Consequence for the roadmap:** phase 4's premise holds — batching N submissions into `ceil(N/capacity)` is the
+lever that matches the measured bottleneck. At 86.5 µs/sprite only ~181 sprites fit in a 16.7 ms frame today.
 
 ## 10. Follow-ups
 

@@ -32,4 +32,10 @@ extern PspCounters pspCounters;
 void PspCountersReset(void);
 void PspCountersDump(const char *tag, int frames);
 
+// Time spent inside eglSwapBuffers - the vsync wait, not our work. Reported
+// separately because the display paces the swap and that must not be confused
+// with the cost of drawing.
+double PspCountersSwapSeconds(void);
+unsigned int PspCountersSwapCalls(void);
+
 #endif

@@ -10,8 +10,11 @@ OBJS = main.o psp_counters.o
 
 BUNNY_COUNT ?= 1000
 FRAMES ?= 600
+TARGET_FPS ?= 60
+SPRITE_SCALE ?= 1
 
-CFLAGS = -Wall -DBUNNY_COUNT=$(BUNNY_COUNT) -DTOTAL_FRAMES=$(FRAMES)
+CFLAGS = -Wall -DBUNNY_COUNT=$(BUNNY_COUNT) -DTOTAL_FRAMES=$(FRAMES) \
+         -DTARGET_FPS=$(TARGET_FPS) -DSPRITE_SCALE=$(SPRITE_SCALE)
 
 # T5 mutation: draw the frame without the bunnies.
 ifdef SKIP_DRAW
@@ -24,7 +27,8 @@ ifeq ($(WRAP),1)
     LDFLAGS += -Wl,--wrap=glBegin -Wl,--wrap=glEnd \
                -Wl,--wrap=glVertex2f -Wl,--wrap=glVertex2i \
                -Wl,--wrap=glBindTexture \
-               -Wl,--wrap=glDrawArrays -Wl,--wrap=glDrawElements
+               -Wl,--wrap=glDrawArrays -Wl,--wrap=glDrawElements \
+               -Wl,--wrap=eglSwapBuffers
 endif
 
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu

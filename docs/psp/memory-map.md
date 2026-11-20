@@ -136,8 +136,18 @@ batcher has to reach, and the number to beat when the native backend lands.
 - **Chrome is 30 primitives/frame** at every count (header rect, two text runs, FPS). Everything else scales
   with sprites.
 - **4.000 vertices per `glEnd`** — one quad per primitive, exactly as the GL11 path reads.
-- **92.5 µs of marginal cost per sprite**, i.e. about **181 sprites** fit in a 16.7 ms frame. Phase 4's premise
-  is that number, not an assumption.
+- **86.5 µs of marginal cost per sprite** (sprint 004 sweep; 92.5 µs measured earlier on a slightly different
+  app build), i.e. about **181 sprites** fit in a 16.7 ms frame. Phase 4's premise is that number, not an
+  assumption.
+- **Fill is not the wall.** Same 1,000 sprites and same submission count drawn at 4x size — 16x the pixels —
+  cost **+5.7 %** (90.279 → 95.438 ms). Five times the sprites cost five times the time. The bottleneck is
+  per-sprite submission.
+- **The display paces the swap and pspGL hides where.** At 100 sprites the frame is 16.68 ms with
+  `min = 12.2 ms`; `eglSwapInterval(display, 0)` does not change the median, and the swap call itself measures
+  0.15 ms. pspGL returns from the swap and blocks later, on the next buffer use — so separating CPU cost from
+  display wait needs pspGL-level timing (phase 3). Until then the low-count row is an upper bound.
+- Repeatability floor is **0.02 %** worst case; adopt **0.1 %** as the threshold for a reportable difference.
+`[measured: PSP-1000, sprint 004, full table in `baselines.md`]`
 - Every primitive costs one bind and one unbind (`binds == unbinds == ends`), so texture state churn scales with
   sprite count too.
 `[measured: PSP-1000, master @ 252acee7, sprint 003]`

@@ -5,9 +5,14 @@
 
 PspCounters pspCounters = { 0 };
 
+static double swapSeconds;
+static unsigned int swapCalls;
+
 void PspCountersReset(void)
 {
     memset(&pspCounters, 0, sizeof(pspCounters));
+    swapSeconds = 0.0;
+    swapCalls = 0;
 }
 
 #ifdef WRAP_COUNTERS
@@ -65,6 +70,22 @@ void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid
 }
 
 #endif // WRAP_COUNTERS
+
+// eglSwapBuffers is wrapped with opaque pointer types on purpose: including
+// GLES/egl.h alongside GL/gl.h risks redefining the same types.
+extern unsigned int __real_eglSwapBuffers(void *dpy, void *surf);
+
+unsigned int __wrap_eglSwapBuffers(void *dpy, void *surf)
+{
+    double t0 = GetTime();
+    unsigned int r = __real_eglSwapBuffers(dpy, surf);
+    swapSeconds += GetTime() - t0;
+    swapCalls++;
+    return r;
+}
+
+double PspCountersSwapSeconds(void) { return swapSeconds; }
+unsigned int PspCountersSwapCalls(void) { return swapCalls; }
 
 void PspCountersDump(const char *tag, int frames)
 {

@@ -558,6 +558,9 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     # (config.h guards the whole module) so the renderer bring-up does not depend
     # on it; the 5.5 port shipped the same way ("raudio: not loaded").
     CUSTOM_CFLAGS += -DSUPPORT_MODULE_RAUDIO=0
+    ifdef PSP_DISABLE_VSYNC
+        CUSTOM_CFLAGS += -DPSP_DISABLE_VSYNC
+    endif
     # pspdev headers/specs define __PSP__ themselves, so it is not added here.
     EXTRA_INCLUDE_PATHS += -I$(PSPDEV)/psp/include -I$(PSPDEV)/psp/sdk/include
 endif

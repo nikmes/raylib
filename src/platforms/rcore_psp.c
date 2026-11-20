@@ -712,6 +712,9 @@ int InitPlatform(void)
 
     // There must be at least one frame displayed before the buffers are swapped
     //eglSwapInterval(platform.device, 1);
+    // NOTE: eglSwapInterval() is called after eglMakeCurrent() below. Calling it
+    // here faults inside pspGL with a data bus error, exactly like the
+    // SetupViewport case in sprint 001: no context is current yet.
 
     if (eglMakeCurrent(platform.device, platform.surface, platform.surface, platform.context) == EGL_FALSE)
     {
@@ -728,6 +731,12 @@ int InitPlatform(void)
 
         // Now that a context is current, the GL-side viewport/projection setup is safe
         SetupViewport(CORE.Window.display.width, CORE.Window.display.height);
+
+#if defined(PSP_DISABLE_VSYNC)
+        // Measurement switch (sprint 004): 0 asks pspGL not to pace the swap to the
+        // display. Off by default so shipped behaviour is unchanged.
+        eglSwapInterval(platform.device, 0);
+#endif
 
         TRACELOG(LOG_INFO, "PLATFORM: Device initialized successfully");
         TRACELOG(LOG_INFO, "    > Display size: %i x %i", CORE.Window.display.width, CORE.Window.display.height);

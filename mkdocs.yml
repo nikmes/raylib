@@ -57,6 +57,7 @@ nav:
   - PSP:
       - Memory map & roadmap: psp/memory-map.md
       - Environment & toolchain: psp/environment.md
+      - Baseline numbers: psp/baselines.md
       - Phases:
           - psp/phases/index.md
           - psp/phases/00-baseline.md
