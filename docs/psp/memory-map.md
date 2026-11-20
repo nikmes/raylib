@@ -31,7 +31,8 @@ Last verified: 2026-11-20. Branch `psp-6.2` (tag `6.2`, commit `02566453`).
 | PSP platform code | **imported** — sprint 001 closed: 824 lines across 5 files |
 | Build on PSP | works: `libraylib.a` 1,718,210 B (6.2), 0 warnings, 0 stub warnings |
 | Device validation | **6.2 only** — 600 frames, 30 fps, 284 colours; the `master`/6.5-dev build is unvalidated |
-| Hardware | PSP-1000, 32 MB, firmware 6.60 with ARK CFW |
+| Hardware | PSP-1000, 32 MB, firmware 6.60 with ARK CFW — see [Environment](environment.md) |
+| Build / deploy | `make PLATFORM=PLATFORM_PSP`, stage archive **and headers** into pspdev, run over PSPLink — procedures in [Environment](environment.md) |
 | Toolchain | pspdev v20261101, `psp-gcc 15.2.0`, PSPSDK at `~/pspdev/psp/sdk` |
 
 ---

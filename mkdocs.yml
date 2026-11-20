@@ -56,6 +56,7 @@ nav:
   - Overview: index.md
   - PSP:
       - Memory map & roadmap: psp/memory-map.md
+      - Environment & toolchain: psp/environment.md
       - Phases:
           - psp/phases/index.md
           - psp/phases/00-baseline.md
