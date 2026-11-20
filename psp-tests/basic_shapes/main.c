@@ -136,7 +136,8 @@ int main(void)
     //----------------------------------------------------------
 
     // Main game loop
-    while (flag)    // Detect window close with Start button
+    int frames = 0;
+    while (flag)    // bounded: 600 frames, see the frame log below
     {
         // Update
         //-----------------------------------------------------
@@ -183,6 +184,15 @@ int main(void)
             DrawLine(18, 42, screenWidth - 18, 42, BLACK); 
         EndDrawing();
 
+        // NOTE (sprint 001): the loop is bounded and self-reporting. The 5.5 sample
+        // ran until START was pressed, which made a device run indistinguishable from
+        // a crash: both end with sceKernelExitGame and PSPLink dropping off USB.
+        frames++;
+        if ((frames % 60) == 0)
+        {
+            TraceLog(LOG_INFO, "FRAME %i  fps %i  rotation %.1f", frames, GetFPS(), rotation);
+        }
+        if (frames >= 600) flag = 0;    // ~10 s at 60 fps, then exit cleanly
     
         //-----------------------------------------------------
     }
