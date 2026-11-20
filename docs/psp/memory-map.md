@@ -290,6 +290,9 @@ profile.
   shutdown command, which drops the console to the XMB. Use
   `( printf './app.prx\n'; sleep 30 ) | pspsh` - pspsh disconnects on EOF and PSPLink stays up. A crash
   whose report was never read looks exactly like a hang `[measured]`.
+- **Verified end to end:** two consecutive runs (`run -> DONE -> reset -> run`) both logged
+  `DONE frames 600  fps 30` and PSPLink stayed enumerated between them. No console interaction is needed
+  between runs `[measured]`.
 - **The test must not call `sceKernelExitGame`.** On PSPLink v3.2.1 that ends the shell session and drops
   the console to the XMB, device gone; `resetonexit=0` only suppresses the reset loop. Log `DONE` and
   `sceKernelSleepThread()` instead, then `reset` from the host — that keeps the whole loop host-driven
