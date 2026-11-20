@@ -2334,7 +2334,11 @@ void rlglInit(int width, int height)
 
 #if defined(GRAPHICS_API_OPENGL_11)
     // Init state: Color hints (deprecated in OpenGL 3.0+)
+#if !defined(PLATFORM_PSP)
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);      // Improve quality of color and texture coordinate interpolation
+    // NOTE: pspGL does not implement GL_PERSPECTIVE_CORRECTION_HINT; the call is
+    // skipped there instead of failing at run time.
+#endif
     glShadeModel(GL_SMOOTH);                                // Smooth shading between vertex (vertex colors interpolation)
 #endif
 #if defined(GRAPHICS_API_OPENGL_33)
@@ -3727,7 +3731,15 @@ void *rlReadTexturePixels(unsigned int id, int width, int height, int format)
     if ((glInternalFormat != 0) && (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB))
     {
         pixels = RL_CALLOC(size, 1);
+#if !defined(PLATFORM_PSP)
         glGetTexImage(GL_TEXTURE_2D, 0, glFormat, glType, pixels);
+#else
+        // NOTE: pspGL has no glGetTexImage. The buffer stays zeroed, which is the
+        // same degradation raylib's own GL11 guard accepts, and it keeps
+        // rlReadScreenPixels()/LoadImageFromScreen() callable instead of failing
+        // to link or crashing at run time.
+        TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] Texture data readback not available on this platform, buffer left blank", id);
+#endif
     }
     else TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] Data retrieval not suported for pixel format (%i)", id, format);
 

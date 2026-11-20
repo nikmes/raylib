@@ -1483,7 +1483,10 @@ void DrawPoly(Vector2 center, int sides, float radius, float rotation, Color col
     float centralAngle = rotation*DEG2RAD;
     float angleStep = 360.0f/(float)sides*DEG2RAD;
 
-#if SUPPORT_QUADS_DRAW_MODE
+// NOTE: PSP takes the per-triangle path (see SUPPORT_QUADS_DRAW_MODE below): its
+// texture coordinates are unsigned 16-bit, so the shapes-texture quad path wraps
+// across the seam and produces stripes instead of a filled polygon.
+#if SUPPORT_QUADS_DRAW_MODE && !defined(PLATFORM_PSP)
     rlSetTexture(GetShapesTexture().id);
     Rectangle shapeRect = GetShapesTextureRectangle();
 
@@ -1566,7 +1569,9 @@ void DrawPolyLinesEx(Vector2 center, int sides, float radius, float rotation, fl
         innerRadius = radius;
     }
 
-#if SUPPORT_QUADS_DRAW_MODE
+// NOTE: PSP takes the per-triangle path, as in DrawPoly: unsigned 16-bit texture
+// coordinates make the shapes-texture quad path wrap across the seam.
+#if SUPPORT_QUADS_DRAW_MODE && !defined(PLATFORM_PSP)
     rlSetTexture(GetShapesTexture().id);
     Rectangle shapeRect = GetShapesTextureRectangle();
 

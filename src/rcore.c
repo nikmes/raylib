@@ -528,6 +528,8 @@ const char *TextFormat(const char *text, ...); // Formatting of text with variab
     #include "platforms/rcore_drm.c"
 #elif defined(PLATFORM_ANDROID)
     #include "platforms/rcore_android.c"
+#elif defined(PLATFORM_PSP)
+    #include "platforms/rcore_psp.c"
 #elif defined(PLATFORM_MEMORY)
     #include "platforms/rcore_memory.c"
 #else
@@ -584,6 +586,12 @@ const char *TextFormat(const char *text, ...); // Formatting of text with variab
 // Initialize window and OpenGL context
 void InitWindow(int width, int height, const char *title)
 {
+#if defined(PLATFORM_PSP)
+    // NOTE: the PSP platform layer routes tracing through its own handler
+    // (CustomLog); without this call TRACELOG output goes nowhere on this target.
+    SetTraceLogCallback(CustomLog);
+#endif
+
     TRACELOG(LOG_INFO, "Initializing raylib %s", RAYLIB_VERSION);
 
 #if defined(PLATFORM_DESKTOP_GLFW)
@@ -1667,7 +1675,7 @@ void WaitTime(double seconds)
     #if defined(_WIN32)
         Sleep((unsigned long)(sleepSeconds*1000.0));
     #endif
-    #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__) || defined(PLATFORM_PSP)
         struct timespec req = { 0 };
         time_t sec = sleepSeconds;
         long nsec = (sleepSeconds - sec)*1000000000L;
@@ -4309,7 +4317,7 @@ void InitTimer(void)
     timeBeginPeriod(1); // Setup high-resolution timer to 1ms (granularity of 1-2 ms)
 #endif
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__) || defined(PLATFORM_PSP)
     struct timespec now = { 0 };
 
     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) // Success
