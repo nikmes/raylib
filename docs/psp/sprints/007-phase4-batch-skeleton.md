@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
-| Branch / base commit | `master` @ `8632ff67` |
+| Branch / base commit | `master` @ `3bd7830b` |
 | Started / closed | — / — |
 | Build number(s) | `b1` (unbatched arm), `b2` (batched arm) |
 | Tasks | 0/7 done |
@@ -32,7 +32,9 @@ faster" is not.
 - pspGL exports the array path this sprint needs: `glVertexPointer`, `glTexCoordPointer`, `glColorPointer`,
   `glDrawArrays`, and `glLockArraysEXT`/`glUnlockArraysEXT`.
 - Our `--wrap` harness counts `glBegin/glEnd/glVertex2f/glBindTexture/glDrawArrays/glDrawElements`.
-- The adopted library is pspGL `ae9a668` with `PSPGL_DLIST_SIZE_WORDS=8192`.
+- The adopted library is pspGL `ae9a668` with `PSPGL_DLIST_SIZE_WORDS=8192`. **A 4,000-vertex batch will not fit
+  one list** at ~4 words per vertex, so expect `command_list_rollovers` in the batched arm. That is normal — record
+  the count with the `PSPGL_PROFILE=1` build rather than treating a rollover as a bug.
 
 **The crux, stated up front — why naive batching does nothing.** `DrawTexturePro` emits, per sprite:
 `rlSetTexture(T)` → `rlBegin(QUADS)` → 4 vertices → `rlEnd` → `rlSetTexture(0)`. If a batcher flushes on every
@@ -101,13 +103,14 @@ belong to phase 5.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | accumulation: under `PLATFORM_PSP`, `rlBegin`/`rlEnd`/`rlVertex2f`/`rlVertex2i`/`rlTexCoord2f`/`rlColor4ub` write into a preallocated vertex buffer instead of calling GL per vertex | `todo` | with `PSP_BATCH=1` the harness's `glVertex2f` count falls to ~0 while the screen still draws | — |
+| T1 | wire the switch first: `ifdef PSP_BATCH` in the `PLATFORM_PSP` block of `src/Makefile`, mirroring `PSP_DISABLE_VSYNC`, so `-DPSP_BATCH=0/1` reaches the compiler; then accumulation — `rlBegin`/`rlEnd`/`rlVertex2f`/`rlVertex2i`/`rlTexCoord2f`/`rlColor4ub` write into a preallocated buffer instead of calling GL per vertex | `todo` | **`make -n PLATFORM=PLATFORM_PSP PSP_BATCH=1 \| grep -o '\-DPSP_BATCH=1'` prints it** — without this the flag is silently ignored and both arms build identically, which is the failure this sprint exists to avoid; then `glVertex2f` count ≈ 0 under `PSP_BATCH=1` while the screen still draws | — |
 | T2 | flush policy: pending-texture semantics (see §0), flush on a *draw* that needs a different texture or primitive, on capacity, and at `EndDrawing` | `todo` | 1,000 same-texture sprites produce single-digit `glDrawArrays` calls, not 1,000 | — |
 | T3 | buffer: preallocated once, sized in vertices; overflow flushes rather than corrupting | `todo` | no per-frame allocation; capacity reported in the log | — |
-| T4 | choose the primitive for the batched path by measurement: 4-vertex quads vs 6-vertex triangles (`GL_QUADS` support in pspGL arrays is not guaranteed) | `todo` | whichever wins by >0.1 %; vertex counts per sprite recorded for both | — |
+| T4 | extend the harness: `__wrap_glDrawArrays` must add its `count` to an `arrayVertices` total, because in the batched arm `glVertex2f` is never called and the existing `vertices` counter would read 0 — the per-vertex cost could not be attributed at all | `todo` | batched arm reports nonzero `arrayVertices`; unbatched reports nonzero `verts` and zero `arrayVertices` | — |
+| T4b | choose the primitive for the batched path by measurement: 4-vertex quads vs 6-vertex triangles (`GL_QUADS` support in pspGL arrays is not guaranteed) | `todo` | whichever wins by >0.1 %; vertices per sprite recorded for both | — |
 | T5 | try `glLockArraysEXT`/`glUnlockArraysEXT` around the batch — the fork's profiler counts `array_locked_fast_paths` | `todo` | either a measured gain or a recorded "no effect on this driver" | — |
 | T6 | **the decomposition**: same workload, both arms, N=100 / 1,000 / 5,000, two runs each | `todo` | frame time, `glDrawArrays`/`glEnd` counts and vertices/frame for both arms in one table | — |
-| T7 | correctness: `basic_shapes` and `cubicmap` render pixel-identically batched vs unbatched | `todo` | two identical captures per build; colour counts match (284 / 812) | — |
+| T7 | correctness needs a **deterministic scene**, because the samples animate (`basic_shapes/main.c:146` does `rotation += 0.2f`, so no two frames match and no two captures can be compared across arms). Add `psp-tests/batch_check`: a static grid of textured sprites plus a few shapes, fixed positions, two frames, `DONE` + sleep | `todo` | the same build produces **two identical captures**; batched vs unbatched captures are identical pixel-for-pixel; `basic_shapes` is a smoke test only (renders, 284 colours) | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
@@ -128,14 +131,18 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 The decomposition — same vertex count, different submission count:
 
-| N | arm | frame median | `glEnd`/frame | `glDrawArrays`/frame | vertices/frame |
-|---|---|---|---|---|---|
-| 100 | unbatched | | | 0 | |
-| 100 | batched | | 0 | | |
-| 1,000 | unbatched | | | 0 | |
-| 1,000 | batched | | 0 | | |
-| 5,000 | unbatched | | | 0 | |
-| 5,000 | batched | | 0 | | |
+| N | arm | frame median | `glEnd`/frame | `glDrawArrays`/frame | `verts` (immediate) | `arrayVertices` |
+|---|---|---|---|---|---|---|
+| 100 | unbatched | | | 0 | | 0 |
+| 100 | batched | | 0 | | 0 | |
+| 1,000 | unbatched | | | 0 | | 0 |
+| 1,000 | batched | | 0 | | 0 | |
+| 5,000 | unbatched | | | 0 | | 0 |
+| 5,000 | batched | | 0 | | 0 | |
+
+The two vertex columns are the point: the unbatched arm spends its vertices through `glVertex2f`, the batched arm
+through an array, and comparing frame times at **equal total vertices** is what separates submission cost from
+per-vertex cost.
 
 Primitive comparison at N=1,000 (`PSP_BATCH=1`):
 
