@@ -692,7 +692,11 @@ int InitPlatform(void)
     //  -> CORE.Window.screen.width/CORE.Window.screen.height
     //  -> CORE.Window.render.width/CORE.Window.render.height
     //  -> CORE.Window.screenScale
-    SetupViewport(CORE.Window.display.width, CORE.Window.display.height);
+    // NOTE: 6.2's SetupViewport() is not 5.5's SetupFramebuffer(): it issues real
+    // GL calls (rlViewport, rlOrtho, rlLoadIdentity). Calling it here - before the
+    // surface exists and before eglMakeCurrent - faults inside pspGL with a data
+    // bus error, because there is no current context yet. It is called after
+    // eglMakeCurrent below instead.
 
     //ANativeWindow_setBuffersGeometry(platform.app->window, CORE.Window.render.width, CORE.Window.render.height, displayFormat);
     //ANativeWindow_setBuffersGeometry(platform.app->window, 0, 0, displayFormat);       // Force use of native display size
@@ -721,6 +725,9 @@ int InitPlatform(void)
         CORE.Window.render.height = CORE.Window.screen.height;
         CORE.Window.currentFbo.width = CORE.Window.render.width;
         CORE.Window.currentFbo.height = CORE.Window.render.height;
+
+        // Now that a context is current, the GL-side viewport/projection setup is safe
+        SetupViewport(CORE.Window.display.width, CORE.Window.display.height);
 
         TRACELOG(LOG_INFO, "PLATFORM: Device initialized successfully");
         TRACELOG(LOG_INFO, "    > Display size: %i x %i", CORE.Window.display.width, CORE.Window.display.height);
