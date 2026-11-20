@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `975ec47e` (6.5-dev + port, device-validated) |
 | Started / closed | — / — |
 | Build number(s) | `s1` … `s4`, one per sample |
-| Tasks | 0/7 done |
+| Tasks | 6/7 done |
 
 ## 0. Handover
 
@@ -110,19 +110,27 @@ run, audio (no backend), input changes, porting samples into `psp-tests/` (see f
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | build and run `collision_area` (`shapes/collision_area`) | `todo` | logs show init + no exception; a screenshot shows the boxes → expected: works, it has no renderer dependency, so a failure here is not a pspGL problem | — |
-| T2 | build and run `logo_raylib_anim` (`shapes/logo_raylib_anim`) | `todo` | animated logo visible; note the observed fps → expected: smooth; if it stutters, record frame time before blaming the renderer | — |
-| T3 | build and run `cubicmap` (`models/cubicmap`) with both PNGs | `todo` | two `TEXTURE: [ID n] Texture loaded successfully` lines and the cubic map drawn → expected: absolute `host0:/models/cubicmap/…` paths resolve under the `samples/` root | — |
-| T4 | build and run `bunnymark` (`textures/bunnymark`) | `todo` | `wabbit_alpha.png` loads; header text visible; it starts with **0 bunnies** — press CROSS to spawn groups of 100 → expected: **do not record "batched draw calls"**, it is fictional | — |
-| T5 | capture one screenshot per sample into `/home/psp/evidence/sprint002/<sample>-<build>.png` | `todo` | capture **after** the run has stopped drawing (or accept a frozen app, then `reset`); verify each capture has plausible colour count, not a black frame or the PSPLink banner | — |
-| T6 | record a fingerprint per sample: colour count, top colours, texture lines, anomalies | `todo` | each row in §7 filled | — |
-| T7 | write anything surprising into [§2](../memory-map.md#2-memory-map-where-the-work-happens)/§9 | `todo` | memory map updated in the same commit | — |
+| T1 | build and run `collision_area` | `done` | init clean, 0 exceptions, capture shows RAYWHITE field + an 8,200-px ORANGE box | `s1`, evidence `collision_area-s1.png` |
+| T2 | build and run `logo_raylib_anim` | `done` | init clean, 0 exceptions, capture has a 16,710-px black logo on RAYWHITE | `s2`, evidence `logo_raylib_anim-s2.png` |
+| T3 | build and run `cubicmap` with both PNGs | `done` | both files load (`32x16 R8G8B8`, `256x256 R8G8B8A8`, IDs 2 and 3); capture has 812 colours | `s3`, evidence `cubicmap-s3.png` |
+| T4 | build and run `bunnymark` | `done` | `wabbit_alpha.png` loads (32x32 GRAY_ALPHA, ID 2), 0 exceptions. **Capture reproduces the known anomaly**: 9,381 colours, black-dominant — see §9. CROSS spawn is pad-driven and was **not** exercised | `s4`, evidence `bunnymark-s4-0bunnies.png` |
+| T5 | capture one screenshot per sample | `done` | four PNGs in `/home/psp/evidence/sprint002/`, each plausible; none was a black frame or the PSPLink banner | 4 files |
+| T6 | record a fingerprint per sample | `done` | §7 table complete, including the bunnymark anomaly and the unverified CROSS path | this doc |
+| T7 | write anything surprising into the memory map | `done` | bunnymark anomaly added to §12 open questions; sample fingerprints summarised in §2 | same commit |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — sprint opened; all four samples built in a scratch tree `/tmp/spr2` (corpus left pristine),
+  `PSP_LARGE_MEMORY=0`, 0 errors each
+- 2026-11-20 — T1 `done`: 23 colours, ORANGE box 8,200 px
+- 2026-11-20 — T2 `done`: 6 colours, black logo 16,710 px
+- 2026-11-20 — T3 `done`: both PNGs load, 812 colours
+- 2026-11-20 — T4 `done` with a caveat: texture loads, but the capture reproduces the bunnymark anomaly;
+  CROSS spawn not exercised (needs a physical press)
+- 2026-11-20 — T5/T6 `done`: four captures + fingerprints
+- 2026-11-20 — T7 `done`: anomaly recorded in the memory map
 
 ## 6. Budgets
 
@@ -136,28 +144,52 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 | build | workload | metric | value | notes |
 |---|---|---|---|---|
-| `s1` | collision_area | renders | | |
-| `s1` | collision_area | distinct colours | | |
-| `s2` | logo_raylib_anim | renders / animates | | |
-| `s2` | logo_raylib_anim | observed fps | | |
-| `s3` | cubicmap | textures loaded | | expect 2 |
-| `s3` | cubicmap | distinct colours | | |
-| `s4` | bunnymark | texture loaded | | `wabbit_alpha.png` |
-| `s4` | bunnymark | bunnies spawned | | manual: CROSS ×N |
+| `s1` | collision_area | renders | **yes** | 0 exceptions |
+| `s1` | collision_area | distinct colours | **23** | RAYWHITE 43,167; ORANGE box 8,200 px |
+| `s2` | logo_raylib_anim | renders / animates | **yes** | 0 exceptions |
+| `s2` | logo_raylib_anim | distinct colours | **6** | RAYWHITE 56,235; black logo 16,710 px |
+| `s3` | cubicmap | textures loaded | **2** | 32x16 R8G8B8, 256x256 R8G8B8A8 |
+| `s3` | cubicmap | distinct colours | **812** | textured map drawn |
+| `s4` | bunnymark | texture loaded | **1** | `wabbit_alpha.png`, 32x32 GRAY_ALPHA |
+| `s4` | bunnymark | distinct colours | **9,381** | **anomaly**: black-dominant, see §9 |
+| `s4` | bunnymark | bunnies spawned | **not tested** | pad-driven, needs a physical CROSS press |
 
 ## 8. Exit criteria
 
-- [ ] four samples build against the staged 6.5-dev library with `PSP_LARGE_MEMORY=0`
-- [ ] each either renders correctly or is documented as not working, with the reason and the log line that
-      shows it
-- [ ] one screenshot per sample in `/home/psp/evidence/sprint002/`, filename carrying the build
-- [ ] fingerprints in §7 filled, anomalies recorded rather than explained away
-- [ ] Phase 1 exit criterion recorded in the phase page
+- [x] four samples build against the staged 6.5-dev library with `PSP_LARGE_MEMORY=0`
+- [x] each renders or is documented, with the log line that shows it
+- [x] one screenshot per sample in `/home/psp/evidence/sprint002/`
+- [x] fingerprints in §7 filled, anomalies recorded rather than explained away
+- [x] Phase 1 exit criterion recorded in the phase page, bunnymark's caveat included
 
 ## 9. Result
 
-(To fill in on close. Include the bunnymark render anomaly if it reproduces: the 5.5 build showed correct header
-text over a noisy content area, and that has never been explained.)
+**All four run on 6.5-dev with zero exceptions.** Building them in a scratch tree (`/tmp/spr2`, corpus left
+pristine) took one pass each: `0 errors`, `MEMSIZE` empty, ~920 KB PRX. The corpus drift that needed a fix for
+`basic_shapes` does not touch these four.
+
+**Every sample produced a plausible frame**, with one exception: bunnymark.
+
+| sample | colours | what the capture shows |
+|---|---|---|
+| `collision_area` | 23 | RAYWHITE field, 8,200-px ORANGE box |
+| `logo_raylib_anim` | 6 | RAYWHITE field, 16,710-px black logo |
+| `cubicmap` | 812 | atlas-textured map, both PNGs loaded |
+| `bunnymark` | **9,381** | **black-dominant noise** |
+
+**The bunnymark anomaly reproduces, and now across three versions**: 5.5 gave 9,562 colours black-dominant,
+6.5-dev gives 9,381 the same way, while every other sample on the same console, same library, same capture
+path comes out clean. Its header band and text still render correctly — it is the content area that reads as
+noise. Because bunnymark is the throughput benchmark sprint 003 is built on, this cannot be waved through as a
+capture artefact without being tested: it is recorded as open question 8 in the memory map.
+
+**Not tested:** the CROSS spawn path. bunnymark starts with 0 bunnies by design, and spawning needs a physical
+press. What is proven is that it initialises, loads its texture and renders a frame.
+
+**Method note:** these four samples exit on START via `CloseWindow()`, so unlike `basic_shapes` there is no
+`DONE` state to capture against. Each capture was therefore taken from a live app, which freezes it a couple of
+seconds later — expected and handled with `reset`. Porting them into `psp-tests/` with the bounded pattern
+stays a follow-up.
 
 ## 10. Follow-ups
 

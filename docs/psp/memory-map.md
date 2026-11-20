@@ -546,6 +546,11 @@ grep -n "sceAudio" /home/psp/pspdev/psp/sdk/include/pspaudio.h
    second CPU with no libc and its own cache protocol — an optimisation for phase 9, never a premise.
 8. Does anything in the asset path need CLUT/T4/T8 textures, or is RGBA8 + POT enough? The reference
    engine ran everything through 5551 and used T4 only for glyph atlases.
+9. **Why does bunnymark's content area capture as noise?** 5.5 gave 9,562 colours black-dominant, 6.5-dev
+    gives 9,381 the same way, while every other sample on the same console and capture path is clean
+    (284 / 23 / 6 / 812 colours). Its header band and text render correctly. Either the frame is being read
+    mid-swap, or something about its draw path corrupts the surface. This must be settled in phase 2, because
+    bunnymark is the throughput benchmark sprint 003 builds on `[measured]`.
 
 ---
 
