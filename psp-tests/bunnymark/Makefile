@@ -27,6 +27,12 @@ ifdef SKIP_DRAW
     CFLAGS += -DSKIP_DRAW
 endif
 
+# Sprint 008: rotate every second sprite, i.e. force a sprite/triangle mode switch
+# per sprite pair. Measures what a mixed scene costs instead of guessing.
+ifdef ROTATE_ODD
+    CFLAGS += -DROTATE_ODD
+endif
+
 WRAP ?= 1
 ifeq ($(WRAP),1)
     CFLAGS += -DWRAP_COUNTERS

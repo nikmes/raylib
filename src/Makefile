@@ -578,8 +578,20 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     ifdef PSP_BATCH_LOCK
         CUSTOM_CFLAGS += -DRLPSP_LOCK_ARRAYS
     endif
+    # PSP_BATCH_NO_SPRITES=1 forces the two-triangle path, so the sprite primitive can
+    # be A/B'd at the same optimisation level (sprint 008).
+    ifdef PSP_BATCH_NO_SPRITES
+        CUSTOM_CFLAGS += -DRLPSP_NO_SPRITES
+    endif
     # pspdev headers/specs define __PSP__ themselves, so it is not added here.
     EXTRA_INCLUDE_PATHS += -I$(PSPDEV)/psp/include -I$(PSPDEV)/psp/sdk/include
+    # The RELEASE optimisation block above only covers desktop, web and android, so
+    # every PSP build up to sprint 008 was compiled at GCC's -O0 default. -O2 is the
+    # default here (memory map: "-O2 first, not -O3"); PSP_OPT empties or overrides it
+    # so the levels can be A/B'd:
+    #   make PLATFORM=PLATFORM_PSP PSP_OPT=-O0     # what sprints 001-008 measured
+    PSP_OPT ?= -O2
+    CUSTOM_CFLAGS += $(PSP_OPT)
 endif
 
 CFLAGS += $(CUSTOM_CFLAGS)

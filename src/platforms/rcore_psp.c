@@ -786,7 +786,13 @@ void ClosePlatform(void)
 #if defined(GRAPHICS_API_OPENGL_11) && defined(PSP_BATCH) && (PSP_BATCH == 1)
 
 #ifndef RLPSP_BATCH_CAP
-    #define RLPSP_BATCH_CAP 4096    // Vertices held per batch (340 quads), 24 bytes each
+    #define RLPSP_BATCH_CAP 4096    // Vertices held per batch (2,048 sprites), 24 bytes each
+#endif
+
+// pspGL's 2-vertex sprite primitive, from GL/glext.h: the two vertices are opposite
+// corners of the rectangle and the GE interpolates between them
+#ifndef GL_SPRITES_PSP
+    #define GL_SPRITES_PSP (GL_POLYGON + 1)
 #endif
 
 // Interleaved vertex, 24 bytes: the offsets of the three arrays below are what
@@ -811,6 +817,7 @@ static unsigned char rlPspB = 255;
 static unsigned char rlPspA = 255;
 static RLPspVertex rlPspQuad[4];            // Corners of the quad being assembled
 static int rlPspQuadN = 0;
+static unsigned int rlPspSprites = 0;       // Quads emitted as 2-vertex sprites so far
 
 #if defined(RLPSP_LOCK_ARRAYS)
 // pspGL's GL_EXT_vertex_array entry points: locking makes the driver copy the arrays
@@ -856,7 +863,7 @@ void rlPspBatchFlush(void)
 #endif
 
 #ifdef RLPSP_BATCH_TRACE
-    TraceLog(LOG_INFO, "BATCH flush tex=%u mode=%i count=%i", rlPspTex, rlPspMode, rlPspCount);
+    TraceLog(LOG_INFO, "BATCH flush tex=%u mode=%i count=%i sprites=%u", rlPspTex, rlPspMode, rlPspCount, rlPspSprites);
 #endif
 
     glDisableClientState(GL_COLOR_ARRAY);
@@ -898,34 +905,77 @@ void rlPspBatchSetTexture(unsigned int id)
 #endif
 }
 
+// Select the primitive mode of the run being buffered, flushing first if it changes
+static void rlPspSetMode(int glMode)
+{
+    if ((rlPspCount > 0) && (glMode != rlPspMode)) rlPspBatchFlush();
+
+    rlPspMode = glMode;
+}
+
 // Start a run of primitives
 void rlPspBatchBegin(int mode)
 {
     int glMode = 0;
 
+    // NOTE: RL_QUADS is never sent to GL as GL_QUADS. pspGL maps GL_QUADS to a GE
+    // triangle fan (pspgl_varray.c, geprim_tab), so a run of N quads would fan from
+    // the first vertex of the run and every quad after the first would share it.
+    // Each quad is emitted on its own instead, as a 2-vertex sprite when it is
+    // axis-aligned and as two triangles when it is not.
     switch (mode)
     {
-        // NOTE: RL_QUADS is NOT sent to GL as GL_QUADS. pspGL maps GL_QUADS to a GE
-        // triangle fan (pspgl_varray.c, geprim_tab), so a run of N quads would fan
-        // from the first vertex of the run and every quad after the first would
-        // share it. Quads are expanded to two triangles on push instead.
         case RL_LINES: glMode = GL_LINES; break;
         case RL_TRIANGLES: glMode = GL_TRIANGLES; break;
-        case RL_QUADS: glMode = GL_TRIANGLES; break;
         default: break;
     }
 
-    // A run of a different mode cannot share the draw call
-    if ((rlPspCount > 0) && (glMode != rlPspMode)) rlPspBatchFlush();
-
-    rlPspMode = glMode;
     rlPspQuads = (mode == RL_QUADS)? 1 : 0;
-    if (rlPspQuads == 0) rlPspQuadN = 0;
+    if (rlPspQuads == 1)
+    {
+        rlPspQuadN = 0;         // The primitive is chosen per quad, not per run
+        return;
+    }
+
+    if (glMode != 0) rlPspSetMode(glMode);
 }
 
 // End a run of primitives: the run is emitted by the next flush, not here
 void rlPspBatchEnd(void)
 {
+}
+
+// Is this quad a rectangle that is axis-aligned and untransformed, i.e. can it be one
+// GE sprite? raylib emits quads as TL, BL, BR, TR, so a sprite is legal when the
+// corners are axis-aligned, the texture coordinates follow the same corners in the
+// same direction (no mirroring), and all four corners share colour and depth - GE
+// sprites interpolate one colour and one depth between the two corners.
+static int rlPspIsSpriteQuad(const RLPspVertex *q)
+{
+#ifdef RLPSP_NO_SPRITES
+    // Measurement switch: force the two-triangle path at any optimisation level, so
+    // the sprite primitive can be A/B'd without reverting the code around it.
+    (void)q;
+    return 0;
+#else
+    if ((q[0].x != q[1].x) || (q[2].x != q[3].x)) return 0;     // left and right edges vertical
+    if ((q[0].y != q[3].y) || (q[1].y != q[2].y)) return 0;     // top and bottom edges horizontal
+    if ((q[0].x == q[2].x) || (q[0].y == q[2].y)) return 0;     // degenerate
+
+    if (q[1].u != q[0].u) return 0;                             // UVs follow the corners
+    if (q[3].u != q[2].u) return 0;
+    if (q[3].v != q[0].v) return 0;
+    if (q[1].v != q[2].v) return 0;
+    if ((q[0].u > q[2].u) || (q[0].v > q[2].v)) return 0;       // no mirrored sprites
+
+    if ((q[0].r != q[1].r) || (q[0].r != q[2].r) || (q[0].r != q[3].r)) return 0;
+    if ((q[0].g != q[1].g) || (q[0].g != q[2].g) || (q[0].g != q[3].g)) return 0;
+    if ((q[0].b != q[1].b) || (q[0].b != q[2].b) || (q[0].b != q[3].b)) return 0;
+    if ((q[0].a != q[1].a) || (q[0].a != q[2].a) || (q[0].a != q[3].a)) return 0;
+    if ((q[0].z != q[1].z) || (q[0].z != q[2].z) || (q[0].z != q[3].z)) return 0;
+
+    return 1;
+#endif
 }
 
 // Append one vertex
@@ -935,7 +985,8 @@ void rlPspBatchVertex(float x, float y, float z)
 
     if (rlPspQuads == 1)
     {
-        // Assemble the quad, then write it out as triangles (0,1,2) and (0,2,3)
+        // Assemble the quad, then emit it: one GE sprite (2 vertices) if it qualifies,
+        // two triangles (6 vertices) if it does not
         RLPspVertex *q = &rlPspQuad[rlPspQuadN++];
 
         q->u = rlPspU;
@@ -951,17 +1002,33 @@ void rlPspBatchVertex(float x, float y, float z)
         if (rlPspQuadN == 4)
         {
             rlPspQuadN = 0;
-            v = rlPspReserve(6);
-            v[0] = rlPspQuad[0];
-            v[1] = rlPspQuad[1];
-            v[2] = rlPspQuad[2];
-            v[3] = rlPspQuad[0];
-            v[4] = rlPspQuad[2];
-            v[5] = rlPspQuad[3];
+
+            if (rlPspIsSpriteQuad(rlPspQuad) == 1)
+            {
+                // GE sprites take the two opposite corners and interpolate between them
+                rlPspSetMode(GL_SPRITES_PSP);
+                v = rlPspReserve(2);
+                v[0] = rlPspQuad[0];        // top-left
+                v[1] = rlPspQuad[2];        // bottom-right
+
+                rlPspSprites++;
+            }
+            else
+            {
+                rlPspSetMode(GL_TRIANGLES);
+                v = rlPspReserve(6);
+                v[0] = rlPspQuad[0];
+                v[1] = rlPspQuad[1];
+                v[2] = rlPspQuad[2];
+                v[3] = rlPspQuad[0];
+                v[4] = rlPspQuad[2];
+                v[5] = rlPspQuad[3];
+            }
         }
 
         return;
     }
+
 
     v = rlPspReserve(1);
     v->u = rlPspU;

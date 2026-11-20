@@ -125,7 +125,14 @@ int main(void)
                 Rectangle dst = { bunnies[i].position.x, bunnies[i].position.y,
                                   texBunny.width*(float)SPRITE_SCALE,
                                   texBunny.height*(float)SPRITE_SCALE };
-                DrawTexturePro(texBunny, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, bunnies[i].color);
+                // ROTATE_ODD rotates every second sprite so the batcher has to switch
+                // between the sprite primitive and triangles: the worst case for a
+                // scene that is not uniformly axis-aligned (sprint 008 T2).
+                float rot = 0.0f;
+#ifdef ROTATE_ODD
+                rot = ((i & 1) != 0)? 20.0f : 0.0f;
+#endif
+                DrawTexturePro(texBunny, src, dst, (Vector2){ 0.0f, 0.0f }, rot, bunnies[i].color);
             }
 #endif
 
