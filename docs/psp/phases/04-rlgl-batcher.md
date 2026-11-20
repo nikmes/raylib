@@ -67,7 +67,7 @@ CPU-transform path. `libpspgum.a` is the default GUM; `libpspgum_vfpu.a` is opt-
 |---|---|---|
 | Use through mode (`GU_TRANSFORM_2D`) for sprites/UI | no transform, lighting, fog or clipping; coordinates are screen pixels | the batcher's layout should be screen-space, no matrix per sprite |
 | `GU_SPRITES` = 2 vertices per axis-aligned rect | 1/3 the vertices of two triangles; colour/depth from the second vertex | matches the 1024-sprites-per-call figure we measured in `PSPRuntime` |
-| **In through mode UVs are texel coordinates, not 0..1**; `TexScale`/`TexOffset` are ignored | a 0..1 UV would sample inside the first texel | the batcher must convert, and this is where the unsigned-16-bit TEXCOORD trap bites |
+| **In through mode UVs are texel coordinates, not 0..1** — *the blueprint adds "`TexScale`/`TexOffset` are ignored", which `pspgu.h` contradicts by recommending them for texcoords in this path* | a 0..1 UV would sample inside the first texel | the batcher must convert, and this is where the unsigned-16-bit TEXCOORD trap bites. **Settle the scale/offset half with one textured quad on device before designing around it** |
 | One texture per batch; sort pass → texture/CLUT → blend; rebind only on change | binds and CLUT loads cost GE time; draw-call count matters much less than state | phase 4's flush rule, already planned |
 | Scissor takes width/height, not an end coordinate | off-by-one clips a row | `ceGuScissor(x, y, w, h)` |
 | Draw wide images as vertical strips of 32–64 px | a 480-wide sprite thrashes the 8 KB texture cache | optional sprite slicing, phase 7 |
