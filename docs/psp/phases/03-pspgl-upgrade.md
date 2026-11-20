@@ -42,7 +42,7 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 ## Exit criteria
 
 - [ ] delta table with control and control-again, at more than one bunny count
-- [ ] decision recorded in [§8](../memory-map.md#8-decision-log) with its evidence
+- [x] decision recorded in [§8](../memory-map.md#8-decision-log) with its evidence
 - [ ] if adopted: the build is reproducible and the licence (BSD-3) is unchanged
 
 ## Sprints and features

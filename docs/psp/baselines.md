@@ -17,7 +17,35 @@ anything to it.
 | Measurement | `GetFrameTime()` per frame, sorted at `DONE`; percentiles over the run |
 | Binary | `/home/psp/evidence/sprint004/bunnymark-n1000.prx`, sha256 `b4160cad…` |
 
-## Frame time
+## Adopted library (current reference)
+
+Since sprint 006 the project ships **pspGL from `TheMrIron2/pspgl` @ `ae9a668`, `PSPGL_DLIST_SIZE_WORDS=8192`**,
+built by `tools/pspgl-build.sh`. That changed the numbers, so these are the ones phase 4 is judged against.
+
+| bunnies | median A | median B | fps (median) |
+|---|---|---|---|
+| 100 | 16.684 ms | 16.689 ms | 59.9 (pacing, not cost) |
+| 1,000 | **61.625 ms** | **61.641 ms** | 16.2 |
+| 5,000 | **294.606 ms** | **294.660 ms** | 3.4 |
+| 10,000 | **586.694 ms** | **586.704 ms** | 1.7 |
+
+Marginal cost: (294.63 − 61.63) / 4,000 = **58.3 µs per sprite**, i.e. **~287 sprites** in a 16.7 ms frame.
+Against the pre-adoption baseline that is **−31.8 % at 1,000 bunnies, −32.5 % at 5,000 and 10,000**.
+
+How it breaks down, from sprint 005 and 006:
+
+| change | N=1000 median | delta |
+|---|---|---|
+| pspdev's shipped pspGL (2022) | 90.285 ms | — |
+| fork `ae9a668`, default 512-word lists | 81.240 ms | −10.0 % |
+| fork, `PSPGL_DLIST_SIZE_WORDS=4096` | 63.602 ms | −21.7 % vs 512 |
+| **fork, 8192 (adopted)** | **61.63 ms** | **−24.1 % vs 512** |
+| fork, 16384 | 62.73 ms | worse — the curve turns over |
+
+Memory cost of the adopted size: **16 command lists × 8,192 words × 4 B = 512 KiB** of main RAM, up from 32 KiB
+at the default. It is not free, and it is why 16,384 was not taken.
+
+## Pre-adoption reference (2022 pspGL, kept for the record)
 
 Two runs per count, same binary, back to back.
 

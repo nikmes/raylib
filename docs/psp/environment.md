@@ -126,6 +126,12 @@ for h in raylib.h rlgl.h raymath.h rcamera.h; do cp src/$h $PSPDEV/psp/include/$
   `/home/psp/libraylib-psp62-validated.a.bak`.
 - Staged at the time of writing: the merged 6.5-dev build, `sha256 13506883…`, headers
   `RAYLIB_VERSION "6.5-dev"`.
+- **pspGL is no longer what pspdev shipped.** Since sprint 006 the toolchain carries
+  `TheMrIron2/pspgl` @ `ae9a668` built with `PSPGL_DLIST_SIZE_WORDS=8192` — worth 31.8 % on 2D sprite work.
+  Rebuild it with `tools/pspgl-build.sh`, check it with `--check` (content hash `2ab7378e…`; the archive's own
+  sha256 changes every build because two objects embed `__DATE__`). Revert with
+  `cp /home/psp/libGL-pspdev-shipped.a.bak $PSPDEV/psp/lib/libGL.a`. A pspdev package update will overwrite it —
+  `--check` is how that is noticed.
 - Test app: `psp-tests/basic_shapes` (bounded 600 frames, logs `DONE`, sleeps).
 
 ## Documentation site

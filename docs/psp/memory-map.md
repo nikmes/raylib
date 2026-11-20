@@ -126,6 +126,12 @@ build recipe is neutral); fork HEAD **81.24 / 392.06 (−10.03 % / −10.17 %)**
 from 86.5 to **77.7 µs** — about 215 sprites per 16.7 ms frame instead of 181. The symbol set is a strict
 superset: 287 identical plus 6 added, nothing removed. `[measured: PSP-1000, sprint 005]`
 
+**And the command-list size is a bigger lever than the 11 commits were.** `PSPGL_DLIST_SIZE_WORDS`, measured at
+N=1000 (medians of two runs): 512 → 81.24 ms, 1024 → 72.37, 4096 → 63.60, **8192 → 61.63**, 16384 → 62.73. The
+curve turns over after 8192, which is what we adopt. Combined with the fork that is **90.29 → 61.63 ms, −31.8 %**,
+or 86.5 → **58.3 µs per sprite** and ~287 sprites in a 16.7 ms frame. Cost: 16 command lists × 8,192 words × 4 B
+= **512 KiB of main RAM**, up from 32 KiB at the default `[measured: PSP-1000, sprint 006]`
+
 **What the fork's profiler showed** (the first instrument that sees inside pspGL): at N=1000 there are
 **257 command-list submissions per frame** for 1,025 primitives — ~4 primitives each at the default 512-word
 list — with **2,725 µs/frame of command-list reuse wait**. That is the wait sprint 004 could not locate: it is
@@ -382,6 +388,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 
 | date | decision | evidence |
 |---|---|---|
+| 2026-11-20 | **Adopt `TheMrIron2/pspgl` @ `ae9a668` with `PSPGL_DLIST_SIZE_WORDS=8192`** | A/B: 90.29 → 81.24 ms for the commits (−10.0 %), then 81.24 → 61.63 ms for the list size (−24.1 %); total −31.8 %. Superset ABI (287 + 6 symbols), BSD-3. Reproducible via `tools/pspgl-build.sh` (content hash `2ab7378e…`, stable across rebuilds except two `__DATE__` objects). Costs 512 KiB of main RAM |
 | 2026-11-20 | Instrumentation counts at the GL boundary via `-Wl,--wrap` in the test harness, **not** inside `rlgl.h` | keeps rlgl byte-identical to upstream ahead of the planned native rGL backend, and counts what crosses into pspGL rather than what raylib intended; the same harness re-points at `sceGuDrawArray` in phase 5 |
 | 2026-11-20 | Merged `psp-6.2` into `master` (6.5-dev) at the user's request | 0 textual conflicts; merged tree compiles (0 errors, 0 warnings), links `basic_shapes.prx` (1,415,522 B) and **runs on the device**: 600 frames, 30 fps, 284 colours, no exception |
 | 2026-11-20 | Base on release tag 6.2, not `master` (6.5.0-dev) | stable baseline; full history keeps `git merge` available |
@@ -509,7 +516,7 @@ written down.
 | path | licence | open it for |
 |---|---|---|
 | `/home/psp/ref/PSPRuntime` | none in repo; `vram.c` is Raphael 2007 "free to use with credit" | batching structure (`PSPBasicPlatformer/src/gpumanager.cpp`), viewport idiom, best-fit allocator (`src/vram.c`), bunnymark baseline |
-| `/home/psp/ref/pspgl-themiriron2` | BSD-3 | profiling counters, command-list capacity (`pspgl_dlist.c`, `glVertex.c`, `glEnd.c`) |
+| `/home/psp/ref/pspgl-themiriron2` | BSD-3 | **adopted**: `ae9a668`, built by `tools/pspgl-build.sh` at `PSPGL_DLIST_SIZE_WORDS=8192`. Content hash `2ab7378e…`; `--check` verifies the installed library |
 | `/home/psp/ref/pspgl-pspdev` | BSD-3 | provenance of the shipped `libGL.a` (`de4260ad`) |
 | `/home/psp/ref/pspgl-legacy` | BSD-3 | historical only |
 | `/home/psp/ref/PGE` | GPL-3.0 | frame-list and VRAM ideas (own code, ideas only unless dual-licensed) |

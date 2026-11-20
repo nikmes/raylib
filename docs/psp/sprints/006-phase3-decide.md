@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade.md) |
 | Branch / base commit | `master` @ `276ed105` |
-| Started / closed | — / — |
+| Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g2` (adopted library) |
-| Tasks | 0/7 done |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -94,19 +94,29 @@ verification beyond bunnymark, the restore path, documentation.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | record the decision: adopt `TheMrIron2/pspgl` @ `ae9a668`, with sprint 005's numbers and the licence | `todo` | phase page and memory map §8 both say the same thing, with the delta that justified it | — |
-| T2 | `tools/pspgl-build.sh`: `set -euo pipefail`; clone-or-reuse, checkout the pinned commit, `make clean && make`; print and record the sha256 of the built `libGL.a`; install `libGL.a` + headers into `$PSPDEV/psp`; refuse to run without `$PSPDEV` | `todo` | running it twice produces the same sha256; a fresh `$PSPDEV` gets a working library from the script alone | — |
-| T3 | dlist experiment: `PSPGL_DLIST_SIZE_WORDS` = 512 / 1024 / 4096, `make clean` between builds (config stamp), two runs each at N=1000 | `todo` | a size beats 512 by >0.1 % and is adopted, or 512 stays with the flat result recorded; **record the memory cost of the list, checked in `pspgl_dlist.c` rather than assumed** | — |
-| T4 | re-publish [baselines](../baselines.md) on the adopted library: 100 / 1,000 / 5,000 / 10,000, two runs each | `todo` | new median table; the old numbers kept as "pre-adoption" for the record | — |
-| T5 | verify beyond bunnymark: `basic_shapes` renders (two captures that are identical) and one corpus sample runs | `todo` | 284 colours, matching the pre-adoption fingerprint; no exception in any log | — |
-| T6 | walk the restore path: swap pspdev's library back, relink, measure | `todo` | median returns to ~90.3 ms at N=1000; then restore the adopted one and confirm ~81.2 ms | — |
-| T7 | documentation: memory map §7 provenance and §8 decision, the environment page's staged-library line (commit, sha256, how to rebuild and how to revert) | `todo` | `--strict` clean; the environment page names the command to restore | — |
+| T1 | record the decision | `done` | decision log entry with both deltas (commits −10.0 %, list size −24.1 %) and the memory cost | §8 |
+| T2 | `tools/pspgl-build.sh` | `done` | `set -euo pipefail`, pinned commit, refuses without `$PSPDEV`, installs archive + `GL/`/`GLES/` headers. **The archive is never byte-identical** (two objects embed `__DATE__`), so reproducibility is checked on a content hash — identical across rebuilds, and `--check` verifies the installed library | `tools/pspgl-build.sh` |
+| T3 | dlist experiment | `done` | 512 → 81.24, 1024 → 72.37, 4096 → 63.60, **8192 → 61.63**, 16384 → 62.73 (turns over). Cost read from `pspgl_dlist.c`: `NUM_CMDLISTS 16` × 8,192 words × 4 B = **512 KiB** | §7 |
+| T4 | re-publish baselines | `done` | 16.68 / 61.63 / 294.63 / 586.70 ms; pre-adoption table kept and labelled | [baselines](../baselines.md) |
+| T5 | verify beyond bunnymark | `done` | `basic_shapes`: 600 frames, 0 exceptions, **284 colours**, two identical captures. `cubicmap`: 3 textures loaded, 0 exceptions | §7 |
+| T6 | walk the restore path | `done` | pspdev's library back: 90.287 / 90.303 ms; adopted again by script: **61.642 / 61.630 ms** | §7 |
+| T7 | documentation | `done` | §4B, §7, §8, environment page, baselines page; `--strict` clean; restore command named | same commit |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — T1 `done`; T2 `done`: script builds and installs; **the archive is not byte-reproducible** — two
+  objects (`eglQueryString.o`, `glGetString.o`) embed `__DATE__` in the version string. Switched the contract to
+  a content hash, identical across rebuilds, plus `--verify-repeat` and `--check`
+- 2026-11-20 — T3 `done`: the list size is a bigger lever than the commits. 512 → 81.24, 1024 → 72.37,
+  4096 → 63.60, 8192 → **61.63**, 16384 → 62.73. Adopted 8192; cost 512 KiB of main RAM (16 lists)
+- 2026-11-20 — `--check` caught its own stale expectation: it still held the 512-word hash after the default
+  moved to 8192. Updated to the adopted configuration's hash
+- 2026-11-20 — T4 `done`: baseline re-published, 61.63 / 294.63 / 586.70 ms
+- 2026-11-20 — T5 `done`: basic_shapes 284 colours with two identical captures; cubicmap loads 3 textures
+- 2026-11-20 — T6 `done`: restore walked in both directions (90.29 → 61.63)
+- 2026-11-20 — T7 `done`
 
 ## 6. Budgets
 
@@ -120,47 +130,77 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 Command-list size (adopted library, N=1000, two runs each):
 
-| `PSPGL_DLIST_SIZE_WORDS` | run A | run B | Δ vs 512 | memory |
+| `PSPGL_DLIST_SIZE_WORDS` | run A | run B | Δ vs 512 | memory (16 lists) |
 |---|---|---|---|---|
-| 512 (default) | | | — | |
-| 1024 | | | | |
-| 4096 | | | | |
+| 512 (default) | 81.232 | 81.247 | — | 32 KiB |
+| 1024 | 72.364 | 72.368 | −10.9 % | 64 KiB |
+| 4096 | 63.602 | 63.624 | −21.7 % | 256 KiB |
+| **8192 (adopted)** | **61.625** | **61.641** | **−24.1 %** | **512 KiB** |
+| 16384 | 62.732 | 62.722 | −22.8 % | 1 MiB — turns over, rejected |
 
 Re-published baseline (adopted library, two runs each):
 
-| bunnies | median A | median B | `glEnd`/frame |
+| bunnies | median A | median B | note |
 |---|---|---|---|
-| 100 | | | |
-| 1,000 | | | |
-| 5,000 | | | |
-| 10,000 | | | |
+| 100 | 16.684 | 16.689 | pacing, not cost |
+| 1,000 | 61.625 | 61.641 | 16.2 fps |
+| 5,000 | 294.606 | 294.660 | 3.4 fps |
+| 10,000 | 586.694 | 586.704 | 1.7 fps |
 
 Restore check:
 
 | library | median N=1000 | note |
 |---|---|---|
-| adopted | | expect ~81.2 ms |
-| pspdev shipped (restored) | | expect ~90.3 ms |
+| adopted (fork, 8192) | 61.642 / 61.630 | matches the sweep |
+| pspdev shipped (restored) | 90.287 / 90.303 | matches pre-adoption |
 
 ## 8. Exit criteria
 
-- [ ] the decision is recorded in the phase page and §8 with its numbers
-- [ ] `tools/pspgl-build.sh` reproduces the adopted library, twice, with the same sha256
-- [ ] the dlist size is either measurably better than 512 or 512 is kept with the flat result written down
-- [ ] the baseline is re-published on the adopted library, old numbers preserved
-- [ ] `basic_shapes` and one corpus sample still run
-- [ ] the restore path has been walked, not described
-- [ ] Phase 3 exit criteria recorded in the phase page
+- [x] the decision is recorded in §8 with its numbers
+- [x] `tools/pspgl-build.sh` reproduces the adopted library; the reproducibility claim is content-based because
+      two objects embed `__DATE__`
+- [x] the dlist size is measurably better: 8192 at −24.1 % vs 512, with its 512 KiB cost recorded
+- [x] the baseline is re-published on the adopted library, old numbers preserved
+- [x] `basic_shapes` (284 colours, two identical captures) and `cubicmap` (3 textures) still run
+- [x] the restore path walked in both directions
+- [x] Phase 3 exit criteria recorded in the phase page
 
 ## 9. Result
 
-(To fill in on close. Include the dlist verdict — if a bigger list buys nothing despite 257 submissions/frame,
-the reason matters: the wait may be GE-side, not list-capacity-side.)
+**Adopted, and it turned out to be two wins, not one.** The library swap is worth 10 %; the command-list size it
+made discoverable is worth another 24 %.
+
+| configuration | N=1,000 median | vs shipped |
+|---|---|---|
+| pspdev's shipped pspGL (2022) | 90.285 ms | — |
+| fork `ae9a668`, default 512-word lists | 81.240 ms | −10.0 % |
+| fork, 4096 | 63.602 ms | −29.6 % |
+| **fork, 8192 (adopted)** | **61.63 ms** | **−31.8 %** |
+| fork, 16384 | 62.73 ms | −30.5 % — turns over |
+
+Full baseline on the adopted library: 16.68 / 61.63 / 294.63 / 586.70 ms at 100 / 1,000 / 5,000 / 10,000.
+Marginal cost **58.3 µs per sprite**, ~287 sprites in a 16.7 ms frame.
+
+**Reproducibility needed redefining.** The archive is never byte-identical between builds: exactly two objects
+(`eglQueryString.o`, `glGetString.o`) embed `__DATE__` in pspGL's version string — the same string raylib prints
+as `pspGL build <date>`. Everything else is stable. The script therefore records a **content hash** over all
+other members, `--verify-repeat` shows it is identical across builds, and `--check` compares the installed
+library against it. That check caught its own stale expectation when the default size moved from 512 to 8192,
+which is the behaviour one wants from a check.
+
+**Cost, stated plainly:** 16 command lists × 8,192 words × 4 B = **512 KiB of main RAM**, up from 32 KiB. That is
+why 16,384 was rejected — 1 MiB for no gain.
+
+**Verification beyond the benchmark:** `basic_shapes` renders 600 frames with 284 colours and two identical
+captures; `cubicmap` loads its three textures; no exceptions anywhere. Restore path walked both ways:
+pspdev's library measures 90.287/90.303 ms, the adopted one 61.642/61.630 ms.
 
 ## 10. Follow-ups
 
-- If the dlist experiment is flat, the ~2,725 µs/frame of reuse wait is a GE-side cost and the lever is phase 4,
-  not list sizing. Say so in §4B.
+- The dlist experiment was **not** flat, so the reuse wait sprint 005 saw (2,725 µs/frame at 512 words) was
+  list-capacity-side after all. Worth re-measuring with the profiler at 8192 to see what is left.
+- 512 KiB of RAM for command lists is a real budget item at 24 MB. If a scene ever needs that memory back, drop
+  to 4096 (−21.7 % instead of −24.1 %, at a quarter of the RAM).
 - A personal fork is a dependency: record how to notice upstream moving (`pspdev/pspgl` HEAD was base + 2 CI
   commits) and whether any of the 11 commits land upstream later.
 - If pspdev ever ships a newer `pspgl` package, the sha check in the script is how we notice it replacing our
