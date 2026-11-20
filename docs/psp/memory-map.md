@@ -125,6 +125,23 @@ with `GU_SPRITES` gives **1024 sprites per draw call**, quads (4 v + 6 i) give 5
 therefore issues `ceil(N/1024)` calls per frame. `[measured: code scan]` That is the structure our
 batcher has to reach, and the number to beat when the native backend lands.
 
+**What it costs today**, measured on 6.5-dev through pspGL with the GL-boundary counters (sprint 003):
+
+| bunnies | `glEnd`/frame | vertices/frame | frame | fps |
+|---|---|---|---|---|
+| 100 | 130.0 | 520.0 | 16.9 ms | 59 (vsync-capped, an upper bound) |
+| 1,000 | 1,030.9 | 4,123.8 | 100.4 ms | 10 |
+| 5,000 | 5,030.0 | 20,120.0 | 470.4 ms | 2.1 |
+
+- **Chrome is 30 primitives/frame** at every count (header rect, two text runs, FPS). Everything else scales
+  with sprites.
+- **4.000 vertices per `glEnd`** — one quad per primitive, exactly as the GL11 path reads.
+- **92.5 µs of marginal cost per sprite**, i.e. about **181 sprites** fit in a 16.7 ms frame. Phase 4's premise
+  is that number, not an assumption.
+- Every primitive costs one bind and one unbind (`binds == unbinds == ends`), so texture state churn scales with
+  sprite count too.
+`[measured: PSP-1000, master @ 252acee7, sprint 003]`
+
 Not addressed by any of this: fill rate, blending bandwidth, texture-cache misses, GE transform
 throughput. Those bound a PSP at 480x272 long before submission overhead does in a fill-heavy scene.
 `[practice]`

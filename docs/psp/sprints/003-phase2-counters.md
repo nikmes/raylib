@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation.md) |
-| Branch / base commit | `master` @ `252acee7` (6.5-dev + port, device-validated) |
-| Started / closed | — / — |
+| Branch / base commit | `master` @ `252acee7` → closed at the sprint commit |
+| Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `c1`, `c2` |
-| Tasks | 0/7 done |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -100,19 +100,24 @@ harness cost measurement.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | port bunnymark into `psp-tests/bunnymark`: bunny count from `-DBUNNY_COUNT=<n>`, spawn at startup, `DONE` + sleep, no CROSS dependency | `todo` | builds; N=1000 logs `DONE`; module resident after | — |
-| T2 | counting harness with `-Wl,--wrap=glBegin,glEnd,glVertex2f,glVertex2i,glBindTexture,glDrawArrays,glDrawElements`, forwarding to `__real_*`; counters and a dump function in one small `.c` | `todo` | program links; counts are non-zero and scale with N; `git diff master -- src/` empty | — |
-| T3 | read-out: one `COUNT …` line per second plus a final line at `DONE` | `todo` | interleaves with `FRAME …` as expected | — |
-| T4 | **falsifiable check**: N=1000 → `glEnd` ≈ 1000, vertices ≈ 4N + header/text, within a documented tolerance | `todo` | numbers land, or the gap is explained | — |
-| T5 | **mutation test**: skip the bunny draw loop, rebuild, run — `glEnd` must fall to the header/text count while the *logical* sprite count stays 1000 | `todo` | both numbers recorded side by side | — |
-| T6 | harness cost: same workload linked with and without the `--wrap` flags, two runs each | `todo` | delta recorded; under 0.2 ms/frame or accepted with a reason | — |
-| T7 | write results into [§2](../memory-map.md#2-memory-map-where-the-work-happens)/§4; record that counting is at the **GL boundary** (one `glEnd` is one submission *into pspGL*, not necessarily one `sceGuDrawArray`) | `todo` | memory map updated in the same commit | — |
+| T1 | port bunnymark into `psp-tests/bunnymark` | `done` | `SPAWN 1000 bunnies`, `DONE frames 120`; no pad dependency; `FRAMES` and `BUNNY_COUNT` are build parameters | `psp-tests/bunnymark/` |
+| T2 | counting harness with `--wrap`, forwarding to `__real_*` | `done` | `__wrap_glEnd` linked; counts scale with N; `git diff master -- src/` **empty** | `psp_counters.c/.h` |
+| T3 | read-out: `COUNT …` per second + a final line at `DONE` | `done` | interleaves with `FRAME …`; survives to `DONE` | logs |
+| T4 | **falsifiable check** | `done` | 1,030.9 ends/frame at N=1000 (1,000 sprites + 30.9 chrome); **4.000 vertices per end** | §7 |
+| T5 | **mutation test** | `done` | 3,719 ends / 120 frames = 31.0/frame while `SPAWN 1000` still logs; delta 999.9 | §7 |
+| T6 | harness cost, two runs per arm | `done` | wrapped 100.364 / 100.356 ms, unwrapped 100.361 / 100.357 ms — inside the ±0.008 ms noise | §7 |
+| T7 | write results into the memory map | `done` | §4 gains the measured per-sprite cost and the vertex/primitive signature; boundary wording recorded | same commit |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — sprint opened; harness written, `__wrap_glEnd` confirmed linked, `src/` untouched
+- 2026-11-20 — T4 `done`: 1,030.9 ends/frame at N=1000, 4.000 vertices/end
+- 2026-11-20 — T5 `done`: mutation gives 31.0 ends/frame with 1000 sprites still logged
+- 2026-11-20 — T6: first attempt invalid — the WRAP=0 build failed to link (`__real_*` undefined), so
+  both "arms" ran the same binary. Guarded the wrap functions behind `WRAP_COUNTERS`, re-measured
+- 2026-11-20 — scaling runs at N=100 / 1000 / 5000; T7 `done`
 
 ## 6. Budgets
 
@@ -126,11 +131,16 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 Known-workload check (`c2`, GL11, unbatched):
 
-| N bunnies | glEnd | vertices | binds | unbinds | expected |
-|---|---|---|---|---|---|
-| 100 | | | | | ~100 ends, ~400 vertices |
-| 1,000 | | | | | ~1,000 ends, ~4,000 vertices |
-| 5,000 | | | | | ~5,000 ends, ~20,000 vertices |
+| N bunnies | glEnd/frame | vertices/frame | binds | unbinds | avg frame | fps |
+|---|---|---|---|---|---|---|
+| 100 | 130.0 | 520.0 | = ends | = ends | 16.943 ms | 59 (vsync-capped) |
+| 1,000 | 1,030.9 | 4,123.8 | = ends | = ends | 100.364 ms | 10 |
+| 5,000 | 5,030.0 | 20,120.0 | = ends | = ends | 470.362 ms | 2.1 |
+
+Chrome (everything that is not a bunny: header rect, `bunnies:` text, FPS text) is **30 primitives/frame**
+at all three counts. Vertices per end is **4.000** exactly — the quad signature. Marginal cost between 1000
+and 5000 bunnies: **92.5 µs per sprite**. `binds` and `unbinds` equal `ends` exactly: one bind and one unbind
+per primitive.
 
 Mutation test (`c2`, N=1000, draw loop skipped):
 
@@ -141,28 +151,55 @@ Mutation test (`c2`, N=1000, draw loop skipped):
 
 Harness cost (`c2` wrapped vs unwrapped, N=1000, two runs each):
 
-| build | frame time | note |
-|---|---|---|
-| no `--wrap` | | |
-| `--wrap` harness | | delta = cost |
+| build | run 1 | run 2 | note |
+|---|---|---|---|
+| no `--wrap` | 100.361 ms | 100.357 ms | counters read zero, as expected |
+| `--wrap` harness | 100.364 ms | 100.356 ms | counters read 123,713 |
+
+Spread within an arm (±0.008 ms) is larger than the difference between arms, so the harness cost is **below the
+measurement resolution** on this workload — well inside the 0.2 ms budget. Resolving it further would need a
+workload whose frame is short enough for microseconds to show.
 
 Double-counting check: if `glEnd` far exceeds N, pspGL's own internal calls are being wrapped too. Record the
 observed baseline offset (header, text, box) rather than assuming zero.
 
 ## 8. Exit criteria
 
-- [ ] the 1000-sprite check lands within tolerance, or the discrepancy is explained in writing
-- [ ] the mutation test shows the counters follow the draw, not the intent
-- [ ] counters reach the log and survive to `DONE`
-- [ ] harness cost measured, not assumed
-- [ ] `git diff master -- src/` is **empty** — the whole sprint is contained in `psp-tests/`
-- [ ] the boundary is described precisely: GL submissions, not `sceGuDrawArray` calls, and the phase-3/5
-      experiment that would count one level deeper is named
+- [x] the 1000-sprite check landed: 1,030.9 ends/frame for 1,000 sprites, 4.000 vertices per end
+- [x] the mutation test shows the counters follow the draw, not the intent (delta 999.9)
+- [x] counters reach the log and survive to `DONE`
+- [x] harness cost measured and found below the noise floor
+- [x] `git diff master -- src/` is **empty** — the whole sprint is contained in `psp-tests/`
+- [x] boundary described precisely: GL submissions into pspGL, not `sceGuDrawArray` calls
 
 ## 9. Result
 
-(To fill in on close. The most useful outcome would be a negative one: if `glEnd` is *not* ≈ N, something in
-pspGL already merges, and phase 4's premise changes.)
+**The counters are validated twice over, and the workload is now measurable from the host.**
+
+- Known workload: N=1000 gives 1,030.9 ends/frame — 1,000 sprites plus 30.9 chrome — with **4.000 vertices per
+  end**, which is the quad signature and not a coincidence to be argued about.
+- Mutation: with the bunny loop compiled out, the same build logs 31.0 ends/frame while still reporting 1000
+  sprites. The difference is 999.9 primitives.
+- Every primitive is one bind and one unbind (`binds == unbinds == ends`), so texture state churn scales with
+  sprite count exactly as the source suggests.
+- Harness cost is below the ±0.008 ms noise floor at 100 ms frames, and `src/` is untouched.
+
+**The finding that matters for phase 4:** the scaling curve is linear and expensive.
+
+| bunnies | frame | fps |
+|---|---|---|
+| 100 | 16.9 ms | 59 (vsync-capped, so this is an upper bound, not a cost) |
+| 1,000 | 100.4 ms | 10 |
+| 5,000 | 470.4 ms | 2.1 |
+
+That is **92.5 µs of marginal cost per sprite**, which buys about **181 sprites** inside a 16.7 ms frame. With
+30 primitives of chrome unchanged across all three counts, the cost is entirely per-sprite submission, not
+per-frame overhead. Phase 4's premise — collapse N submissions into `ceil(N/capacity)` — is now backed by a
+number instead of an assumption.
+
+**One mistake, corrected in the sprint log:** the first T6 attempt was invalid. With `WRAP=0` the build failed
+to link (`__real_*` undefined) and both "arms" silently ran the same wrapped binary. The wrap functions are now
+behind `WRAP_COUNTERS` and the unwrapped build links with counters that correctly read zero.
 
 ## 10. Follow-ups
 

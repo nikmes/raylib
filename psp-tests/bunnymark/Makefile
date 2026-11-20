@@ -1,0 +1,37 @@
+# bunnymark with counters - sprint 003.
+#
+# Counters are interposed at link time with --wrap, so src/ is untouched:
+#   make PSP_LARGE_MEMORY=0 BUNNY_COUNT=1000     # wrapped, counts
+#   make PSP_LARGE_MEMORY=0 BUNNY_COUNT=1000 WRAP=0   # unwrapped, cost reference
+
+BUILD_PRX = 1
+TARGET = bunnymark
+OBJS = main.o psp_counters.o
+
+BUNNY_COUNT ?= 1000
+FRAMES ?= 600
+
+CFLAGS = -Wall -DBUNNY_COUNT=$(BUNNY_COUNT) -DTOTAL_FRAMES=$(FRAMES)
+
+# T5 mutation: draw the frame without the bunnies.
+ifdef SKIP_DRAW
+    CFLAGS += -DSKIP_DRAW
+endif
+
+WRAP ?= 1
+ifeq ($(WRAP),1)
+    CFLAGS += -DWRAP_COUNTERS
+    LDFLAGS += -Wl,--wrap=glBegin -Wl,--wrap=glEnd \
+               -Wl,--wrap=glVertex2f -Wl,--wrap=glVertex2i \
+               -Wl,--wrap=glBindTexture \
+               -Wl,--wrap=glDrawArrays -Wl,--wrap=glDrawElements
+endif
+
+LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu
+
+EXTRA_TARGETS = EBOOT.PBP
+PSP_EBOOT_TITLE = bunnymark counters (raylib 6.5-dev)
+PSP_LARGE_MEMORY = 0
+
+PSPSDK = $(shell psp-config --pspsdk-path)
+include $(PSPSDK)/lib/build.mak
