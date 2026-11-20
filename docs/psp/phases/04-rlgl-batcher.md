@@ -196,3 +196,6 @@ what phase 5 is.
   — **done**. The smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms
   of one commit, and the pending-texture rule that makes batching work at all. 62.6 → 16.7 µs per sprite; the
   residual is linear in vertices and flat in pixels
+- [Sprint 008 — Two-vertex sprites: the last lever inside GL11](../sprints/008-phase4-sprite-primitive.md)
+  — submit axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, a primitive pspGL already maps to `GE_SPRITES`)
+  instead of two triangles (6). Predicted 15 → 5 ms of vertex work at N=1,000, i.e. 60 fps without leaving GL11
