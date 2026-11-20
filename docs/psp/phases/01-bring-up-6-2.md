@@ -54,8 +54,8 @@ of that delta is in [§2](../memory-map.md#2-memory-map-where-the-work-happens).
 ## Exit criteria
 
 - [x] five samples boot and render on 6.5-dev: `basic_shapes` (284 colours), `collision_area` (23),
-      `logo_raylib_anim` (6), `cubicmap` (812), `bunnymark` (loads and renders, but its content area captures
-      as noise — open question 8 in the memory map)
+      `logo_raylib_anim` (6), `cubicmap` (812), `bunnymark` (renders; its earlier "noise" was a torn capture,
+      proven by 18 vs 9,381 colours from the same binary — see the capture rules in the memory map §6)
 - [ ] five samples boot, render and exit cleanly
 - [ ] no import-stub warnings (`psp-fixup-imports` "stubs out of order" is a runtime bug, not cosmetic)
 - [ ] screenshots archived, named with build number

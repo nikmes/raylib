@@ -298,9 +298,15 @@ profile.
   the console to the XMB, device gone; `resetonexit=0` only suppresses the reset loop. Log `DONE` and
   `sceKernelSleepThread()` instead, then `reset` from the host — that keeps the whole loop host-driven
   `[measured]`.
-- **Do not `scrshot` while the app is rendering.** Two captures 2 s apart came back pixel-identical on an
-  animating demo, and the frame log stopped at the capture: the app is frozen by the read, not idle. Capture
-  before the loop redraws, or have the app save its own frame `[measured]`.
+- **`scrshot` while the app is rendering both freezes it and can return a torn frame.** Two things, both
+  measured. Freezing: two captures 2 s apart came back pixel-identical on an animating demo and the frame log
+  stopped at the capture. Tearing: the same bunnymark binary on the same console gave **18, 2,169, 2,083, 18
+  and 9,381** distinct colours across five captures — the clean ones with RAYWHITE over 55,663 px (background
+  + header + text + one box), the torn ones over ~29,900 px because part of the surface was being written
+  during the read.
+- **Therefore a noisy capture is evidence of neither a bug nor correctness.** Take two captures and require
+  them identical before trusting either; the frame to capture is one the app has stopped drawing (`DONE` and
+  sleep, or after it exits) `[measured]`.
 
 ---
 
@@ -546,11 +552,9 @@ grep -n "sceAudio" /home/psp/pspdev/psp/sdk/include/pspaudio.h
    second CPU with no libc and its own cache protocol — an optimisation for phase 9, never a premise.
 8. Does anything in the asset path need CLUT/T4/T8 textures, or is RGBA8 + POT enough? The reference
    engine ran everything through 5551 and used T4 only for glyph atlases.
-9. **Why does bunnymark's content area capture as noise?** 5.5 gave 9,562 colours black-dominant, 6.5-dev
-    gives 9,381 the same way, while every other sample on the same console and capture path is clean
-    (284 / 23 / 6 / 812 colours). Its header band and text render correctly. Either the frame is being read
-    mid-swap, or something about its draw path corrupts the surface. This must be settled in phase 2, because
-    bunnymark is the throughput benchmark sprint 003 builds on `[measured]`.
+9. **Resolved** — bunnymark's "noise" was a torn capture, not a rendering fault: the same binary gave
+   18 and 9,381 colours on different runs. See the capture rules in §6. The question remains open only for the
+   throughput numbers, which sprint 003's counters will make meaningful.
 
 ---
 

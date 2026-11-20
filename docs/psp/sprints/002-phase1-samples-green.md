@@ -151,7 +151,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | `s3` | cubicmap | textures loaded | **2** | 32x16 R8G8B8, 256x256 R8G8B8A8 |
 | `s3` | cubicmap | distinct colours | **812** | textured map drawn |
 | `s4` | bunnymark | texture loaded | **1** | `wabbit_alpha.png`, 32x32 GRAY_ALPHA |
-| `s4` | bunnymark | distinct colours | **9,381** | **anomaly**: black-dominant, see §9 |
+| `s4` | bunnymark | distinct colours | **18 clean / 9,381 torn** | capture-dependent, see §9 |
 | `s4` | bunnymark | bunnies spawned | **not tested** | pad-driven, needs a physical CROSS press |
 
 ## 8. Exit criteria
@@ -177,11 +177,15 @@ pristine) took one pass each: `0 errors`, `MEMSIZE` empty, ~920 KB PRX. The corp
 | `cubicmap` | 812 | atlas-textured map, both PNGs loaded |
 | `bunnymark` | **9,381** | **black-dominant noise** |
 
-**The bunnymark anomaly reproduces, and now across three versions**: 5.5 gave 9,562 colours black-dominant,
-6.5-dev gives 9,381 the same way, while every other sample on the same console, same library, same capture
-path comes out clean. Its header band and text still render correctly — it is the content area that reads as
-noise. Because bunnymark is the throughput benchmark sprint 003 is built on, this cannot be waved through as a
-capture artefact without being tested: it is recorded as open question 8 in the memory map.
+**The bunnymark anomaly was investigated and resolved: it was the capture, not the app.** Five captures of
+the same binary on the same console gave **18, 2,169, 2,083, 18 and 9,381** distinct colours. The clean ones
+show RAYWHITE over 55,663 px (background + header + text + one box, exactly what the code draws with 0
+bunnies); the torn ones only ~29,900 px, because part of the surface was being written while `scrshot` read
+it. bunnymark renders correctly.
+
+That makes the pattern in §7 misleading in hindsight and worth stating: it was not bunnymark that was unique,
+it was that all of its captures happened to land mid-swap. The rule now in the memory map (§6) is to take two
+captures and require them identical before trusting either.
 
 **Not tested:** the CROSS spawn path. bunnymark starts with 0 bunnies by design, and spawning needs a physical
 press. What is proven is that it initialises, loads its texture and renders a frame.
