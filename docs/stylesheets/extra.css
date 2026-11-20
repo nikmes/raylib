@@ -1,0 +1,30 @@
+/* Wider content column.
+ *
+ * Material caps the whole layout at 61rem (976px), which leaves a lot of empty
+ * space either side on a desktop monitor. 90rem (~1440px) uses the screen
+ * without turning paragraphs into full-bleed lines.
+ *
+ * To go full width instead, replace the max-width below with 100% — tables will
+ * stop wrapping, but long prose lines get harder to read.
+ */
+.md-grid {
+  max-width: 90rem;
+}
+
+/* Tables are the main beneficiary: phase tables, file maps and measurement
+ * tables in the memory map were wrapping several columns before. Keep a
+ * horizontal scroll for genuinely wide ones rather than squashing them. */
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  white-space: normal;
+}
+
+/* Code blocks: keep the readable line length, they scroll instead of wrapping. */
+.md-typeset pre > code {
+  white-space: pre;
+}

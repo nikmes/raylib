@@ -1,0 +1,84 @@
+site_name: raylib 6.2 on PSP
+site_description: Working memory map, roadmap and measurements for the PSP backend
+site_author: nikmes
+docs_dir: docs
+use_directory_urls: true
+
+extra_css:
+  - stylesheets/extra.css
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.top
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  icon:
+    repo: fontawesome/brands/github
+
+repo_name: nikmes/raylib
+repo_url: https://github.com/nikmes/raylib
+
+markdown_extensions:
+  - admonition
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Overview: index.md
+  - PSP:
+      - Memory map & roadmap: psp/memory-map.md
+      - Phases:
+          - psp/phases/index.md
+          - psp/phases/00-baseline.md
+          - psp/phases/01-bring-up-6-2.md
+          - psp/phases/02-instrumentation.md
+          - psp/phases/03-pspgl-upgrade.md
+          - psp/phases/04-rlgl-batcher.md
+          - psp/phases/05-native-gu-backend.md
+          - psp/phases/06-textures-vram.md
+          - psp/phases/07-2d-specialisation.md
+          - psp/phases/08-input.md
+          - psp/phases/09-audio.md
+          - psp/phases/10-3d-advanced.md
+          - psp/phases/11-release-gate.md
+      - Sprints:
+          - psp/sprints/000-phase0-baseline.md
+          - psp/sprints/001-phase1-import-platform.md
+          - psp/sprints/002-phase1-samples-green.md
+          - psp/sprints/003-phase2-counters.md
+          - psp/sprints/004-phase2-baselines.md
+      - Templates:
+          - psp/templates/sprint.md
+          - psp/templates/feature.md
+          - psp/templates/recipe.md
+
+strict: true

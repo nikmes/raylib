@@ -138,3 +138,16 @@ raylib.com/
 src/*protocol.h
 src/*protocol-code.h
 src/*protocol-code.c
+
+# mkdocs
+site/
+.cache/
+
+# PSP build products in the test apps are reproducible, never tracked
+psp-tests/**/*.o
+psp-tests/**/*.elf
+psp-tests/**/*.prx
+psp-tests/**/EBOOT.PBP
+psp-tests/**/PARAM.SFO
+psp-tests/**/*.raw
+psp-tests/**/*.png
