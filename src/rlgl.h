@@ -1156,6 +1156,23 @@ static Matrix rlMatrixTranspose(Matrix mat);                // Transposes provid
 static Matrix rlMatrixInvert(Matrix mat);                   // Invert provided matrix
 #endif
 
+#if defined(GRAPHICS_API_OPENGL_11) && defined(PLATFORM_PSP) && defined(PSP_BATCH) && (PSP_BATCH == 1)
+//----------------------------------------------------------------------------------
+// PSP vertex batch (sprint 007) - Implementation in platforms/rcore_psp.c
+//----------------------------------------------------------------------------------
+void rlPspBatchFlush(void);                                     // Emit buffered vertices as one draw call
+void rlPspBatchSetTexture(unsigned int id);                     // Defer texture switch to the next vertex
+void rlPspBatchBegin(int mode);                                 // Start a run of primitives
+void rlPspBatchEnd(void);                                       // End a run of primitives
+void rlPspBatchVertex(float x, float y, float z);               // Append one vertex
+void rlPspBatchTexCoord(float u, float v);                      // Set current texture coordinate
+void rlPspBatchColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a); // Set current color
+#define RLPSP_BATCH_ENABLED
+#define RLPSP_FLUSH() rlPspBatchFlush()
+#else
+#define RLPSP_FLUSH()
+#endif
+
 //----------------------------------------------------------------------------------
 // Module Functions Definition - Matrix operations
 //----------------------------------------------------------------------------------
@@ -1165,6 +1182,8 @@ static Matrix rlMatrixInvert(Matrix mat);                   // Invert provided m
 //---------------------------------------
 void rlMatrixMode(int mode)
 {
+    RLPSP_FLUSH();
+
     switch (mode)
     {
         case RL_PROJECTION: glMatrixMode(GL_PROJECTION); break;
@@ -1176,21 +1195,25 @@ void rlMatrixMode(int mode)
 
 void rlFrustum(float left, float right, float bottom, float top, float znear, float zfar)
 {
+    RLPSP_FLUSH();
+
     glFrustum(left, right, bottom, top, znear, zfar);
 }
 
 void rlOrtho(float left, float right, float bottom, float top, float znear, float zfar)
 {
+    RLPSP_FLUSH();
+
     glOrtho(left, right, bottom, top, znear, zfar);
 }
 
-void rlPushMatrix(void) { glPushMatrix(); }
-void rlPopMatrix(void) { glPopMatrix(); }
-void rlLoadIdentity(void) { glLoadIdentity(); }
-void rlTranslatef(float x, float y, float z) { glTranslatef(x, y, z); }
-void rlRotatef(float angle, float x, float y, float z) { glRotatef(angle, x, y, z); }
-void rlScalef(float x, float y, float z) { glScalef(x, y, z); }
-void rlMultMatrixf(const float *matf) { glMultMatrixf(matf); }
+void rlPushMatrix(void) { RLPSP_FLUSH(); glPushMatrix(); }
+void rlPopMatrix(void) { RLPSP_FLUSH(); glPopMatrix(); }
+void rlLoadIdentity(void) { RLPSP_FLUSH(); glLoadIdentity(); }
+void rlTranslatef(float x, float y, float z) { RLPSP_FLUSH(); glTranslatef(x, y, z); }
+void rlRotatef(float angle, float x, float y, float z) { RLPSP_FLUSH(); glRotatef(angle, x, y, z); }
+void rlScalef(float x, float y, float z) { RLPSP_FLUSH(); glScalef(x, y, z); }
+void rlMultMatrixf(const float *matf) { RLPSP_FLUSH(); glMultMatrixf(matf); }
 #endif
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
 // Choose the current matrix to be transformed
@@ -1398,6 +1421,8 @@ void rlOrtho(float left, float right, float bottom, float top, float znear, floa
 // Set the viewport area (transformation from normalized device coordinates to window coordinates)
 void rlViewport(int x, int y, int width, int height)
 {
+    RLPSP_FLUSH();
+
     glViewport(x, y, width, height);
 }
 
@@ -1426,6 +1451,8 @@ float rlGetCullDistanceFar(void)
 #if defined(GRAPHICS_API_OPENGL_11)
 // Fallback to OpenGL 1.1 function calls
 //---------------------------------------
+#if !defined(RLPSP_BATCH_ENABLED)
+// Immediate mode: one GL call per primitive
 void rlBegin(int mode)
 {
     switch (mode)
@@ -1446,6 +1473,19 @@ void rlNormal3f(float x, float y, float z) { glNormal3f(x, y, z); }
 void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a) { glColor4ub(r, g, b, a); }
 void rlColor3f(float x, float y, float z) { glColor3f(x, y, z); }
 void rlColor4f(float x, float y, float z, float w) { glColor4f(x, y, z, w); }
+#else
+// Batched: attributes are collected, primitives are emitted by the next flush
+void rlBegin(int mode) { rlPspBatchBegin(mode); }
+void rlEnd(void) { rlPspBatchEnd(); }
+void rlVertex2i(int x, int y) { rlPspBatchVertex((float)x, (float)y, 0.0f); }
+void rlVertex2f(float x, float y) { rlPspBatchVertex(x, y, 0.0f); }
+void rlVertex3f(float x, float y, float z) { rlPspBatchVertex(x, y, z); }
+void rlTexCoord2f(float x, float y) { rlPspBatchTexCoord(x, y); }
+void rlNormal3f(float x, float y, float z) { (void)x; (void)y; (void)z; }   // NOTE: lighting is not batched
+void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a) { rlPspBatchColor(r, g, b, a); }
+void rlColor3f(float x, float y, float z) { rlPspBatchColor((unsigned char)(x*255.0f + 0.5f), (unsigned char)(y*255.0f + 0.5f), (unsigned char)(z*255.0f + 0.5f), 255); }
+void rlColor4f(float x, float y, float z, float w) { rlPspBatchColor((unsigned char)(x*255.0f + 0.5f), (unsigned char)(y*255.0f + 0.5f), (unsigned char)(z*255.0f + 0.5f), (unsigned char)(w*255.0f + 0.5f)); }
+#endif
 #endif
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
 // Initialize drawing mode (how to organize vertex)
@@ -1637,6 +1677,11 @@ void rlColor3f(float x, float y, float z)
 // Set current texture to use
 void rlSetTexture(unsigned int id)
 {
+#if defined(RLPSP_BATCH_ENABLED)
+    // Batched: only record the switch, it is applied when the next vertex is pushed
+    rlPspBatchSetTexture(id);
+    return;
+#endif
     if (id == 0)
     {
 #if defined(GRAPHICS_API_OPENGL_11)
@@ -1701,6 +1746,11 @@ void rlActiveTextureSlot(int slot)
 // Enable texture
 void rlEnableTexture(unsigned int id)
 {
+#if defined(RLPSP_BATCH_ENABLED)
+    // Raw door into the texture state: settle what is buffered under the old texture first
+    rlPspBatchFlush();
+    rlPspBatchSetTexture(id);
+#endif
 #if defined(GRAPHICS_API_OPENGL_11)
     glEnable(GL_TEXTURE_2D);
 #endif
@@ -1710,6 +1760,10 @@ void rlEnableTexture(unsigned int id)
 // Disable texture
 void rlDisableTexture(void)
 {
+#if defined(RLPSP_BATCH_ENABLED)
+    rlPspBatchFlush();
+    rlPspBatchSetTexture(0);
+#endif
 #if defined(GRAPHICS_API_OPENGL_11)
     glDisable(GL_TEXTURE_2D);
 #endif
@@ -1735,6 +1789,8 @@ void rlDisableTextureCubemap(void)
 // Set texture parameters (wrap mode/filter mode)
 void rlTextureParameters(unsigned int id, int param, int value)
 {
+    RLPSP_FLUSH();
+
     glBindTexture(GL_TEXTURE_2D, id);
 
     switch (param)
@@ -1916,28 +1972,28 @@ void rlActiveDrawBuffers(int count)
 //----------------------------------------------------------------------------------
 
 // Enable color blending
-void rlEnableColorBlend(void) { glEnable(GL_BLEND); }
+void rlEnableColorBlend(void) { RLPSP_FLUSH(); glEnable(GL_BLEND); }
 
 // Disable color blending
-void rlDisableColorBlend(void) { glDisable(GL_BLEND); }
+void rlDisableColorBlend(void) { RLPSP_FLUSH(); glDisable(GL_BLEND); }
 
 // Enable depth test
-void rlEnableDepthTest(void) { glEnable(GL_DEPTH_TEST); }
+void rlEnableDepthTest(void) { RLPSP_FLUSH(); glEnable(GL_DEPTH_TEST); }
 
 // Disable depth test
-void rlDisableDepthTest(void) { glDisable(GL_DEPTH_TEST); }
+void rlDisableDepthTest(void) { RLPSP_FLUSH(); glDisable(GL_DEPTH_TEST); }
 
 // Enable depth write
-void rlEnableDepthMask(void) { glDepthMask(GL_TRUE); }
+void rlEnableDepthMask(void) { RLPSP_FLUSH(); glDepthMask(GL_TRUE); }
 
 // Disable depth write
-void rlDisableDepthMask(void) { glDepthMask(GL_FALSE); }
+void rlDisableDepthMask(void) { RLPSP_FLUSH(); glDepthMask(GL_FALSE); }
 
 // Enable backface culling
-void rlEnableBackfaceCulling(void) { glEnable(GL_CULL_FACE); }
+void rlEnableBackfaceCulling(void) { RLPSP_FLUSH(); glEnable(GL_CULL_FACE); }
 
 // Disable backface culling
-void rlDisableBackfaceCulling(void) { glDisable(GL_CULL_FACE); }
+void rlDisableBackfaceCulling(void) { RLPSP_FLUSH(); glDisable(GL_CULL_FACE); }
 
 // Set color mask active for screen read/draw
 void rlColorMask(bool r, bool g, bool b, bool a) { glColorMask(r, g, b, a); }
@@ -1945,6 +2001,8 @@ void rlColorMask(bool r, bool g, bool b, bool a) { glColorMask(r, g, b, a); }
 // Set face culling mode
 void rlSetCullFace(int mode)
 {
+    RLPSP_FLUSH();
+
     switch (mode)
     {
         case RL_CULL_FACE_BACK: glCullFace(GL_BACK); break;
@@ -1954,17 +2012,19 @@ void rlSetCullFace(int mode)
 }
 
 // Enable scissor test
-void rlEnableScissorTest(void) { glEnable(GL_SCISSOR_TEST); }
+void rlEnableScissorTest(void) { RLPSP_FLUSH(); glEnable(GL_SCISSOR_TEST); }
 
 // Disable scissor test
-void rlDisableScissorTest(void) { glDisable(GL_SCISSOR_TEST); }
+void rlDisableScissorTest(void) { RLPSP_FLUSH(); glDisable(GL_SCISSOR_TEST); }
 
 // Scissor test
-void rlScissor(int x, int y, int width, int height) { glScissor(x, y, width, height); }
+void rlScissor(int x, int y, int width, int height) { RLPSP_FLUSH(); glScissor(x, y, width, height); }
 
 // Enable wire mode
 void rlEnableWireMode(void)
 {
+    RLPSP_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_33)
     // NOTE: glPolygonMode() not available on OpenGL ES
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -1974,6 +2034,8 @@ void rlEnableWireMode(void)
 // Disable wire mode
 void rlDisableWireMode(void)
 {
+    RLPSP_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_33)
     // NOTE: glPolygonMode() not available on OpenGL ES
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -1983,6 +2045,8 @@ void rlDisableWireMode(void)
 // Enable point mode
 void rlEnablePointMode(void)
 {
+    RLPSP_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_33)
     // NOTE: glPolygonMode() not available on OpenGL ES
     glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
@@ -1993,6 +2057,8 @@ void rlEnablePointMode(void)
 // Disable point mode
 void rlDisablePointMode(void)
 {
+    RLPSP_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_33)
     // NOTE: glPolygonMode() not available on OpenGL ES
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -2000,7 +2066,7 @@ void rlDisablePointMode(void)
 }
 
 // Set the line drawing width
-void rlSetLineWidth(float width) { glLineWidth(width); }
+void rlSetLineWidth(float width) { RLPSP_FLUSH(); glLineWidth(width); }
 
 // Get the line drawing width
 float rlGetLineWidth(void)
@@ -2088,6 +2154,8 @@ void rlClearColor(unsigned char r, unsigned char g, unsigned char b, unsigned ch
 // Clear used screen buffers (color and depth)
 void rlClearScreenBuffers(void)
 {
+    RLPSP_FLUSH();
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);     // Clear used buffers: Color and Depth (Depth is used for 3D)
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);     // Stencil buffer not used...
 }
@@ -3201,6 +3269,8 @@ void rlSetRenderBatchActive(rlRenderBatch *batch)
 // Update and draw internal render batch
 void rlDrawRenderBatchActive(void)
 {
+    RLPSP_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
     rlDrawRenderBatch(RLGL.currentBatch);    // NOTE: Stereo rendering is checked inside
 #endif

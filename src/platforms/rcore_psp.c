@@ -772,4 +772,225 @@ void ClosePlatform(void)
     sceKernelExitGame();
 }
 
+//----------------------------------------------------------------------------------
+// GL11 vertex batch (sprint 007, enabled with PSP_BATCH=1)
+//----------------------------------------------------------------------------------
+// The immediate-mode path calls glBegin()/glVertex3f()/glEnd() once per primitive,
+// so a frame with 1025 sprites submits 1025 draw calls. Here the same vertices
+// accumulate in one static buffer and leave as a single glDrawArrays() per texture.
+//
+// NOTE: The state lives in this file, not in rlgl.h, on purpose. rlgl.h is included
+// by rcore.c, rshapes.c, rtextures.c, rtext.c and rmodels.c; a static buffer in the
+// header would be one copy per translation unit, so the vertices pushed by
+// rtextures.c would be invisible to the flush rcore.c runs at EndDrawing().
+#if defined(GRAPHICS_API_OPENGL_11) && defined(PSP_BATCH) && (PSP_BATCH == 1)
+
+#ifndef RLPSP_BATCH_CAP
+    #define RLPSP_BATCH_CAP 4096    // Vertices held per batch (340 quads), 24 bytes each
+#endif
+
+// Interleaved vertex, 24 bytes: the offsets of the three arrays below are what
+// glVertexPointer()/glTexCoordPointer()/glColorPointer() are pointed at
+typedef struct {
+    float u, v;                     // Texture coordinates
+    unsigned char r, g, b, a;       // Vertex color
+    float x, y, z;                  // Position
+} RLPspVertex;
+
+static RLPspVertex rlPspVerts[RLPSP_BATCH_CAP];
+static int rlPspCount = 0;                  // Vertices currently buffered
+static int rlPspMode = 0;                   // GL primitive mode of the buffered run
+static int rlPspQuads = 0;                  // Current run is RL_QUADS, expanded to triangles
+static unsigned int rlPspTex = 0;           // Texture the buffered vertices belong to
+static unsigned int rlPspPendTex = 0;       // Texture the following vertices will use
+static float rlPspU = 0.0f;                 // Current texture coordinate
+static float rlPspV = 0.0f;
+static unsigned char rlPspR = 255;          // Current vertex color
+static unsigned char rlPspG = 255;
+static unsigned char rlPspB = 255;
+static unsigned char rlPspA = 255;
+static RLPspVertex rlPspQuad[4];            // Corners of the quad being assembled
+static int rlPspQuadN = 0;
+
+#if defined(RLPSP_LOCK_ARRAYS)
+// pspGL's GL_EXT_vertex_array entry points: locking makes the driver copy the arrays
+// into GE form once and draw from that cache. Declared here because rlgl.h includes
+// <GL/gl.h> only, not <GL/glext.h>.
+extern void glLockArraysEXT(GLint first, GLsizei count);
+extern void glUnlockArraysEXT(void);
+#endif
+
+// Emit every buffered vertex as one vertex-array draw
+void rlPspBatchFlush(void)
+{
+    if (rlPspCount == 0)
+    {
+        rlPspQuadN = 0;
+        return;
+    }
+
+    if (rlPspTex > 0)
+    {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, rlPspTex);
+    }
+    else
+    {
+        glDisable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glVertexPointer(3, GL_FLOAT, sizeof(RLPspVertex), &rlPspVerts[0].x);
+    glTexCoordPointer(2, GL_FLOAT, sizeof(RLPspVertex), &rlPspVerts[0].u);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(RLPspVertex), &rlPspVerts[0].r);
+
+#if defined(RLPSP_LOCK_ARRAYS)
+    glLockArraysEXT(0, rlPspCount);
+    glDrawArrays(rlPspMode, 0, rlPspCount);
+    glUnlockArraysEXT();
+#else
+    glDrawArrays(rlPspMode, 0, rlPspCount);
+#endif
+
+#ifdef RLPSP_BATCH_TRACE
+    TraceLog(LOG_INFO, "BATCH flush tex=%u mode=%i count=%i", rlPspTex, rlPspMode, rlPspCount);
+#endif
+
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
+
+    rlPspCount = 0;
+    rlPspQuadN = 0;             // A flush can only happen between primitives: drop a partial quad
+}
+
+// Claim n contiguous slots, settling texture switches and the batch limit first
+static RLPspVertex *rlPspReserve(int n)
+{
+    RLPspVertex *v = NULL;
+
+    if (rlPspPendTex != rlPspTex)
+    {
+        rlPspBatchFlush();
+        rlPspTex = rlPspPendTex;
+    }
+    if ((rlPspCount + n) > RLPSP_BATCH_CAP) rlPspBatchFlush();
+
+    v = &rlPspVerts[rlPspCount];
+    rlPspCount += n;
+
+    return v;
+}
+
+// Select the texture for the vertices that follow
+// NOTE: Deferred on purpose. Every raylib draw call is rlSetTexture(T), quad,
+// rlSetTexture(0): flushing on the change would emit twice per draw call and the
+// batch would never hold more than one primitive. The switch is applied when the
+// next vertex arrives, so the trailing rlSetTexture(0) costs nothing.
+void rlPspBatchSetTexture(unsigned int id)
+{
+    rlPspPendTex = id;
+#ifdef RLPSP_BATCH_TRACE
+    TraceLog(LOG_INFO, "BATCH set tex=%u (cur=%u count=%i)", id, rlPspTex, rlPspCount);
+#endif
+}
+
+// Start a run of primitives
+void rlPspBatchBegin(int mode)
+{
+    int glMode = 0;
+
+    switch (mode)
+    {
+        // NOTE: RL_QUADS is NOT sent to GL as GL_QUADS. pspGL maps GL_QUADS to a GE
+        // triangle fan (pspgl_varray.c, geprim_tab), so a run of N quads would fan
+        // from the first vertex of the run and every quad after the first would
+        // share it. Quads are expanded to two triangles on push instead.
+        case RL_LINES: glMode = GL_LINES; break;
+        case RL_TRIANGLES: glMode = GL_TRIANGLES; break;
+        case RL_QUADS: glMode = GL_TRIANGLES; break;
+        default: break;
+    }
+
+    // A run of a different mode cannot share the draw call
+    if ((rlPspCount > 0) && (glMode != rlPspMode)) rlPspBatchFlush();
+
+    rlPspMode = glMode;
+    rlPspQuads = (mode == RL_QUADS)? 1 : 0;
+    if (rlPspQuads == 0) rlPspQuadN = 0;
+}
+
+// End a run of primitives: the run is emitted by the next flush, not here
+void rlPspBatchEnd(void)
+{
+}
+
+// Append one vertex
+void rlPspBatchVertex(float x, float y, float z)
+{
+    RLPspVertex *v = NULL;
+
+    if (rlPspQuads == 1)
+    {
+        // Assemble the quad, then write it out as triangles (0,1,2) and (0,2,3)
+        RLPspVertex *q = &rlPspQuad[rlPspQuadN++];
+
+        q->u = rlPspU;
+        q->v = rlPspV;
+        q->r = rlPspR;
+        q->g = rlPspG;
+        q->b = rlPspB;
+        q->a = rlPspA;
+        q->x = x;
+        q->y = y;
+        q->z = z;
+
+        if (rlPspQuadN == 4)
+        {
+            rlPspQuadN = 0;
+            v = rlPspReserve(6);
+            v[0] = rlPspQuad[0];
+            v[1] = rlPspQuad[1];
+            v[2] = rlPspQuad[2];
+            v[3] = rlPspQuad[0];
+            v[4] = rlPspQuad[2];
+            v[5] = rlPspQuad[3];
+        }
+
+        return;
+    }
+
+    v = rlPspReserve(1);
+    v->u = rlPspU;
+    v->v = rlPspV;
+    v->r = rlPspR;
+    v->g = rlPspG;
+    v->b = rlPspB;
+    v->a = rlPspA;
+    v->x = x;
+    v->y = y;
+    v->z = z;
+}
+
+// Set current texture coordinate
+void rlPspBatchTexCoord(float u, float v)
+{
+    rlPspU = u;
+    rlPspV = v;
+}
+
+// Set current vertex color
+void rlPspBatchColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    rlPspR = r;
+    rlPspG = g;
+    rlPspB = b;
+    rlPspA = a;
+}
+
+#endif
+
 // EOF

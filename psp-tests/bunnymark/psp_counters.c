@@ -54,12 +54,21 @@ void __wrap_glBindTexture(GLenum target, GLuint texture)
     if (texture != 0) pspCounters.binds++;
     else pspCounters.unbinds++;
 
+#ifdef TRACE_DRAWS
+    TraceLog(LOG_INFO, "BIND texture=%u", (unsigned)texture);
+#endif
     __real_glBindTexture(target, texture);
 }
 
 void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
     pspCounters.drawArrays++;
+    // The batched path submits no glVertex* calls at all, so the vertex total has to
+    // come from here or the batched arm would report zero vertices drawn.
+    if (count > 0) pspCounters.arrayVertices += (unsigned int)count;
+#ifdef TRACE_DRAWS
+    TraceLog(LOG_INFO, "DRAW arrays mode=%i count=%i", (int)mode, (int)count);
+#endif
     __real_glDrawArrays(mode, first, count);
 }
 
@@ -89,8 +98,8 @@ unsigned int PspCountersSwapCalls(void) { return swapCalls; }
 
 void PspCountersDump(const char *tag, int frames)
 {
-    TraceLog(LOG_INFO, "COUNT %s frames=%d begins=%u ends=%u verts=%u binds=%u unbinds=%u arrays=%u",
+    TraceLog(LOG_INFO, "COUNT %s frames=%d begins=%u ends=%u verts=%u binds=%u unbinds=%u arrays=%u arrayVerts=%u",
              tag, frames, pspCounters.begins, pspCounters.ends, pspCounters.vertices,
              pspCounters.binds, pspCounters.unbinds,
-             pspCounters.drawArrays + pspCounters.drawElements);
+             pspCounters.drawArrays + pspCounters.drawElements, pspCounters.arrayVertices);
 }

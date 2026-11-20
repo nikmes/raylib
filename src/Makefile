@@ -561,6 +561,23 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     ifdef PSP_DISABLE_VSYNC
         CUSTOM_CFLAGS += -DPSP_DISABLE_VSYNC
     endif
+    # PSP_BATCH=1 turns the GL11 immediate-mode path into a static vertex batch
+    # (sprint 007). Without this pass-through the flag would be silently ignored
+    # and both measurement arms would build identically.
+    ifdef PSP_BATCH
+        CUSTOM_CFLAGS += -DPSP_BATCH=$(PSP_BATCH)
+    endif
+    # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
+    # the only way to see what the batch actually submitted when a frame looks wrong.
+    ifdef PSP_BATCH_TRACE
+        CUSTOM_CFLAGS += -DRLPSP_BATCH_TRACE
+    endif
+    # PSP_BATCH_LOCK=1 wraps each batched draw in glLockArraysEXT/glUnlockArraysEXT
+    # (sprint 007 T5): measures whether pspGL's locked-array cache removes the
+    # per-draw conversion copy.
+    ifdef PSP_BATCH_LOCK
+        CUSTOM_CFLAGS += -DRLPSP_LOCK_ARRAYS
+    endif
     # pspdev headers/specs define __PSP__ themselves, so it is not added here.
     EXTRA_INCLUDE_PATHS += -I$(PSPDEV)/psp/include -I$(PSPDEV)/psp/sdk/include
 endif

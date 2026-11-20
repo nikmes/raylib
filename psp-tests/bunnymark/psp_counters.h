@@ -23,8 +23,9 @@ typedef struct {
     unsigned int vertices;      // glVertex2f + glVertex2i
     unsigned int binds;         // glBindTexture with a non-zero texture
     unsigned int unbinds;       // glBindTexture(0)
-    unsigned int drawArrays;    // the array paths, unused by GL11 immediate mode
+    unsigned int drawArrays;    // glDrawArrays calls (PSP_BATCH=1: one per texture switch)
     unsigned int drawElements;
+    unsigned int arrayVertices; // vertices submitted through glDrawArrays
 } PspCounters;
 
 extern PspCounters pspCounters;
