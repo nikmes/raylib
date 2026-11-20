@@ -366,6 +366,16 @@ void OpenURL(const char *url)
     }
 }
 
+// Get clipboard image
+// NOTE: A PSP has no clipboard. raylib declares this in its public API, so the
+// function is provided and returns an empty image (data == NULL) instead of
+// leaving an undefined symbol for applications to trip over.
+Image GetClipboardImage(void)
+{
+    Image image = { 0 };
+    return image;
+}
+
 //----------------------------------------------------------------------------------
 // Module Functions Definition: Inputs
 //----------------------------------------------------------------------------------
@@ -490,6 +500,32 @@ void PollInputEvents(void)
     }
 }
 
+// Get name of a QWERTY key on the current keyboard layout
+// NOTE: A PSP has no keyboard and therefore no layout. The function is part of
+// raylib's public API, so it returns an empty string rather than being absent;
+// nothing is logged because tools may call it once per key per frame.
+const char *GetKeyName(int key)
+{
+    (void)key;
+    return "";
+}
+
+// Set gamepad vibration
+// NOTE: No PSP model has rumble motors. This stays a no-op so portable game code
+// that calls it keeps linking and running; the warning is emitted once, not per
+// frame, so a game cannot flood the log by vibrating every tick.
+void SetGamepadVibration(int gamepad, float leftMotor, float rightMotor, float duration)
+{
+    (void)gamepad; (void)leftMotor; (void)rightMotor; (void)duration;
+
+    static bool vibrationWarned = false;
+    if (!vibrationWarned)
+    {
+        vibrationWarned = true;
+        TRACELOG(LOG_WARNING, "SetGamepadVibration() ignored: PSP has no rumble motors");
+    }
+}
+
 //----------------------------------------------------------------------------------
 // Module Internal Functions Definition
 //----------------------------------------------------------------------------------
@@ -561,7 +597,7 @@ int InitPlatform(void)
     // Set PSP controller name
     strcpy(CORE.Input.Gamepad.name[0], "PSP Controller");
 
-    CORE.Window.fullscreen = true;
+    // NOTE: 6.2 has no CORE.Window.fullscreen member; fullscreen is a flag only.
     CORE.Window.flags |= FLAG_FULLSCREEN_MODE;
 
     CORE.Window.display.width = CORE.Window.screen.width;            // User desired width
@@ -577,17 +613,10 @@ int InitPlatform(void)
     CORE.Input.Mouse.scale = (Vector2){ 1.0f, 1.0f };
 
 
-    EGLint samples = 0;
-    EGLint sampleBuffer = 0;
-    if (CORE.Window.flags & FLAG_MSAA_4X_HINT)
-    {
-        samples = 4;
-        sampleBuffer = 1;
-        TRACELOG(LOG_INFO, "PLATFORM: Trying to enable MSAA x4");
-    }
-
- 	
-
+    // NOTE: MSAA is not wired to EGL in this port: the attribute list below is
+    // fixed, and pspGL's config selection does not consider EGL_SAMPLES. The
+    // previous code computed samples/sampleBuffer and never passed them on, which
+    // logged a request that could not be honoured.
     const EGLint attrib_list [] = {
         EGL_RED_SIZE, 1,
         EGL_GREEN_SIZE, 1,
@@ -663,7 +692,7 @@ int InitPlatform(void)
     //  -> CORE.Window.screen.width/CORE.Window.screen.height
     //  -> CORE.Window.render.width/CORE.Window.render.height
     //  -> CORE.Window.screenScale
-    SetupFramebuffer(CORE.Window.display.width, CORE.Window.display.height);
+    SetupViewport(CORE.Window.display.width, CORE.Window.display.height);
 
     //ANativeWindow_setBuffersGeometry(platform.app->window, CORE.Window.render.width, CORE.Window.render.height, displayFormat);
     //ANativeWindow_setBuffersGeometry(platform.app->window, 0, 0, displayFormat);       // Force use of native display size
