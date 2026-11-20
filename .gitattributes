@@ -1,0 +1,3 @@
+# The PSP platform layer was imported from a CRLF source; keep it LF so diffs
+# and upstream comparisons stay readable.
+src/platforms/rcore_psp.c text eol=lf
