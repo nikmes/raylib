@@ -2013,8 +2013,10 @@ float rlGetLineWidth(void)
 // Set the point drawing size
 void rlSetPointSize(float size)
 {
-#if defined(GRAPHICS_API_OPENGL_11)
+#if defined(GRAPHICS_API_OPENGL_11) && !defined(PLATFORM_PSP)
     glPointSize(size);
+#else
+    (void)size;     // NOTE: pspGL has no glPointSize; measuring the whole GL surface showed it is the only entry point of 55 that pspGL lacks
 #endif
 }
 
