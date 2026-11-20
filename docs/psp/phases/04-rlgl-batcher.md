@@ -178,13 +178,21 @@ acceptance criterion than "faster than before", because it is a number we alread
 | | sprites in 16.7 ms | 1,000 sprites take |
 |---|---|---|
 | today (unbatched, adopted pspGL) | ~287 | **61.63 ms** |
+| after sprint 007 (batched) | **~790** | **33.37 ms** |
 | target | **≥1,000** | **≤16.7 ms** |
 
 So phase 4 has to buy **3.7×** on this workload to hit 60 fps at 1,000 sprites. That is the number to design to,
 and it is in the sprint's exit criteria rather than in a wish list.
 
+**Where sprint 007 left it:** batching bought 2.0× (66.73 → 33.37 ms same-session; the 61.63 in the row above is
+the older archived figure), which is 2.0× of the 3.7×. What remains is **per submitted vertex**, not per draw call
+and not per pixel — 3 draw calls per frame at N=1,000, and 4× the fill costs 0.1 %. Phase 4 cannot reach 16.7 ms by
+batching harder; the remaining levers are fewer vertices per sprite and a shorter path from vertex to GE, which is
+what phase 5 is.
+
 ## Sprints and features
 
 - [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../sprints/007-phase4-batch-skeleton.md)
-  — the smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms of one
-  commit, and the pending-texture rule that makes batching work at all
+  — **done**. The smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms
+  of one commit, and the pending-texture rule that makes batching work at all. 62.6 → 16.7 µs per sprite; the
+  residual is linear in vertices and flat in pixels

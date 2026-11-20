@@ -134,6 +134,22 @@ for h in raylib.h rlgl.h raymath.h rcamera.h; do cp src/$h $PSPDEV/psp/include/$
   `--check` is how that is noticed.
 - Test app: `psp-tests/basic_shapes` (bounded 600 frames, logs `DONE`, sleeps).
 
+### Build switches for the batched path (sprint 007)
+
+| switch | effect |
+|---|---|
+| `PSP_BATCH=0` / `1` | `0` is the immediate GL11 path (default): one `glBegin`/`glEnd` per primitive. `1` accumulates vertices in one static 4,096-vertex buffer and submits one `glDrawArrays` per texture run |
+| `PSP_BATCH_TRACE=1` | logs every `rlPspBatchFlush` (texture, mode, vertex count) and every deferred texture switch — the only way to see what a wrong frame actually submitted |
+| `PSP_BATCH_LOCK=1` | wraps each batched draw in `glLockArraysEXT`/`glUnlockArraysEXT`. Measured: no effect on pspGL `ae9a668` (sprint 007 T5) |
+
+```sh
+make PLATFORM=PLATFORM_PSP PSP_BATCH=1        # batched library
+make PLATFORM=PLATFORM_PSP PSP_BATCH=0        # reference library
+```
+
+`PSP_BATCH=1` is a **2D** mode: `rlNormal3f` is dropped, so lit 3D is unaffected only because the PSP build
+lights nothing. Do not default it on before the samples with 3D content have been compared.
+
 ## Documentation site
 
 `raylib-psp-docs.service`, `enabled` via `multi-user.target.wants`, runs as `psp` from the repo and serves

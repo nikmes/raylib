@@ -85,10 +85,33 @@ Same 1,000 sprites, same submission count, drawn at 4× size (16× the pixels):
 16× the pixels costs 5.7 %; 5× the sprites costs 5×. **The workload is submission-bound, not fill-bound**, so
 collapsing N submissions into `ceil(N/capacity)` is the right lever and phase 4's premise holds.
 
+## Batched reference (sprint 007)
+
+Same workload, `PSP_BATCH=1`: one static 4,096-vertex buffer, one `glDrawArrays` per texture run, quads expanded
+to two triangles (pspGL maps `GL_QUADS` to a GE triangle fan, so a quad *run* cannot be sent as quads).
+
+| bunnies | `glDrawArrays`/frame | vertices/frame | median A | median B | work | fps (median) |
+|---|---|---|---|---|---|---|
+| 100 | 2 | 744 | 16.683 ms | 16.683 ms | 3.55 ms | 59.9 (pacing) |
+| 1,000 | 3 | 6,150 | 33.367 ms | 33.369 ms | 18.09 ms | 30.0 |
+| 5,000 | 9 | 30,150 | 100.107 ms | 100.107 ms | 81.91 ms | 10.0 |
+
+Marginal cost: **(100.107 − 33.367) / 4,000 = 16.7 µs per sprite**, against 62.6 µs for the same-day unbatched
+arm. Submission was 46 µs of it; what is left is per submitted vertex (2.4–2.6 µs), flat in pixels: 4× the fill
+(`SPRITE_SCALE=2`) moved the frame by 0.1 %, and the HUD-only floor is 3.46 ms.
+
+**Read this table with the drift note in mind.** The published unbatched baseline (61.63 ms at N=1,000) does not
+reproduce on 2026-11-20: the same arm reads **66.73 ms**, four 16.68 ms display periods. 61.63 sits between
+periods, so it was taken under a different display state. Compare batched and unbatched **within one session**
+until the archived rows are re-taken.
+
 ## What this implies
 
 - ~**181 sprites** fit in a 16.7 ms frame today (16.7 / 0.0865).
 - At 86.5 µs per sprite, a 60 fps 2D game has room for roughly 180 unbatched sprites. With 1,024 sprites per
   draw call — what a hand-written GU renderer achieves — the same frame would spend its time on pixels instead.
+- Batched, the frame holds **~790 sprites** at 60 fps ((16.68 − 3.46) / 0.0167) and runs 1,000 at 30 fps. The
+  sentence above about pixels was measured and is wrong for this workload: 4× the fill costs 0.1 % once
+  submission is gone, so the frame is limited by vertices, not by what they cover.
 - Any change worth reporting must move a median by more than **0.1 %**; run-to-run noise is far below that, so a
   single run per arm is adequate *on the same build and session*, and two runs remain the habit.

@@ -179,9 +179,30 @@ batcher has to reach, and the number to beat when the native backend lands.
   sprite count too.
 `[measured: PSP-1000, master @ 252acee7, sprint 003]`
 
+**What a batch changes**, same app, same session, both arms from one commit (sprint 007):
+
+| bunnies | arm | draws/frame | vertices/frame | frame | work |
+|---|---|---|---|---|---|
+| 100 | unbatched | 0 (`glEnd` 124) | 496 | 16.683 ms | 9.16 ms |
+| 100 | batched | 2 | 744 | 16.683 ms | 3.55 ms |
+| 1,000 | unbatched | 0 (`glEnd` 1,025) | 4,100 | 66.733 ms | 65.70 ms |
+| 1,000 | batched | **3** | 6,150 | **33.367 ms** | 18.09 ms |
+| 5,000 | unbatched | 0 (`glEnd` 5,024) | 20,096 | 316.98 ms | 317.19 ms |
+| 5,000 | batched | **9** | 30,150 | **100.107 ms** | 81.91 ms |
+
+- Marginal cost per sprite drops **62.6 → 16.7 µs**; the 46 µs that went away was submission, exactly as phase 4
+  predicted. A frame now holds **~790 sprites** at 60 fps.
+- **The residual is per submitted vertex** (2.4–2.6 µs each), not per draw call and not per pixel: 3 draws cannot
+  cost 14.6 ms, and 4× the fill costs 0.1 %. HUD-only floor is 3.46 ms.
+- pspGL maps `GL_QUADS` to a GE **triangle fan**, so batched quads must be expanded to triangles: 6 vertices per
+  sprite instead of 4.
+- `glLockArraysEXT` around each draw: **no effect** (+0.4 %), because the cache is rebuilt per lock.
+`[measured: PSP-1000, 2026-11-20, sprint 007, full table in `baselines.md`]`
+
 Not addressed by any of this: fill rate, blending bandwidth, texture-cache misses, GE transform
 throughput. Those bound a PSP at 480x272 long before submission overhead does in a fill-heavy scene.
-`[practice]`
+`[practice]` — but note the 4× fill probe above: for *this* workload, with submission removed, pixels were still
+not the wall. The vertex path is.
 
 ---
 
@@ -236,8 +257,32 @@ Goal: collapse per-object submission without leaving OpenGL yet.
 - Turn `rlSetTexture()` into a state transition: bind at submission, never unbind per sprite.
 - Use `GL_SPRITES_PSP` only for axis-aligned, unrotated, unflipped sprites; 4/6 vertices otherwise.
 - Allocate batch storage once; zero heap allocations per sprite or glyph.
+
+What pspGL does with this path, read from the adopted fork's source (sprint 007):
+- **`GL_QUADS` is not batched geometry.** `geprim_tab` in `pspgl_varray.c` maps `GL_QUADS` to
+  `GE_TRIANGLE_FAN`, so `glDrawArrays(GL_QUADS, 0, 4N)` renders one fan anchored on vertex 0 — every quad
+  after the first shares it and the frame fills with spikes. Quads must be expanded to two triangles on
+  push (6 vertices per sprite). This is invisible in `glBegin(GL_QUADS)`, which emits one fan per quad.
+- **Every `glDrawArrays` copies the arrays** into a GE-visible vertex buffer (`__pspgl_gen_varray`). The
+  copy is a plain `memcpy` when the layout is already GE-native, and a per-attribute convert loop
+  otherwise. Native means, in this order: texcoord 2×`f32`, weight, colour 8888 as 4 bytes, normal,
+  position 3×`f32` — so the 24-byte `{u,v, rgba, x,y,z}` interleaved layout is native and pays the
+  `memcpy` only `[public: pspgl_varray.c]`.
+- **`glLockArraysEXT` caches up to 128 KB of arrays once** and then draws from the cache; with the arrays
+  in a pspGL buffer object it skips even that copy (`__pspgl_cache_arrays`). Locking per draw buys
+  nothing — the cache is built on first use after the lock `[public: glLockArraysEXT.c]`.
+- **Colour must be 4 bytes or 3 floats.** `glColorPointer(3, GL_UNSIGNED_BYTE)` is packed by a convert
+  function; 3-float and 4-float colours are converted too. `GL_UNSIGNED_BYTE` with size 4 is passed
+  through as-is, i.e. memory order `r,g,b,a` → GE `0xAABBGGRR`.
+- **The default font atlas shares one texture id with the shapes texture** in 6.5-dev, so text and
+  untextured rectangles coalesce into a single draw call. A frame's submission count is therefore
+  "textures used", not "kinds of primitive `[measured: batch_check, 2 draws for 51 primitives]`.
 Exit: same-texture run of N sprites produces ~`ceil(N/capacity)` submissions; screenshots match the
 unbatched path; no per-sprite allocation measurable.
+
+**Outcome (sprint 007):** 1,000 sprites 66.73 → 33.37 ms, 5,000 → 100.11 ms, submissions 1,025 → 3 and 5,024 → 9,
+pixel-identical on a deterministic scene. Per-sprite marginal cost 62.6 → 16.7 µs. The residual is per submitted
+vertex (2.4–2.6 µs), which batching cannot remove — see §4 and the sprint's §9.
 
 ### Phase 5 — Native GU backend (`GRAPHICS_API_PSP_GU`)
 Goal: remove GL and pspGL from the hot path. This is the phase the whole fork exists for.
@@ -416,6 +461,11 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   code and overflow walks off the end of the list. Size the list from a real bound and assert.
 - **TEXCOORD is unsigned 16-bit.** Zero-centring UVs puts half the vertices across the wrap seam.
 - **Vertex colour is `0xAABBGGRR`**, not RGBA.
+- **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
+  `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
+  all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.
+  Expand quads to triangles yourself; the extra two vertices per sprite are the price `[measured:
+  batch_check on a PSP-1000: 240-vertex quad run drew a single fan]`.
 - **s16 positions are normalised.** Pair every s16 vertex buffer with a scale matrix.
 - **float24 matrices.** Big world coordinates tremble; render camera-relative.
 - **No X/Y clip.** A primitive with a vertex outside the window is dropped whole; tessellate.
