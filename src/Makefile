@@ -292,11 +292,21 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_MEMORY)
     # By default use OpenGL Software
     GRAPHICS = GRAPHICS_API_OPENGL_SOFTWARE
 endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
+    # PSP has no desktop GL; pspGL supplies an OpenGL 1.1 subset
+    GRAPHICS ?= GRAPHICS_API_OPENGL_11
+endif
 
 # Define default C compiler and archiver to pack library: CC, AR
 #------------------------------------------------------------------------------------------------
 CC = gcc
 AR = ar
+
+ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
+    # PSP cross toolchain from pspdev: $PSPDEV/bin must be on PATH
+    CC = psp-gcc
+    AR = psp-ar
+endif
 
 ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_GLFW)
     ifeq ($(PLATFORM_OS),OSX)
@@ -534,6 +544,22 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_RGFW)
             $(call wl_generate, $(WL_PROTOCOLS_DIR)/xdg-toplevel-icon-v1.xml, xdg-toplevel-icon-v1-client-protocol)
         endif
     endif
+endif
+
+ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
+    # -G0: no gp-relative small-data addressing; the PSP crt0 sets gp for its own
+    # layout, and gp-relative accesses from library code are not safe there.
+    CUSTOM_CFLAGS += -G0
+    # GCC 14+ promotes incompatible-pointer-types to an error by default, and
+    # external/m3d.h trips it. The 5.5 port carried the same suppression.
+    CUSTOM_CFLAGS += -Wno-incompatible-pointer-types
+    # Audio is phase 9. miniaudio has no PSP backend and pulls <dlfcn.h> for
+    # runtime linking, which this toolchain does not have. raudio is compiled out
+    # (config.h guards the whole module) so the renderer bring-up does not depend
+    # on it; the 5.5 port shipped the same way ("raudio: not loaded").
+    CUSTOM_CFLAGS += -DSUPPORT_MODULE_RAUDIO=0
+    # pspdev headers/specs define __PSP__ themselves, so it is not added here.
+    EXTRA_INCLUDE_PATHS += -I$(PSPDEV)/psp/include -I$(PSPDEV)/psp/sdk/include
 endif
 
 CFLAGS += $(CUSTOM_CFLAGS)
