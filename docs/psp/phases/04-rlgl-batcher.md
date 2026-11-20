@@ -97,6 +97,24 @@ CPU clears, per-frame texture uploads, per-draw state changes, a VRAM texture ca
 sync, one shared static vertex buffer for all instances, GE state left set between passes, and treating PPSSPP
 timings as hardware cost.
 
+## Reference in our own SDK: `psp/sdk/samples/gu/doublelist`
+
+288 lines, compiles with our toolchain, and it demonstrates the submission discipline the batcher needs rather
+than the batching itself. Read it before writing the flush path.
+
+| what it does | where | why it matters to us |
+|---|---|---|
+| two command lists, one per framebuffer: `list[2][512]`, 512 words each | `doublelist.c:28` | the packet is per-buffer, so nothing is reused while the GE may still read it |
+| builds each frame into the alternating packet with `sceGuStart(GU_SEND, pkt)` | `:200-202` | `GU_SEND` instead of `GU_DIRECT`: the list lives in main RAM and is handed over, not executed in place |
+| `sceGuDrawBufferList(...)` switches the draw buffer **inside** the packet | `:203` | output target is part of the packet, not global state |
+| `int g_packet_size = sceGuFinish();` then `sceKernelDcacheWritebackRange(pkt, g_packet_size);` | `:238-239` | **exactly the pattern we need**: writeback the precise range the GE will read, sized by what `sceGuFinish` returned — not a whole-cache flush |
+| `sceGuSync(GU_SYNC_SEND, GU_SYNC_WHAT_DONE)` after an optional `usleep` | `:247` | shows the send-then-wait split, and doubles as a way to measure GE time |
+| static sublists built once with `GU_CALL` | `:157-160` | the model for phase 5's static geometry |
+
+What it does **not** show, and phase 4 has to answer: how many primitives must share a packet for the
+`syscall`-per-submission cost to disappear, and what the flush rule is when texture and blend state change inside
+one frame. Take the packet handling, not the batching policy.
+
 ## Acceptance target
 
 The blueprint's phase-1 proof ("1,000 sprites at 60 fps, one bind per batch, pixel-exact 1:1 blit") is a better
