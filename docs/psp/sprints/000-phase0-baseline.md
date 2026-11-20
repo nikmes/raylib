@@ -15,9 +15,10 @@ template. Do not redo it.
 
 - If you are picking up the project: read this page in two minutes, then go to
   [sprint 001](001-phase1-import-platform.md). Nothing here needs your attention.
-- If you are checking the baseline still holds: `git -C /home/psp/raylib-psp rev-parse HEAD` should be
-  `02566453880e06bec97f5b8160fa6fe1e98397ca` on branch `psp-6.2`, and `git status` should be clean apart from
-  untracked docs.
+- If you are checking the baseline still holds: `git -C /home/psp/raylib-psp rev-parse 6.2` must be
+  `02566453880e06bec97f5b8160fa6fe1e98397ca`, and `git diff --stat 6.2 -- src/` must be **empty** — the branch
+  head is allowed to move ahead of the tag with documentation commits (`d70770e2` onwards), but no source file
+  may differ from the release yet. `git status` should be clean.
 - If the branch or remotes are gone, that is a regression against this sprint — recreate from tag `6.2` and
   record it in the task log rather than starting a new sprint for it.
 
