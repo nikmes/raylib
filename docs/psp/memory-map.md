@@ -93,6 +93,10 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | EDRAM for GE | 2 MiB, at `0x04000000` | `[public: pspgu/pspge]` |
 | Framebuffers (5551, 512x272 stride x2) + depth | 816 KiB, of which 272 KiB is depth | `[derived]` |
 | Textures left after the above | ~1.26 MiB | `[derived]` |
+| VRAM layout, 16-bit (blueprint's map) | draw `0x00000`, display `0x44000`, depth `0x88000` — 835,584 B used (`0xCC000`), **1,261,568 B free** | `[external: blueprint §16.3]` |
+| VRAM layout, 32-bit | three buffers at 557,056 + 557,056 + 278,528 = **1,392,640 B used**, only 704,512 B free | `[external: blueprint §16.3]` |
+| GE texture cache | **8 KiB**, coherent with nothing; only `sceGuTexFlush` empties it. A T8 128x128 texture (16 KiB) already misses within one triangle | `[external: blueprint §16.7]` |
+| Max texture the GE samples | **512 x 512**; larger images must be drawn as 512-wide windows | `[external: blueprint §16.7]` |
 | Vertex colour order | `0xAABBGGRR` | `[measured]` |
 | 16-bit texture coordinates | unsigned; zero-centred UVs wrap the long way round | `[measured]` |
 | s16 vertex positions | normalised (value/32768) in 3D transform mode | `[public: PPSSPP GE docs]` |
@@ -442,6 +446,12 @@ optional and both have rules that each cost a debugging session.
 | Cycle cost | `vadd`/`vmul` 1, `vdot` 1.2, special `.s` 1, `vmmul.q` 16, `vtfm4.q` 4, `vdiv.s` 14 (use `vrcp`+`vmul`), `vt5551.q` 1 per four pixels | `[public: vfpu-docs, PSP-3000]` |
 | Memory | `lv.q` ~15 B/cycle from D-cache, ~2 B/cycle from RAM; `lw` ~0.9 B/cycle from RAM | `[public: vfpu-docs, PSP-1000]` |
 
+**Build-time traps (from the blueprint's porting notes, §15.6):** `__builtin_vfpu_*` and `__builtin_allegrex_*`
+are Sony-compiler intrinsics and pspdev GCC 15.2.0 does not provide them — use `pspgum`, `pspvfpu.h` or inline
+asm. `libgum_vfpu.a` is GUM compiled with `-DUSE_VFPU=1` and is not the default GUM. Reserve matrices with
+`pspvfpu_initcontext()` / `pspvfpu_use_matrices()` before issuing VFPU instructions, and keep 16-byte alignment
+(`ScePspFVector4` / `ScePspFMatrix4`). `[external: blueprint §15.6]`
+
 Rules: a thread needs `PSP_THREAD_ATTR_VFPU` or its state is corrupted across switches (PPSSPP will not
 tell you). gcc does not model VFPU registers — never keep a value in one across `__asm__` blocks. pspsdk's
 `libpspgum_vfpu` uses matrices 0–3, so helpers should take 6–7. `vmmul`/`vtfm*`/`vqmul` need destination
@@ -531,6 +541,7 @@ written down.
 | `/home/psp/pspdev/psp/sdk/samples` | working examples, including `me/basic` (reset-vector takeover) |
 | `/home/psp/pspdev/psp/lib`, `.../sdk/lib` | shipped static libs: `libGL`, `libpspaudio`, `libpspaudiolib`, `libpspgu`, `libpspgum`, `libraylib` |
 | `/home/psp/psp_sdk_660` | Sony's official devkit SDK, kept as a reading aid — see below |
+| `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` | **not Sony material**: an AI-written map of that tree. **§16 is a renderer blueprint** (fixed constraints, VRAM map, 2D/3D paths, batching, levers, acceptance criteria) and §15 is a GU/VFPU symbol index. Summarised into [Phase 4](phases/04-rlgl-batcher.md) and [Phase 10](phases/10-3d-advanced.md) |
 | `/home/psp/.kimi-code/skills/psp-developer/references/` | the PSP skill: `rendering.md`, `textures-uv.md`, `ge-arithmetic.md`, `vfpu-math.md`, `media-engine.md`, `audio.md`, `memory-map.md`, `file-io-memory-stick.md`, `instrumentation.md`, `optimization-profiling.md`, `real-hw-gotchas.md`, `power-exit-sleep.md` |
 
 #### The Sony SDK: what it is for, and what it is not
