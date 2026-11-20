@@ -97,6 +97,61 @@ CPU clears, per-frame texture uploads, per-draw state changes, a VRAM texture ca
 sync, one shared static vertex buffer for all instances, GE state left set between passes, and treating PPSSPP
 timings as hardware cost.
 
+## What the four reference engines agree on (ranked by payoff)
+
+Scanned the memory maps and sources of `PSPRuntime`, `3D-PSP-Tutorials`, `PGE` and `openTRI`
+(`/home/psp/ref/`). They disagree on style and agree on physics: **four independent codebases, same ranking.**
+Ordered by expected effect on the measured bottleneck (58.3 µs per sprite at 1,000 sprites).
+
+| # | lever | why it is the lever | anchors |
+|---|---|---|---|
+| 1 | **Accumulate vertices, one `sceGuDrawArray` per (primitive, texture)** | collapses 1,000 submissions into 1–3. Everything else is a fraction of one submission's cost | `PSPRuntime/gpumanager.cpp:207-217`, `:1740-1829`; `openTRI/triFont.c:1201-1302`; `PGE/pgeFont.c:241` |
+| 2 | **One atlas, one bind per batch** | texture identity is the only remaining reason a batch splits; per-sprite rebind is 11 GU writes | `openTRI/triGraphics.c:1665,1694` (inverted); `PGE/pgeGfx.c` bind path |
+| 3 | **`GU_TRANSFORM_2D` (through mode)** | `sceGumDrawArray` composes a matrix and sets up VFPU *per call*; through mode makes a draw a pure command — the largest single CPU-side removal | `3D-PSP-Tutorials` ranking #2; `PGE` G7 |
+| 4 | **2-vertex `GU_SPRITES`** | halves the payload and deletes index traffic: triangle sprite is 4×24 B + 6×2 B = **108 B**, a 2-vertex sprite is **48 B** | `PSPRuntime` A3; `PGE` G7 |
+| 5 | **Hoist the state writes out of the per-sprite path** | the tutorial overlay does Disable-depth / TexFunc / TexMode / TexImage / Enable-depth *per sprite*; all five are constant across a batch | `3D-PSP-Tutorials` ranking #3 |
+| 6 | **Compact vertex: 8-bit UV, 16-bit position, 5551** | halves to quarters the list bytes; matters once the fixed per-draw cost is gone | `openTRI/triTypes.h:520-563`; `PGE` V-series |
+| 7 | **Cache the CLUT across a batch** | one `sceGuClutMode`/`ClutLoad` per palette change instead of per sprite | `openTRI/triGraphics.c:1657-1663` |
+| 8 | **Drop the depth buffer for the 2D path** | 272 KiB reclaimed (688 → 960 KiB free) and removes the per-call `GU_DEPTH_TEST` toggling | `PGE` G11 |
+| 9 | **Keep `GU_SPRITES` out of the triangle path entirely** | mixing primitive types splits batches | `PSPRuntime` A2 |
+
+**What they all rank low, and we should too:** VFPU trig (`vfpu_sinf` instead of `sinf` — free, but sub-1 % of
+a submission), VRAM swizzle and residency (raise the ceiling on batch size, don't lower per-sprite time), and
+`GU_SEND` dual lists (pointless when the CPU is the constraint; costs a frame of latency and 2× list memory).
+
+### Where the engines contradict the blueprint: 64-pixel slicing
+
+The renderer blueprint recommends drawing wide images as **32–64 px vertical strips** for texture-cache locality.
+Three of the four engines do exactly that — and all three rank it as **wrong for us**: a strip is one more draw
+call per 64 px of width, which is the opposite of what a submission-bound renderer needs.
+
+| source | policy | verdict here |
+|---|---|---|
+| blueprint §16.5 | slice wide blits into 32–64 px strips | only after GE texture stalls are *measured* |
+| `openTRI/triGraphics.c:1672-1680` | slices | a draw-call multiplier |
+| `PGE/pgeGfx.c:978`, `:1088` | slices, plus a rotated path that turns 1 submission into 4 | same |
+| `PSPRuntime` | does not slice for the batch path | consistent with batching |
+
+Decision for phase 4: **do not slice**. Reintroduce only if the profiler shows texture-cache stalls dominating,
+and then as a measured A/B.
+
+### Do not copy — found in these trees
+
+- `PSPRuntime/gpumanager.cpp:1661` — `else if (bType = ALPHA_ADD)`: assignment, always true, so every blend request
+  becomes additive, and the static `prevmode` (`:1644`) is shared across instances.
+- `PSPRuntime/gpumanager.cpp:463-468` — rewrites `currentTexture` without flushing, so a mixed-texture batch
+  renders wholly with the last texture.
+- `PSPRuntime` flush allocates ~96 KiB of command list per flush (~21 flushes then `sceGuGetMemory` overruns and
+  the dead NULL check calls `sceKernelExitGame`). Preallocate once per frame instead.
+- `3D-PSP-Tutorials/graphics.c:176` — `sceKernelDcacheWritebackInvalidateAll()` **per blit call**. In a
+  per-sprite path that is 1,000 full D-cache flushes a frame and would dominate the entire budget by itself.
+- `3D-PSP-Tutorials/LoadingScreen.cpp:32-78` — a second thread running `sceGuStart`/swap while the main thread
+  blocks on the same display: two submitters, no synchronisation.
+- `PGE/pgeGfx.c:421-425` — `PGE_BLEND_MODE_TRANSPARENT` sets `GU_FIX` factors of `0xFFFFFFFF`, i.e. **additive**,
+  and `pgeGfxDrawTextureColored` (`:1071`) never restores it: every later draw stays additive.
+- `openTRI/triTexman.c:95-115` — evicts textures the GE may still be sampling, with no `sceGuTexSync` in the free
+  path (`:88-93`) even though the bind path does sync (`:357`).
+
 ## Reference in our own SDK: `psp/sdk/samples/gu/doublelist`
 
 288 lines, compiles with our toolchain, and it demonstrates the submission discipline the batcher needs rather

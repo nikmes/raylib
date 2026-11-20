@@ -98,6 +98,38 @@ exactly why float24 matrix precision is a trap at all. What the GE lacks is prog
 lighting model the CPU can leave to it. Do not move transforms to the CPU on the strength of that sentence —
 measure, and keep camera-relative rendering for precision.
 
+## What the four reference engines offer for 3D (ranked)
+
+Same scan as phase 4: `PSPRuntime`, `3D-PSP-Tutorials`, `PGE`, `openTRI` (`/home/psp/ref/`), memory maps verified
+against source. These are the items that matter once the 2D submission wall is gone — none of them help the
+measured 58.3 µs/sprite.
+
+| # | lever | mechanism | anchors |
+|---|---|---|---|
+| 1 | **CPU-side matrix maths in VFPU registers** (`vmmul.q`, `vqmul.q`, `vmov.q`) | one 4×4 multiply for N vertices instead of N; keep the loop in registers from load to store | `openTRI/triVMath_vfpu.c` (but see the erratum below) |
+| 2 | **Double-buffered dynamic vertex arrays** | required by the `GU_SEND` submission model: the list borrows pointers, so a buffer may not be rewritten while the GE reads it | `openTRI/triParticle.c:162-169,760`; `triGraphics.c:396-409` |
+| 3 | **GE skinning for a hero character, cached CPU skinning for crowds** | 7.2× on one hot instance, loses on 112 draws (4.9 vs 2.0 ms) — animation LOD, not one policy | blueprint §16.6, consistent with our own findings |
+| 4 | **VRAM-resident, swizzled atlases for 3D materials** | second-order for CPU cost, first-order once GE texture fetch becomes visible | `openTRI/triTexman.c:406-440`, `triImage.c:256-317` |
+| 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c` |
+| 6 | **`GU_SEND` dual lists** | ranked last even here: costs a frame of latency and 2× list memory, and buys nothing while the CPU is the constraint | `openTRI/triGraphics.c:396-409` |
+
+### Do not copy — 3D-specific hazards found
+
+- `openTRI/triVMath_vfpu.c:2008` — `vcrsp.t c010, c010, c020` writes the cross product into a source register: a
+  restricted VFPU form, rejected by the assembler and undefined on hardware. `openTRI`'s memory map suggests
+  "guarding for binutils" instead; that is wrong, the code is wrong.
+- `openTRI/tri3d.c:386` — allocates `(ysteps*(xsteps+1)+(ysteps-1))*2` vertices then calls `sceGuDrawArray(..., 2, ...)`:
+  a hardcoded count, so the whole grid renders as one strip.
+- `openTRI/tri3d.c:155` vs `:185` — render target allocated as `twidth * height` but declared to the GE as
+  `twidth × theight`; any non-power-of-two height makes sampling read past the allocation into whatever VRAM follows.
+- `openTRI/triImage.c:291,371` — detects RAM-vs-VRAM by comparing an address against `0x04200000`, and
+  `triDrawImage` never writes back a palette edited in RAM before `sceGuClutLoad` (`triFont.c:1037` does it
+  correctly, so the rule was known).
+- `openTRI/triTexman.c:470-495` — returns sizes for `GU_PSM_DXT1/3/5`. Those enum values exist in `pspgu.h` but the
+  GE has no S3TC decoder: anything built on that branch is dead weight.
+- `3D-PSP-Tutorials/LoadingScreen.cpp:32-78` — a second thread submitting GU lists and swapping buffers while the
+  main thread blocks on the same display, then `sceKernelTerminateDeleteThread`.
+
 ## Sprints and features
 
 None yet. Use the [sprint template](../templates/sprint.md).
