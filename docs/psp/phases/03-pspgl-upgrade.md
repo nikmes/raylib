@@ -41,9 +41,14 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 
 ## Exit criteria
 
-- [ ] delta table with control and control-again, at more than one bunny count
+- [x] delta table with control and control-again, at more than one bunny count: N=1000 and N=5000, two runs per
+      arm, control within 0.03 % of shipped
 - [x] decision recorded in [§8](../memory-map.md#8-decision-log) with its evidence
-- [ ] if adopted: the build is reproducible and the licence (BSD-3) is unchanged
+- [x] adopted, and the build is reproducible via `tools/pspgl-build.sh` (content hash `2ab7378e…`); licence BSD-3
+
+**Result: −31.8 % on 2D sprite work.** −10.0 % from the fork's 11 commits (90.29 → 81.24 ms at N=1000), then
+−24.1 % from `PSPGL_DLIST_SIZE_WORDS=8192` (81.24 → 61.63 ms). 86.5 → **58.3 µs per sprite**; ~287 sprites fit a
+16.7 ms frame instead of ~181. Costs 512 KiB of main RAM for the command lists.
 
 ## Sprints and features
 
