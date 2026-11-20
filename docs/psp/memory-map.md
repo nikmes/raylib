@@ -26,7 +26,7 @@ Last verified: 2026-11-20. Branch `psp-6.2` (tag `6.2`, commit `02566453`).
 | item | state |
 |---|---|
 | Base | raylib **6.2**, tag `02566453`, full history, branch `psp-6.2` |
-| `master` | **merged** (`2fe3e5fb`): `psp-6.2` merged into 6.5-dev. Compiles and links; **not yet run on device** |
+| `master` | **merged** (`2fe3e5fb`): `psp-6.2` merged into 6.5-dev. **Validated on device** — 600 frames, 30 fps, 284 colours, no exception |
 | Remotes | `origin` = `nikmes/raylib` (fork), `upstream` = `raysan5/raylib`, `consoles` = `mcidclan/raylib4Consoles` |
 | PSP platform code | **imported** — sprint 001 closed: 824 lines across 5 files |
 | Build on PSP | works: `libraylib.a` 1,718,210 B (6.2), 0 warnings, 0 stub warnings |
@@ -329,7 +329,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 
 | date | decision | evidence |
 |---|---|---|
-| 2026-11-20 | Merged `psp-6.2` into `master` (6.5-dev) at the user's request | merge had 0 textual conflicts; the merged tree compiles (0 errors, 0 warnings) and links `basic_shapes.prx` (1,415,522 B). Runtime unvalidated - the only device evidence is on 6.2 |
+| 2026-11-20 | Merged `psp-6.2` into `master` (6.5-dev) at the user's request | 0 textual conflicts; merged tree compiles (0 errors, 0 warnings), links `basic_shapes.prx` (1,415,522 B) and **runs on the device**: 600 frames, 30 fps, 284 colours, no exception |
 | 2026-11-20 | Base on release tag 6.2, not `master` (6.5.0-dev) | stable baseline; full history keeps `git merge` available |
 | 2026-11-20 | Start from upstream raylib, not from the port repos | `raylib4Psp` holds no library code; fork `master` is pure upstream 6.0; the PSP delta is one platform file |
 | 2026-11-20 | Stage A on pspGL before any native backend | gives a working 6.2 to compare against, and the GL11 call list becomes the GU spec |
