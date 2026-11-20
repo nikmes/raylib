@@ -80,6 +80,7 @@ nav:
           - psp/sprints/004-phase2-baselines.md
           - psp/sprints/005-phase3-pspgl-ab.md
           - psp/sprints/006-phase3-decide.md
+          - psp/sprints/007-phase4-batch-skeleton.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

@@ -185,4 +185,6 @@ and it is in the sprint's exit criteria rather than in a wish list.
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+- [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../sprints/007-phase4-batch-skeleton.md)
+  — the smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms of one
+  commit, and the pending-texture rule that makes batching work at all
