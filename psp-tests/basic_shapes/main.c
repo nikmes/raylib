@@ -199,9 +199,19 @@ int main(void)
 
     // De-Initialization
     //---------------------------------------------------------
-    CloseWindow();        // Close window and OpenGL context
+    // NOTE (sprint 001): deliberately does NOT call CloseWindow(). Its last step is
+    // sceKernelExitGame(), and on this PSPLink build that ends the shell session and
+    // drops the console back to the XMB - the USB device disappears and the host
+    // loses control mid-session. resetonexit=0 only suppresses the reset loop, not
+    // the session ending.
+    //
+    // Instead the test announces completion and sleeps with the module resident, so
+    // the host decides what happens next: `reset` in pspsh starts the next run. That
+    // keeps the whole test loop host-driven.
+    TraceLog(LOG_INFO, "DONE frames %i  fps %i", frames, GetFPS());
+    sceKernelSleepThread();
     //----------------------------------------------------------
-    
+
     finishApp();
     return 0;
 }

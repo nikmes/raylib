@@ -285,6 +285,16 @@ profile.
 - Log a build number and the counter set at boot; a screenshot without a build number is not evidence.
 - A probe must touch what it claims to measure. A counter that can be incremented two ways must be
   split.
+- **Keep the shell attached for the whole run.** `pspsh -e` exits after issuing the command and takes the
+  app's `TRACELOG` output with it: `( printf './app.prx\n'; sleep 30; printf 'exit\n' ) | pspsh`. A crash
+  whose report was never read looks exactly like a hang `[measured]`.
+- **The test must not call `sceKernelExitGame`.** On PSPLink v3.2.1 that ends the shell session and drops
+  the console to the XMB, device gone; `resetonexit=0` only suppresses the reset loop. Log `DONE` and
+  `sceKernelSleepThread()` instead, then `reset` from the host — that keeps the whole loop host-driven
+  `[measured]`.
+- **Do not `scrshot` while the app is rendering.** Two captures 2 s apart came back pixel-identical on an
+  animating demo, and the frame log stopped at the capture: the app is frozen by the read, not idle. Capture
+  before the loop redraws, or have the app save its own frame `[measured]`.
 
 ---
 
