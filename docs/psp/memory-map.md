@@ -191,18 +191,36 @@ batcher has to reach, and the number to beat when the native backend lands.
 | 5,000 | batched | **9** | 30,150 | **100.107 ms** | 81.91 ms |
 
 - Marginal cost per sprite drops **62.6 → 16.7 µs**; the 46 µs that went away was submission, exactly as phase 4
-  predicted. A frame now holds **~790 sprites** at 60 fps.
-- **The residual is per submitted vertex** (2.4–2.6 µs each), not per draw call and not per pixel: 3 draws cannot
-  cost 14.6 ms, and 4× the fill costs 0.1 %. HUD-only floor is 3.46 ms.
+  predicted.
 - pspGL maps `GL_QUADS` to a GE **triangle fan**, so batched quads must be expanded to triangles: 6 vertices per
   sprite instead of 4.
 - `glLockArraysEXT` around each draw: **no effect** (+0.4 %), because the cache is rebuilt per lock.
 `[measured: PSP-1000, 2026-11-20, sprint 007, full table in `baselines.md`]`
 
+**The compiler, not the vertex path** (sprint 008, and it corrects the row above). Sprint 007 read the remaining
+16.7 µs per sprite as per-vertex cost. Sprint 008 cut vertices per sprite 6 → 2 with `GL_SPRITES_PSP` and the frame
+did not move: **33.369 ms**, the same to 0.002 ms. The residual was never per-vertex — it was **unoptimised code**.
+`src/Makefile`'s `RELEASE` block covers desktop, web and android only, so every PSP library built until then came
+out of `psp-gcc` at **`-O0`**, while pspGL itself is built `-Os`. `PSP_OPT` now defaults to `-O2`:
+
+| bunnies | unbatched `-O0` | unbatched `-O2` | batched `-O0` | batched `-O2` | at `-O2`, sprites (2 v) |
+|---|---|---|---|---|---|
+| 1,000 | 66.733 ms | 50.051 ms | 33.367 ms | **16.683 ms** | 16.683 ms |
+| 5,000 | 316.98 ms | — | 100.107 ms | 66.733 ms | 66.733 ms |
+
+- **1,000 sprites at 60 fps**, byte-identical picture (`batch_check` md5 unchanged between `-O0` and `-O2`). The
+  batched/unbatched ratio widened from 2.0× to 3.0×.
+- **60 fps ceiling**, measured by bisection at `-O2`: triangles fall to 30 fps between **1,200 and 1,300** sprites,
+  sprites between **1,500 and 1,700**. Below 1,000 the `-O0` arm was already out of budget.
+- **Per-draw cost is what batching removed, and it is large**: 48.8 ms of work for 1,025 submissions at N=1,000 is
+  ~45 µs per `glEnd`. A mixed sprite/triangle scene (every second sprite rotated) issues **1,001 draws/frame** and
+  costs **83.4 ms** — worse than not having sprites at all. Two buffers, or a bind cache that stops re-binding the
+  same texture, are the fix (phase 4, sprint 009).
+`[measured: PSP-1000, 2026-11-20, sprint 008]`
+
 Not addressed by any of this: fill rate, blending bandwidth, texture-cache misses, GE transform
 throughput. Those bound a PSP at 480x272 long before submission overhead does in a fill-heavy scene.
-`[practice]` — but note the 4× fill probe above: for *this* workload, with submission removed, pixels were still
-not the wall. The vertex path is.
+`[practice]`
 
 ---
 
@@ -364,12 +382,21 @@ CPU cost measured, five minutes without a dropout, and no `sceAudio` call on the
 - Culling: GE-side object culling and static bounds, as in the reference engines.
 Exit: a 3D sample at target frame rate with no per-frame full waits.
 
-### Phase 11 — Release gate
-Four configurations on the same console, same workload: original pspGL + unbatched raylib; upgraded
-pspGL + unbatched; upgraded pspGL + batched; native GU. Report frame-time percentiles, submission
-counts, GE waits, VRAM high-water, screenshots. Decide from the results whether anything still needs
-the direct-GU path. Input and audio are checked in the same run: neither may appear in the frame
-profile.
+### Phase 11 — General optimisation outside the renderer
+Goal: remove costs that never show up in a draw-call count — compiler and linker flags, raylib's compile-time
+feature surface, soft-float `double`, heap allocation and fragmentation, Memory Stick I/O, logging and startup.
+`-O2` is the first measured example (33.367 → 16.683 ms at N=1,000, sprint 008); `-O3`/`-Os`, LTO, fast-math and
+the `SUPPORT_*` flags in `config.h` are still open. Not in scope: `rlgl`, batching, draw paths, VRAM allocation,
+input mapping, the audio backend. Exit: a real frame and a real load with every CPU, I/O, allocation and
+GE-wait cost accounted for; no `double`, allocation, file open or log write in a steady frame; flags and config
+chosen by A/B, with `.text` size recorded.
+
+### Phase 12 — Release gate
+Four configurations on the same console, same workload, same clocks, and the same Phase 11 build flags:
+original pspGL + unbatched raylib; upgraded pspGL + unbatched; upgraded pspGL + batched; native GU. Report
+frame-time percentiles, submission counts, GE waits, VRAM high-water, screenshots. Decide from the results
+whether anything still needs the direct-GU path. Input and audio are checked in the same run: neither may
+appear in the frame profile.
 
 ---
 

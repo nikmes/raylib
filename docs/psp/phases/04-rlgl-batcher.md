@@ -184,18 +184,24 @@ acceptance criterion than "faster than before", because it is a number we alread
 So phase 4 has to buy **3.7×** on this workload to hit 60 fps at 1,000 sprites. That is the number to design to,
 and it is in the sprint's exit criteria rather than in a wish list.
 
-**Where sprint 007 left it:** batching bought 2.0× (66.73 → 33.37 ms same-session; the 61.63 in the row above is
-the older archived figure), which is 2.0× of the 3.7×. What remains is **per submitted vertex**, not per draw call
-and not per pixel — 3 draw calls per frame at N=1,000, and 4× the fill costs 0.1 %. Phase 4 cannot reach 16.7 ms by
-batching harder; the remaining levers are fewer vertices per sprite and a shorter path from vertex to GE, which is
-what phase 5 is.
+**Where sprints 007 and 008 left it:** batching bought 2.0× at `-O0` and 3.0× at `-O2` (unbatched 50.05 →
+batched 16.68 ms at N=1,000), 1,025 draw calls per frame became 2–3, and 1,000 sprites now run at **60 fps**. The
+`sprite` primitive added ~18 % on top and moved the 60 fps ceiling from 1,200–1,300 sprites to 1,500–1,700. What
+stops us there is no longer submission: it is the GE's **blended fill** — 4× the pixel area at N=1,500 takes the
+frame from 16.68 to 50.05 ms with CPU work unchanged.
 
-## Sprints and features
+That re-prices the rest of the phase. Compacting vertices and shaving the vertex path are now worth single-digit
+percent; the ceiling is pixels. Which lever matters next depends on one measurement that has not been taken: the
+`PSPRuntime` reference's claimed ~5,000 sprites at 60 fps, which would be 5.1 M texels per frame against our measured
+1.5 M. See [sprint 008 §10](../sprints/008-phase4-sprite-primitive.md).
+
+## Sprints and features## Sprints and features
 
 - [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../sprints/007-phase4-batch-skeleton.md)
   — **done**. The smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms
   of one commit, and the pending-texture rule that makes batching work at all. 62.6 → 16.7 µs per sprite; the
   residual is linear in vertices and flat in pixels
 - [Sprint 008 — Two-vertex sprites: the last lever inside GL11](../sprints/008-phase4-sprite-primitive.md)
-  — submit axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, a primitive pspGL already maps to `GE_SPRITES`)
-  instead of two triangles (6). Predicted 15 → 5 ms of vertex work at N=1,000, i.e. 60 fps without leaving GL11
+  — **done**. Axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, pixel-identical), and the discovery that the
+  library had never been compiled with optimisation: `-O2` took 1,000 sprites from 33.37 to **16.68 ms**. The
+  residual is now blended fill, not submission

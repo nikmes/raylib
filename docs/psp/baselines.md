@@ -17,6 +17,36 @@ anything to it.
 | Measurement | `GetFrameTime()` per frame, sorted at `DONE`; percentiles over the run |
 | Binary | `/home/psp/evidence/sprint004/bunnymark-n1000.prx`, sha256 `b4160cad…` |
 
+## Optimisation level: the re-baseline that matters most (sprint 008)
+
+Every number below this section was measured with the library compiled at **`-O0`**. `src/Makefile` applies
+optimisation in a `RELEASE` block that covers desktop, web and android only, and the PSP block had never added its
+own, so `psp-gcc` used its `-O0` default — while pspGL itself is built `-Os`. `PSP_OPT` now defaults to `-O2`
+(`make PLATFORM=PLATFORM_PSP PSP_OPT=-O0` reproduces the old measurements). Same console, same protocol, same
+commit, two runs per cell:
+
+| bunnies | unbatched `-O0` | unbatched `-O2` | batched `-O0` | batched `-O2` (triangles) | batched `-O2` (sprites) |
+|---|---|---|---|---|---|
+| 100 | 16.683 | 16.683 | 16.683 | 16.683 | 16.683 |
+| 1,000 | 66.733 | 50.051 | 33.367 | **16.683** | **16.683** |
+| 5,000 | 316.98 | — | 100.107 | 66.733 | 66.733 |
+
+**1,000 sprites at 60 fps**, and the picture is byte-identical between `-O0` and `-O2` (`batch_check` md5
+`c4eb44e7…`, 0 differing bytes). The archive shrinks 1,838,280 → 1,184,972 B.
+
+The 60 fps ceiling, bisected at `-O2` (the frame leaves 16.683 ms in exactly one step, so these are brackets of
+100–200 sprites, not interpolations):
+
+| arm | 60 fps at | 30 fps at | ceiling |
+|---|---|---|---|
+| unbatched, `-O2` | — | 1,000 (50.05 ms) | below 1,000 |
+| batched, triangles, `-O2` | 1,200 | 1,300 | 1,200–1,300 |
+| batched, sprites (2 v), `-O2` | 1,500 | 1,700 | 1,500–1,700 |
+
+Before this, at `-O0`, 1,000 sprites was already 30 fps in the batched arm. **Treat the two tables further down as
+history**: they are still the record of what batching and the pspGL list size bought, but they are not what the code
+does today.
+
 ## Adopted library (current reference)
 
 Since sprint 006 the project ships **pspGL from `TheMrIron2/pspgl` @ `ae9a668`, `PSPGL_DLIST_SIZE_WORDS=8192`**,
@@ -85,7 +115,7 @@ Same 1,000 sprites, same submission count, drawn at 4× size (16× the pixels):
 16× the pixels costs 5.7 %; 5× the sprites costs 5×. **The workload is submission-bound, not fill-bound**, so
 collapsing N submissions into `ceil(N/capacity)` is the right lever and phase 4's premise holds.
 
-## Batched reference (sprint 007)
+## Batched reference (sprint 007, `-O0`, historical)
 
 Same workload, `PSP_BATCH=1`: one static 4,096-vertex buffer, one `glDrawArrays` per texture run, quads expanded
 to two triangles (pspGL maps `GL_QUADS` to a GE triangle fan, so a quad *run* cannot be sent as quads).
@@ -110,8 +140,9 @@ until the archived rows are re-taken.
 - ~**181 sprites** fit in a 16.7 ms frame today (16.7 / 0.0865).
 - At 86.5 µs per sprite, a 60 fps 2D game has room for roughly 180 unbatched sprites. With 1,024 sprites per
   draw call — what a hand-written GU renderer achieves — the same frame would spend its time on pixels instead.
-- Batched, the frame holds **~790 sprites** at 60 fps ((16.68 − 3.46) / 0.0167) and runs 1,000 at 30 fps. The
-  sentence above about pixels was measured and is wrong for this workload: 4× the fill costs 0.1 % once
-  submission is gone, so the frame is limited by vertices, not by what they cover.
+- Batched at `-O0`, the frame held ~790 sprites at 60 fps; batched at `-O2` it holds **1,500–1,700** with the
+  sprite primitive and **1,200–1,300** with triangles, and 1,000 sprites run at 60 fps. The sentence above about
+  pixels is wrong for this workload at `-O0` (4× the fill cost 0.1 %); at `-O2` it has not been re-tested, and the
+  ceiling probe that would settle it is a follow-up.
 - Any change worth reporting must move a median by more than **0.1 %**; run-to-run noise is far below that, so a
   single run per arm is adequate *on the same build and session*, and two runs remain the habit.

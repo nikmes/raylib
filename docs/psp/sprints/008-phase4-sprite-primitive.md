@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
 | Branch / base commit | `master` @ `1bb0bea6` |
-| Started / closed | — / — |
-| Build number(s) | `b3` (sprint 007 batched, `2ee10d2a…`), `b4` (this sprint) |
-| Tasks | 0/5 done |
+| Started / closed | 2026-11-20 / 2026-11-20 |
+| Build number(s) | `b3` triangles `-O0` `2ee10d2a…`, `b4` sprites `-O0` (archive saved), `b5` unbatched `-O2`, `b6` triangles `-O2`, `b7` sprites `-O2`, `b8` no-sprites `-O2` |
+| Tasks | 5/6 done, 1 dropped |
 
 ## 0. Handover
 
@@ -122,17 +122,27 @@ measurement harness.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **eligibility test**, in `rlPspBatchVertex` on the assembled quad: the four corners `TL, BL, BR, TR` form an axis-aligned rectangle and the four texture coordinates match the same corners, i.e. `x0==x1`, `x2==x3`, `y0==y3`, `y1==y2`, and `u`/`v` monotone in the same sense. Emit `(TL, BR)` and their two UVs as `GL_SPRITES_PSP` when eligible, the existing two triangles when not | `todo` | `batch_check` grid renders identically to `b3`; `arrayVerts`/frame at N=1,000 drops from 6,150 to ≈2,050 + HUD → expected: ≤2,200 | — |
-| T2 | **mode runs**: a batch holds sprite quads or triangles, never both. On a change, flush. Count the flushes so a mixed scene's cost is visible, and add a bunnymark build that draws every other sprite rotated (`ROTATE_ODD=1`) to measure the worst case honestly | `todo` | unrotated run: 1 draw per 2,048 sprites, i.e. **1** at N=1,000; mixed run: flushes ≈ N/2 and the frame time is reported, not hidden | — |
-| T3 | **the measurement**: N=100 / 1,000 / 5,000, two runs, `TARGET_FPS=0`, plus the fill probe (`SPRITE_SCALE=2`) at N=1,000 to confirm sprites did not move the workload onto pixels | `todo` | frame median at N=1,000 **≤16.7 ms** → expected 8–10 ms work; N=5,000 ≈28 ms; the 4×-fill probe within 2 % of the 1× probe | — |
-| T4 | **vertex format for the sprite path** (only if T3 leaves the frame short of 16.7 ms): `GL_UNSIGNED_SHORT` UVs and `GL_UNSIGNED_SHORT_5_5_5_1` colour if pspGL's array path accepts them, cutting the per-vertex conversion and the GE's read width | `todo` | 24 B → 16 B per vertex and a measured delta, or a recorded "pspGL rejects the type" with the `assert`/`GLERROR` that says so | — |
-| T5 | **the GL11 ceiling**, stated as a number: the largest N that holds 60 fps, the cost per sprite at the ceiling, and the gap to the `PSPRuntime` reference (~5,000 at 60 fps, unverified by our protocol). This is what phase 5 has to beat and the number §9 must publish | `todo` | a table: N vs frame, with the 16.68 ms line crossed and the per-sprite cost on each side of it | — |
+| T1 | **eligibility test** on the assembled quad (axis-aligned corners, UVs following the same corners, one colour and depth) emitting `(TL, BR)` as `GL_SPRITES_PSP`, two triangles otherwise | `done` | `arrayVerts`/frame at N=1,000 drops 6,150 → **2,050**; `batch_check` pixel-identical | 3× fewer vertices exactly as designed: 6,150 → 2,050 at N=1,000, 30,150 → 10,050 at N=5,000. **Pixel check: 0 differing bytes** against the triangle arm, including a row at fractional coordinates and a rotated sprite |
+| T2 | **mode runs**: one primitive per batch, flush on change; worst case measured with `ROTATE_ODD=1` rather than estimated | `done` | unrotated: 1 draw per 2,048 sprites; mixed: flushes ≈ N/2, reported not hidden | unrotated N=1,000: **2 draws/frame** (1 sprite batch + HUD). Mixed (`ROTATE_ODD`): **1,001 draws/frame** and 83.417 ms — the ping-pong is worse than the triangle path. Recorded as the reason sprint 009 needs two buffers or a texture-bind cache |
+| T3 | **the measurement**: N=100 / 1,000 / 5,000, two runs, `TARGET_FPS=0`; plus the fill probe | `done` | frame median at N=1,000 ≤16.7 ms | **Not met by the sprite path.** At `-O0` the sprite arm measured 33.369 ms — the same as 6 vertices — which is what exposed T6. At `-O2`: **16.683 ms** (60 fps) |
+| T4 | **vertex format** (`u16` UVs, `5551` colour) if T3 leaves the frame short of 16.7 ms | `dropped` | — | Not needed: with `-O2` the frame is at the vsync cap at N=1,000. The remaining headroom question is answered by T5, and compact formats are a phase-5 lever with a measured target: 0.44 µs per submitted vertex (T6) |
+| T5 | **the GL11 ceiling** as a number: largest N holding 60 fps, per arm | `done` | a table with the 16.68 ms line crossed | sprites hold 60 fps at 1,500, fall to 30 fps at 2,000; triangles already at 30 fps at 1,500 — bisection for both in §7 |
+| T6 | **unplanned, and the sprint's real finding**: the PSP library had never been optimised. `src/Makefile`'s `RELEASE` block covers desktop/web/android only, so raylib was built at `-O0` while pspGL is `-Os`. Add `PSP_OPT` (default `-O2`) and measure the levels | `done` | `-O2` moves the frame and does not change a pixel | 1,000 sprites: batched 33.367 → **16.683 ms**, unbatched 66.733 → 50.051 ms. `batch_check` identical at `-O0` and `-O2` (md5 `c4eb44e7…`, 0 differing bytes). Archive 1,838,280 → 1,184,972 B |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — sprint opened, all tasks `todo`
+- 2026-11-20 — T1 `done`: sprite path in, `arrayVerts` 6,150 → 2,050/frame at N=1,000
+- 2026-11-20 — T1 correctness `done`: `batch_check` extended with a fractional-position row and a rotated
+  sprite, both arms captured, **0 differing bytes**
+- 2026-11-20 — T2 `done`: 2 draws/frame unrotated; `ROTATE_ODD` measures the ping-pong at 1,001 draws/frame
+- 2026-11-20 — **T3 measured 33.369 ms — unchanged from 6 vertices per sprite.** 3× fewer vertices bought 8 % of
+  the work. The sprint's premise (cost is per submitted vertex) is falsified; started T6
+- 2026-11-20 — T6 `done`: the library was compiled at `-O0`. `PSP_OPT` added, default `-O2`; N=1,000 drops to
+  **16.683 ms** (60 fps) with a byte-identical picture. This is the largest single win measured in the project
+- 2026-11-20 — T4 `dropped`: the exit criterion is met without compact vertex formats
 
 ## 6. Budgets
 
@@ -147,40 +157,145 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Protocol: device only; one variable per run; control (`b3`) → change (`b4`) → control again. Two runs per row.
+Device only, one `reset` per run, two runs per cell, run-to-run agreement ≤0.005 ms. `work` is `frame − swap`
+from the app's own split; it is quoted because the frame medians are quantised to display periods.
 
-| run | build | workload | metric | value | notes |
-|---|---|---|---|---|---|
-| control | b3 | N=1,000 | frame / vertices per frame | 33.367 ms / 6,150 | sprint 007, same session, re-run first |
-| change | b4 | N=1,000 | | | |
-| change | b4 | N=5,000 | | | |
-| change | b4 | N=1,000, `SPRITE_SCALE=2` | | | fill probe |
-| change | b4 | N=1,000, `ROTATE_ODD=1` | | | worst-case ping-pong |
-| control again | b3 | N=1,000 | | | |
+**The matrix.** Six arms: {unbatched, batched triangles, batched sprites} × {`-O0`, `-O2`}.
 
-Pixel comparison: `batch_check` `b3` vs `b4`, byte count and, if nonzero, the differing pixel count and whether
-every one lies on a sprite boundary.
+| N | unbatched `-O0` | unbatched `-O2` | triangles `-O0` | triangles `-O2` | sprites `-O0` | sprites `-O2` |
+|---|---|---|---|---|---|---|
+| 100 | 16.683 (9.16) | 16.683 (6.26) | 16.683 (3.55) | 16.683 (1.90) | 16.683 (3.47) | 16.683 (1.69) |
+| 1,000 | 66.733 (65.70) | 50.051 (48.78) | 33.367 (18.09) | **16.683** (9.85) | 33.369 (16.70) | **16.683** (8.06) |
+| 5,000 | 316.98 (317.19) | — | 100.107 (81.91) | 66.733 (45.28) | 100.100 (75.70) | 66.733 (36.41) |
+
+Frame medians in ms, `work` in parentheses. The 5,000 unbatched `-O2` cell is missing: the host window closed
+before `DONE` and the next `reset` killed a live app — the row is not needed for any conclusion here.
+
+Two things to read out of it, in order of size:
+
+1. **`-O2` is worth more than every batching change combined.** At N=1,000 batched it halves the frame
+   (33.367 → 16.683) and the library shrinks 1,838,280 → 1,184,972 B. Nothing in `src/` changed but one `-O2`.
+2. **At `-O2` the sprite primitive is worth 18 % of the work** at N=1,000 (9.85 → 8.06 ms) and 20 % at N=5,000
+   (45.28 → 36.41). Invisible in the frame medians at those N because both sit inside a display period — and that
+   is exactly why the ceiling had to be bisected to see it.
+
+**The 60 fps ceiling**, bisected at `-O2`:
+
+| N | triangles | sprites (2 v) |
+|---|---|---|
+| 1,000 | 16.683 (60 fps) | 16.683 (60 fps) |
+| 1,200 | 16.683 (60 fps) | — |
+| 1,300 | **33.366 (30 fps)** | — |
+| 1,500 | 33.367 (30 fps) | **16.684 (60 fps)** |
+| 1,700 | — | **33.367 (30 fps)** |
+| 1,800 | — | 33.368 (30 fps) |
+| 2,000 | 33.372 (30 fps) | 33.367 (30 fps) |
+
+So: **triangles hold 60 fps to 1,200–1,300 sprites, sprites to 1,500–1,700.** The sprite primitive buys roughly
+25 % more sprites at the ceiling for 18 % less per-sprite work, which is the honest accounting of T1.
+
+**What the ceiling actually is.** Same N=1,500, same 3,050 vertices, four times the pixel area:
+
+| scale | frame | work | vertices/frame |
+|---|---|---|---|
+| 1× (1.54 M px) | 16.684 ms | 11.50 ms | 3,050 |
+| 2× (6.14 M px) | **50.050 ms** | 11.58 ms | 3,050 |
+
+The CPU work does not move and the frame triples. **At the ceiling the console is waiting on the GE's fill, not on
+the CPU and not on vertex submission.** ~1.5 M blended texels per frame is where this workload saturates; 6.1 M
+takes three display periods. This is the first measurement in the project that puts a *pixel* number on the wall,
+and it is what the next phase has to respect.
+
+**The mixed case** (T2), N=1,000, every second sprite rotated so the primitive alternates per sprite:
+
+| configuration | draws/frame | frame | work |
+|---|---|---|---|
+| all sprites | 2 | 16.683 ms | 8.06 ms |
+| all triangles | 3 | 16.683 ms | 9.85 ms |
+| every second rotated | **1,001** | **83.417 ms** | 75.95 ms |
+
+The ping-pong is a 5× regression against either pure arm: one flush per sprite, and every flush re-binds the same
+texture. **A scene that mixes rotated and unrotated sprites must not use the sprite path as it stands.**
+
+**Pixel comparison.** `batch_check` (8×4 grid at integer positions, a row at fractional positions, one rotated
+sprite, a rectangle, a string), captured after `DONE`:
+
+| build | md5 of the capture | vertices/frame | draws/frame |
+|---|---|---|---|
+| triangles `-O0` | `c4eb44e7577ba93b1af93a4861008ad9` | 312 | 2 |
+| sprites `-O0` | `c4eb44e7577ba93b1af93a4861008ad9` | 108 | 3 |
+| sprites `-O2` | `c4eb44e7577ba93b1af93a4861008ad9` | 108 | 3 |
+
+`cmp -l` → **0 differing bytes** in all three comparisons. GE sprite rasterisation and the two-triangle
+rasterisation agree exactly here, including the row whose sprite edges land inside a pixel. Mirrored quads
+(negative source width/height) are rejected by the eligibility test and take the triangle path, but that case is
+not in the captured scene — it inherits correctness from the rotated case it shares a code path with, and that is
+all that is claimed for it.
 
 ## 8. Exit criteria
 
-- [ ] 1,000 axis-aligned sprites at ≤16.68 ms, two runs, evidence in §7
-- [ ] `batch_check` pixel-identical to `b3`, or the differences counted and localised
-- [ ] rotated and mirrored sprites still render correctly (they take the triangle path)
-- [ ] the GL11 ceiling number is published in §9 and in `baselines.md`
-- [ ] the cost of a mixed sprite/triangle scene is measured, not estimated
-- [ ] `memory-map.md` §4 and §9 updated with what `GL_SPRITES_PSP` actually costs
+- [x] 1,000 axis-aligned sprites at ≤16.68 ms, two runs — **16.683 ms**, but reached by `-O2`, not by the sprite
+  primitive. The primitive alone measured 33.369 ms at `-O0`; it is recorded that way in §7 rather than credited
+- [x] `batch_check` pixel-identical, differences counted — 0 bytes across three arm pairs
+- [x] rotated sprites still render correctly — captured and identical; mirrored quads are rejected by the test and
+  inherit the same path, untested by capture
+- [x] the GL11 ceiling published — triangles 1,200–1,300 sprites, sprites 1,500–1,700, both at `-O2`
+- [x] the cost of a mixed sprite/triangle scene measured — 1,001 draws/frame, 83.417 ms
+- [x] `memory-map.md` §4 and §9 updated; `baselines.md` carries an `-O2` re-baseline and marks the old tables as
+  history; `environment.md` documents `PSP_OPT` and the batch switches
 
 ## 9. Result
 
-(To fill in on close. The interesting outcome is not "faster": it is whether 2-vertex sprites put 1,000 sprites
-inside 16.68 ms. If they do, phase 4 closes 2D and phase 5 becomes a question of how much more than 60 fps at
-1,000 sprites we want. If they do not, the per-vertex 2.5 µs was never per-vertex, and phase 5's premise needs
-re-checking before a line of it is written.)
+**The sprint set out to halve the vertex count and found a build flag instead.** Both halves matter, and they are
+worth separating.
+
+**What the sprite primitive bought.** Axis-aligned quads now go out as `GL_SPRITES_PSP`, 2 vertices instead of 6,
+and the picture is byte-identical to the triangle path — 0 differing bytes, including fractional positions where
+the two rasterisers could have rounded differently. At `-O2` it is worth **18–20 % of the frame's CPU work** and
+it moves the 60 fps ceiling from 1,200–1,300 sprites to 1,500–1,700. That is a real, permanent gain and it cost
+about forty lines.
+
+**What it did not buy, and the trap in assuming it would.** At `-O0` — the optimisation level every measurement in
+this project had used — the sprite arm measured **33.369 ms against 33.367 ms** for six vertices. Three times fewer
+vertices, no change. Sprint 007's conclusion that the residual was "per submitted vertex" was wrong, and the way it
+was wrong is the useful part: `src/Makefile` applies optimisation in a `RELEASE` block that covers desktop, web and
+Android, and never had a PSP clause, so `psp-gcc` built raylib at `-O0` while pspGL was built `-Os`. The cost was
+raylib's own unoptimised 2D path, which is invariant to how many vertices we hand the driver.
+
+`PSP_OPT` now defaults to `-O2`. At N=1,000 the batched frame halves, 33.367 → **16.683 ms**, i.e. **1,000 sprites
+at 60 fps**, and the unbatched arm improves 66.733 → 50.051 ms. The picture does not change.
+
+**What the ceiling is.** Bisection put 60 fps at 1,200–1,300 sprites for triangles and 1,500–1,700 for sprites, and
+the fill probe explains what stops there: at N=1,500, four times the pixel area takes the frame from 16.684 to
+50.050 ms while CPU work stays at 11.5 ms. **The wall is now the GE's blended fill rate, not submission, not
+vertices, not the CPU.** 1.5 M texels per frame is what this console holds at 60 Hz for this workload.
+
+**What broke.** The mixed case: one rotated sprite between two unrotated ones takes the frame from 16.683 to
+83.417 ms because the primitive alternates per sprite and every change flushes and re-binds the texture. Two
+buffers, or at minimum a bind cache inside `rlPspBatchFlush`, are the fix, and the number above is why it is the
+first task of sprint 009 rather than an optimisation for later.
+
+**What this does to the roadmap.** Phase 5's justification was "the residual is per-vertex cost through pspGL".
+That premise is gone twice over: `-O2` removed half of it and the sprite primitive removed a fifth of what was
+left. What remains at 1,000 sprites is ~8 ms of work and a fill limit 3× away from PSPRuntime's claimed ~5,000
+sprites at 60 fps. **Before writing a native backend, that claim has to be measured with our protocol** — if it
+holds, there is a fill lever we have not found (bilinear filtering off, 5551 textures with no blending, or simply
+a smaller sprite), and that lever is worth more than a backend rewrite. If it does not hold, our GL11 route is
+already within striking distance of the reference and phase 5 should be re-planned around fill, not submission.
 
 ## 10. Follow-ups
 
-- Two parallel buffers (sprite + triangle) so a scene that interleaves rotated and unrotated sprites never
-  ping-pongs — sprint 009, with the mixed-scene number from T2 as the justification.
-- `GE_SPRITES` has no share of the `GU_TRANSFORM_2D` saving; if that lever matters, it is phase 5.
-- Measure `PSPRuntime`'s bunnymark with our protocol (bounded frames, logged medians) so the phase 5 target is a
-  number from this console rather than a claim. It is interactive today, so it needs a harness change first.
+- **Verify PSPRuntime's ~5,000 sprites at 60 fps** with our protocol (`/home/psp/ref/PSPRuntime/PSPBasicPlatformer`,
+  `GPUManager::DrawSprite` → 2 vertices + `sceGumDrawArray(GU_SPRITES, GU_COLOR_5551|GU_VERTEX_32BITF|GU_TEXTURE_32BITF)`).
+  It is interactive today, so it needs a bounded-frame harness. This single measurement decides whether the next
+  phase chases fill or a backend.
+- **Bind cache in the batcher**: track the texture actually bound and skip `glBindTexture` when the run uses the
+  same one. In the mixed case that is 1,000 redundant binds per frame saved; pspGL's own profiler already counts
+  `texture_bind_redundant`, which suggests it expects callers to avoid them.
+- **Two batch buffers** (sprite + triangle) so a mixed scene never ping-pongs: sprint 009, justified by the 83.4 ms
+  number rather than by taste.
+- **Fill budget for 2D**: 1.5 M blended texels per frame is the working number at 60 Hz. Anything the roadmap asks
+  of 2D — overdraw, large backgrounds, particle counts — should be checked against it. Phase 6's texture-format work
+  (5551 vs 8888) belongs here too, since it changes bytes read per texel.
+- **`-O3` vs `-O2`** was never A/B'd. The memory map's own note said "`-O2` first, not `-O3`"; now that `-O2` is
+  measured, `-O3` costs one build.

@@ -238,7 +238,8 @@ sprites/frame batched against ~220 unbatched**.
   build match, so no cross-arm comparison is possible) and `batch_check` covers the same three submission kinds
   (textured quad, untextured quad, font atlas quad) on a fixed scene. A sample sweep of the 3D path is left open in
   §10, because `PSP_BATCH=1` drops `rlNormal3f` and lighting was never in this sprint's scope
-- [x] the table in §7 attributes the 58.3 µs — 45.9 µs submission, 16.7 µs per sprite left, linear in vertices
+- [x] the table in §7 attributes the 58.3 µs — 45.9 µs submission, 16.7 µs per sprite left. **Correction, sprint
+  008:** the *submission* half holds, the *per-vertex* attribution of the residual does not — see §9
 - [x] verdict written — §9
 - [x] `src/` diff behind the two guards, with one recorded deviation: the batch *state* is in
   `platforms/rcore_psp.c` because five translation units include `rlgl.h` (§3, task log)
@@ -272,13 +273,31 @@ One trap is now documented because it cost a broken frame: pspGL maps `GL_QUADS`
 batched quad run renders as spikes radiating from its first vertex. Quads must be expanded to triangles by the
 batcher, and the +50 % vertex count that follows is part of every number above.
 
+### Correction (sprint 008, same week)
+
+The paragraph above blaming the residual on **per-vertex** cost did not survive its first test. Sprint 008 cut
+vertices per sprite from 6 to 2 through `GL_SPRITES_PSP` — a 3× reduction at equal pixels — and the frame at
+N=1,000 moved from 33.367 to 33.369 ms. Three times fewer vertices changed nothing, so the residual was never
+per-vertex.
+
+It was the **compiler**. `src/Makefile`'s `RELEASE` optimisation block covers desktop, web and android only, so
+every PSP library built up to this point — every number in this sprint — came out of `psp-gcc` at **`-O0`**, while
+pspGL itself is built `-Os`. With `-O2`:
+
+| N | unbatched | batched, triangles | batched, sprites |
+|---|---|---|---|
+| 1,000 | 66.733 → **50.051** | 33.367 → **16.683** | 33.369 → **16.683** |
+
+1,000 sprites at 60 fps, from a build flag. The batched-vs-unbatched ratio *widened* (2.0× → 3.0×), so this
+sprint's central result stands; its explanation of the residual does not, and phase 5's justification has to be
+re-derived on top of `-O2` numbers rather than these.
+
 ## 10. Follow-ups
 
-- **Where the 2.5 µs per vertex goes.** Build pspGL with `PSPGL_PROFILE=1` and run the batched arm at N=1,000 and
-  N=5,000 with `PSPGL_PROFILE_APP=1`: `native_vertex_array_copies` vs `converted_vertex_array_copies` says which
-  copy path the 24-byte layout took, and `command_list_rollovers` /
-  `command_list_reuse_sync_wait_us` say whether the batcher is being paced by the GE instead of by the CPU. This is
-  the one question sprint 007 could not answer.
+- **Superseded by sprint 008:** the residual is not per-vertex (see the correction in §9), so the
+  `PSPGL_PROFILE=1` question below is worth asking only about *per-draw* cost. Build pspGL with `PSPGL_PROFILE=1`
+  and run the batched arm with `PSPGL_PROFILE_APP=1`: `command_list_rollovers` /
+  `command_list_reuse_sync_wait_us` say whether a frame is paced by the GE rather than by the CPU. Still open.
 - **Phase 5 has a target per lever**: `GU_SPRITES` (2 vertices instead of 6, i.e. −67 %), `GU_TRANSFORM_2D` (no
   matrix work per draw), compact vertex formats (bytes per vertex), direct GE-formatted writes (no conversion copy).
   Each is judged against 2.5 µs per submitted vertex.
