@@ -47,9 +47,10 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 
 ## Sprints and features
 
-- [Sprint 005 — pspGL from source, and an A/B that means something](../sprints/005-phase3-pspgl-ab.md) — three
-  arms (shipped package, `de4260ad` built here, fork HEAD built here) at two counts, with the control arm
-  proving the build recipe is neutral, plus the fork's own `pspgl_profile_snapshot()` counters
+- [Sprint 005 — pspGL from source, and an A/B that means something](../sprints/005-phase3-pspgl-ab.md) —
+  **closed**: fork HEAD is **10 % faster** (81.24 vs 90.30 ms at N=1000, 392.06 vs 436.43 at N=5000), control
+  arm within 0.03 % of shipped so the recipe is neutral, symbol set a strict superset. Its profiler also showed
+  257 submissions/frame and 2,725 µs/frame of command-list wait
 - [Sprint 006 — Decide, and make the choice reproducible](../sprints/006-phase3-decide.md) — adopt / keep /
   cherry-pick, with a build script for anything adopted, the command-list size experiment, and an exercised
   restore path

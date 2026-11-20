@@ -16,6 +16,12 @@ SPRITE_SCALE ?= 1
 CFLAGS = -Wall -DBUNNY_COUNT=$(BUNNY_COUNT) -DTOTAL_FRAMES=$(FRAMES) \
          -DTARGET_FPS=$(TARGET_FPS) -DSPRITE_SCALE=$(SPRITE_SCALE)
 
+# Profiling arm: needs the fork's pspGL built with PSPGL_PROFILE=1.
+PSPGL_PROFILE_APP ?= 0
+ifeq ($(PSPGL_PROFILE_APP),1)
+    CFLAGS += -DPSPGL_PROFILE_APP -I/home/psp/ref/pspgl-themiriron2
+endif
+
 # T5 mutation: draw the frame without the bunnies.
 ifdef SKIP_DRAW
     CFLAGS += -DSKIP_DRAW

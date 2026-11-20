@@ -21,6 +21,12 @@
 #include "raylib.h"
 #include "psp_counters.h"
 
+#ifdef PSPGL_PROFILE_APP
+    // Counters from inside pspGL: needs the fork built with PSPGL_PROFILE=1 and
+    // -I pointing at its tree. Never part of the A/B - profiling changes cost.
+    #include "pspgl_profile.h"
+#endif
+
 PSP_MODULE_INFO("bunnymark", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 
@@ -87,6 +93,9 @@ int main(void)
     Rectangle src = { 0.0f, 0.0f, (float)texBunny.width, (float)texBunny.height };
 
     PspCountersReset();
+#ifdef PSPGL_PROFILE_APP
+    pspgl_profile_reset();
+#endif
     TraceLog(LOG_INFO, "SPAWN %i bunnies, %i frames, target_fps %i, scale %i, texture %ix%i",
              count, frames, TARGET_FPS, SPRITE_SCALE, texBunny.width, texBunny.height);
 
@@ -145,6 +154,18 @@ int main(void)
     float best = frameTimes[0];
 
     PspCountersDump("done", frames);
+#ifdef PSPGL_PROFILE_APP
+    struct pspgl_profile_stats ps;
+    pspgl_profile_snapshot(&ps);
+    TraceLog(LOG_INFO, "PSPGL draw_calls=%llu verts=%llu words=%llu subs=%llu rollovers=%llu "
+             "cap_words=%llu wait_us=%llu max_wait_us=%llu binds=%llu bind_changes=%llu "
+             "redundant=%llu flushes=%llu finishes=%llu queue_waits=%llu",
+             ps.draw_calls, ps.vertices_submitted, ps.command_words, ps.command_list_submissions,
+             ps.command_list_rollovers, ps.command_list_capacity_words,
+             ps.command_list_reuse_sync_wait_us, ps.command_list_reuse_sync_wait_max_us,
+             ps.texture_bind_calls, ps.texture_bind_changes, ps.texture_bind_redundant,
+             ps.explicit_flushes, ps.finishes, ps.queue_waits);
+#endif
     TraceLog(LOG_INFO, "STAT n=%i min=%.3f median=%.3f p95=%.3f worst=%.3f avg=%.3f",
              frames, best*1000.0f, median*1000.0f, p95*1000.0f, worst*1000.0f,
              (float)(sum/frames)*1000.0f);

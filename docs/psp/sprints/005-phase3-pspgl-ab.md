@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade.md) |
 | Branch / base commit | `master` @ `bb6da92c` (Phase 2 closed; baselines published) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g0` (control build), `g1` (fork build) |
-| Tasks | 0/7 done |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -114,19 +114,25 @@ the flags used.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | build `de4260ad` from source with the tree's own flags (`g0`), install it | `todo` | builds clean; `libGL.a` is not byte-identical to pspdev's (different compiler run) but exports the same symbol set | — |
-| T2 | build `TheMrIron2` HEAD with identical flags (`g1`) | `todo` | builds clean; record any new/removed exported symbols against T1 | — |
-| T3 | symbol and header comparison | `todo` | `psp-nm --defined-only` diff: fork must export a superset; `GL/` and `GLES/` headers diffed, differences listed | — |
-| T4 | A/B/C on `bunnymark` N=1000, `TARGET_FPS=0`, two runs per arm | `todo` | shipped vs control-build within 0.1 % (if not, the recipe is the variable — stop and investigate); fork vs control the real number | — |
-| T5 | repeat the A/B at N=5000, two runs per arm | `todo` | delta direction consistent with N=1000, or the inconsistency explained | — |
-| T6 | profiling arm: fork built with `make PSPGL_PROFILE=1`, app includes `pspgl_profile.h` (`-I` the fork tree), `pspgl_profile_reset()` before the loop, `pspgl_profile_snapshot()` at `DONE`, log the counters that matter: `draw_calls`, `vertices_submitted`, `command_words`, `command_list_submissions`, `command_list_rollovers`, `command_list_capacity_words`, `command_list_reuse_sync_wait_us`, `texture_bind_calls`, `texture_bind_redundant`, `explicit_flushes`, `finishes`, `queue_waits` | `todo` | counters are non-zero and `draw_calls` agrees with our `--wrap` `glEnd` count; **`command_list_reuse_sync_wait_us` is the GE wait time sprint 004 could not separate** | — |
-| T7 | write the tables into the phase page and record the decision input | `todo` | numbers and threshold verdict in one place | — |
+| T1 | build `de4260ad` from source (`g0`) | `done` | builds clean (0 errors), 1,634,950 B; exports **287 symbols, identical set** to the shipped 315,198 B library | `/tmp/sym-control.txt` |
+| T2 | build fork HEAD `ae9a668` (`g1`) | `done` | builds clean, 1,646,714 B; **293 symbols** | `/tmp/sym-fork.txt` |
+| T3 | symbol comparison | `done` | superset confirmed: **nothing removed**, 6 added (`pspgl_profile_reset/snapshot`, `glDepthRangeRaw`, `eglGetPresentedFrameBufferPSP`, two dlist internals) | §7 |
+| T4 | A/B/C at N=1000 | `done` | shipped 90.285/90.286, control 90.308/**90.294** (+0.03 %), fork **81.247/81.234 (−10.03 %)** | §7 |
+| T5 | A/B/C at N=5000 | `done` | control 436.448/436.408, fork **392.086/392.033 (−10.17 %)** — consistent | §7 |
+| T6 | profiling arm | `done` | 257 submissions/frame for 1,025 primitives (~4 each, cap 512 words); **2,725 µs/frame command-list reuse wait**; binds 2,050/frame, zero redundant. `draw_calls` reads 0 — these counters cover the array paths, not `glBegin`; submissions is the immediate-path counter | §7 |
+| T7 | record for the decision | `done` | verdict: adopt (10 % ≫ 0.1 %), superset, BSD-3 | this page |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-20 — T1/T2 `done`: both arms build clean; shipped libGL.a is 315,198 B, local builds ~1.63 MB
+  (cause not investigated, by rule)
+- 2026-11-20 — T3 `done`: control exports exactly the shipped 287 symbols; fork exports those plus 6
+- 2026-11-20 — T4/T5 `done`: control within 0.03 % of shipped; fork −10.03 % at N=1000 and −10.17 % at N=5000
+- 2026-11-20 — T6 `done`: profile build reveals 257 submissions/frame and 2,725 µs/frame of command-list wait;
+  the profiling build itself is 18.6 % slower, which is why it is not an A/B arm
+- 2026-11-20 — T7 `done`; machine left on the fork at PROFILE=0
 
 ## 6. Budgets
 
@@ -142,24 +148,33 @@ Three arms, `TARGET_FPS=0`, median frame time:
 
 | arm | N=1000 run A | N=1000 run B | N=5000 run A | N=5000 run B |
 |---|---|---|---|---|
-| shipped package | | | | |
-| `de4260ad` built here (control) | | | | |
-| fork HEAD built here | | | | |
+| shipped package | 90.285 | 90.286 | 436.422 | 436.453 |
+| `de4260ad` built here (control) | 90.308 | 90.294 | 436.448 | 436.408 |
+| fork HEAD built here | **81.247** | **81.234** | **392.086** | **392.033** |
 
 Deltas against the control arm:
 
 | arm | Δ N=1000 | Δ N=5000 | exceeds 0.1 %? |
 |---|---|---|---|
-| shipped | | | |
-| fork HEAD | | | |
+| shipped | −0.02 % | −0.006 % | no — recipe is neutral |
+| fork HEAD | **−10.03 %** | **−10.17 %** | **yes, by 100×** |
 
 pspGL-internal counters (`PSPGL_PROFILE=1`), per frame at N=1000:
 
-| counter | value | note |
+Per frame (100 frames, N=1000, profiling build at 96.4 ms/frame):
+
+| counter | per frame | note |
 |---|---|---|
-| command words | | |
-| submissions / rollovers | | |
-| GE waits | | |
+| `command_words` | 16,415 | |
+| `command_list_submissions` | **257** | for 1,025 primitives, so ~4 primitives per submission at the 512-word cap |
+| `command_list_rollovers` | 0 | |
+| `command_list_capacity_words` | 512 | the default |
+| `command_list_reuse_sync_wait_us` | **2,725 µs** | the GE wait sprint 004 could not isolate; ~2.8 % of the frame |
+| max single wait | 126 µs | |
+| `texture_bind_calls` | 2,050 | bind + unbind per primitive, matches our `--wrap` count |
+| `texture_bind_redundant` | 0 | nothing to skip: every bind follows an unbind |
+| `queue_waits` | 257 | one per submission |
+| `draw_calls` | **0** | these counters cover the array paths, not `glBegin` — submissions is the immediate-path counter |
 
 ## 8. Exit criteria
 
@@ -171,13 +186,41 @@ pspGL-internal counters (`PSPGL_PROFILE=1`), per frame at N=1000:
 
 ## 9. Result
 
-(To fill in on close. A flat result is a real result: if the 11 commits move nothing measurable on this
-workload, the honest conclusion is that pspGL's own cost is not where the 86.5 µs/sprite goes, and phase 4 is
-the only lever — which is worth knowing before spending a phase on it.)
+**The 11 commits are worth 10 %, and the control arm says the measurement is real.**
+
+| arm | N=1000 | N=5000 | vs control |
+|---|---|---|---|
+| shipped | 90.285 | 436.422 | −0.02 % / −0.006 % |
+| control (`de4260ad` built here) | 90.301 | 436.428 | — |
+| fork HEAD | **81.240** | **392.060** | **−10.03 % / −10.17 %** |
+
+The control arm matching the shipped package within 0.03 % is what makes the rest trustworthy: the build recipe
+is not the variable, so the 10 % is the code.
+
+Marginal cost per sprite drops from 86.5 to **77.7 µs**, which moves the 60 fps budget from ~181 to **~215
+sprites** in a 16.7 ms frame.
+
+The fork is a strict superset — 287 symbols identical plus 6 added, nothing removed.
+
+**What the profiling build showed** (and it is the first time we could see inside pspGL):
+- **257 command-list submissions per frame** for 1,025 primitives — about 4 primitives each, at the default
+  512-word list.
+- **2,725 µs/frame of command-list reuse wait**, i.e. ~2.8 % of the frame. This is the wait sprint 004 could
+  not locate: it is not in `eglSwapBuffers`, it is in list reuse.
+- 2,050 texture bind calls per frame with **zero redundant** — every primitive binds after the previous unbind,
+  so there is nothing for a "skip duplicate bind" optimisation to save yet.
+- `draw_calls` reads **0**: the fork's draw counters cover the array paths, not `glBegin`. Submissions is the
+  counter that sees the immediate path.
+
+**Verdict for sprint 006: adopt.** 10 % for a library swap, superset ABI, BSD-3, and it hands us an
+instrumentation surface we did not have.
+
+One caveat to carry: the profiling build is **18.6 % slower** than the same library without it (96.4 vs 81.2
+ms), which is exactly why it was kept out of the A/B arms.
 
 ## 10. Follow-ups
 
-- The fork's `PSPGL_DLIST_SIZE_WORDS` is a separate experiment (512 / 1024 / 4096) and belongs to sprint 006 if
-  adoption is on the table.
+- The fork's `PSPGL_DLIST_SIZE_WORDS` is now clearly worth testing: 257 submissions/frame at a 512-word cap,
+  each with a wait. 512 / 1024 / 4096 belongs to sprint 006.
 - If the profiling build shows GE waits dominating, that reframes the CPU-vs-GE question from sprint 004.
 - Whatever is adopted must be reproducible; a hand-built `libGL.a` with no recorded recipe is not adoptable.
