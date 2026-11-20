@@ -25,14 +25,24 @@ with a control arm that proves the build recipe itself is not the variable.
 2. [Memory map](../memory-map.md) §6 (measurement protocol), §7 (pspGL provenance, and the licence table).
 3. [Phase 3 page](../phases/03-pspgl-upgrade.md).
 
-**Verified facts about the build (do not rediscover):**
+**Verified facts about the build (both arms already built once, 2026-11-20):**
 
 - pspGL builds with a plain `make` in the tree root. `PSPPATH` and `PSPSDK` come from `psp-config`.
 - Flags are fixed in its Makefile: `-g -Wall -Wmissing-prototypes -Os -G0 -fsingle-precision-constant`,
   plus `-DPSPGL_PROFILE=$(PSPGL_PROFILE)` and `-DPSPGL_DLIST_SIZE_WORDS=$(PSPGL_DLIST_SIZE_WORDS)`.
 - Defaults: `PSPGL_PROFILE=0`, `PSPGL_DLIST_SIZE_WORDS=512`.
-- The fork exposes `pspgl_profile.h`: `struct pspgl_profile_stats`, `pspgl_profile_reset()`,
-  `pspgl_profile_snapshot()` — counters **inside** pspGL, one level deeper than the `--wrap` harness.
+- **Both arms build clean with this toolchain**: `de4260ad` → `libGL.a` 1,634,950 B; fork HEAD `ae9a668` →
+  1,646,714 B (it contains `pspgl_profile.o` even at `PROFILE=0`).
+- **The shipped `libGL.a` is 315,198 B — 5× smaller.** Cause unknown (pspdev's package strips, or builds
+  without `-g`) and irrelevant: **compare behaviour, never bytes.** If you find yourself investigating the size
+  difference, stop.
+- The two trees are **separate shallow clones pinned by commit**. `de4260ad` is not reachable in the fork's
+  clone, so both arms cannot be built from one tree.
+- A config stamp keys the objects to `PROFILE`/`DLIST_SIZE` (`.deps/config-*.stamp`), so **`make clean` between
+  arms is mandatory**, not tidiness.
+- The fork exposes `pspgl_profile.h` (`struct pspgl_profile_stats`, `pspgl_profile_reset()`,
+  `pspgl_profile_snapshot()`), which is **not** installed into pspdev: the app needs
+  `-I/home/psp/ref/pspgl-themiriron2` to include it.
 - pspdev's package builds with bare `make` and installs `libGL.a`, `libGLU.a`, `libglut.a` plus `GL/` and
   `GLES/` headers manually.
 
@@ -48,6 +58,9 @@ measured at all.
 - `reset` before each run; never send `exit` to pspsh; keep the shell attached; the app must not call
   `sceKernelExitGame`.
 - This sprint **measures**. Do not adopt anything yet, and do not change raylib or the platform layer.
+- **The profiling arm is not an A/B arm.** `PSPGL_PROFILE=1` instruments the library and changes its cost, so the
+  three-arm comparison runs `PROFILE=0`; profiling is measured separately and its numbers are never subtracted
+  from the A/B.
 
 **Commands.**
 
@@ -106,7 +119,7 @@ the flags used.
 | T3 | symbol and header comparison | `todo` | `psp-nm --defined-only` diff: fork must export a superset; `GL/` and `GLES/` headers diffed, differences listed | — |
 | T4 | A/B/C on `bunnymark` N=1000, `TARGET_FPS=0`, two runs per arm | `todo` | shipped vs control-build within 0.1 % (if not, the recipe is the variable — stop and investigate); fork vs control the real number | — |
 | T5 | repeat the A/B at N=5000, two runs per arm | `todo` | delta direction consistent with N=1000, or the inconsistency explained | — |
-| T6 | enable the fork's profiling (`PSPGL_PROFILE=1`), call `pspgl_profile_reset()`/`pspgl_profile_snapshot()` from the test app, dump at `DONE` | `todo` | per-frame pspGL-internal counters: command words, submissions, rollovers, waits — the level our `--wrap` harness cannot see | — |
+| T6 | profiling arm: fork built with `make PSPGL_PROFILE=1`, app includes `pspgl_profile.h` (`-I` the fork tree), `pspgl_profile_reset()` before the loop, `pspgl_profile_snapshot()` at `DONE`, log the counters that matter: `draw_calls`, `vertices_submitted`, `command_words`, `command_list_submissions`, `command_list_rollovers`, `command_list_capacity_words`, `command_list_reuse_sync_wait_us`, `texture_bind_calls`, `texture_bind_redundant`, `explicit_flushes`, `finishes`, `queue_waits` | `todo` | counters are non-zero and `draw_calls` agrees with our `--wrap` `glEnd` count; **`command_list_reuse_sync_wait_us` is the GE wait time sprint 004 could not separate** | — |
 | T7 | write the tables into the phase page and record the decision input | `todo` | numbers and threshold verdict in one place | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
