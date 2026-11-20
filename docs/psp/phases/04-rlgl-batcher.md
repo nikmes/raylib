@@ -56,6 +56,11 @@ Source: `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` §16 (an AI-written blueprint t
 reference tree — it is **not** Sony documentation). Cross-checked against our own measurements below; where it
 disagrees, our numbers win.
 
+**What our toolchain actually offers** (headers checked, see [§14](../memory-map.md#14-what-pspdev-actually-provides-verified-2026-11-20)):
+`GU_SPRITES 6`, `GU_TRANSFORM_2D` ("passed directly to the rasterizer"), `sceGuScissor(x, y, w, h)`,
+`sceGuTexImage/TexMode/TexFlush/TexSync/ClutLoad`, `sceGuDepthRange/DepthOffset`, and `sceGumDrawArray` for the
+CPU-transform path. `libpspgum.a` is the default GUM; `libpspgum_vfpu.a` is opt-in and used by no sample.
+
 **What the blueprint says a 2D path must do:**
 
 | rule | why it matters | how it lands in rlgl |

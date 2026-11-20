@@ -107,6 +107,9 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | Audio sample-rate conversion | `sceAudioSRCChReserve(samplecount, freq, channels)` + `sceAudioSRCOutputBlocking()` — hardware SRC for arbitrary rates instead of resampling on the CPU | `[public: same header]` |
 | Input hardware | one nub (2 axes, raw 0–255), D-pad, 4 face buttons, 2 shoulder buttons, SELECT/START/HOME/HOLD/NOTE. **No analog triggers, no rumble** | `[public: pspctrl.h]` |
 
+**What the toolchain actually gives us** — GU primitives, vertex formats, GUM, VFPU contexts, VRAM limits — is
+verified against the headers in §14 rather than assumed from documentation.
+
 ---
 
 ## 4. Where the time goes today
@@ -680,3 +683,91 @@ Build note: MkDocs reserves `/templates/` **at the docs root** — `_default_exc
 `mkdocs/structure/files.py` is `['.*', '/templates/']`, and files there are collected but built as
 "excluded from the built site", with a link warning that `--strict` does not fail on. That is why these
 templates live under `psp/`. Do not create `docs/templates/`.
+
+---
+
+## 14. What pspdev actually provides (verified 2026-11-20)
+
+Checked against the toolchain we link, not against documentation. Paths are under `/home/psp/pspdev/psp`.
+
+### Headers and libraries
+
+| item | path | notes |
+|---|---|---|
+| GU API | `sdk/include/pspgu.h` | 1,000+ lines, heavily commented |
+| GUM (matrix/scene) | `sdk/include/pspgum.h` | |
+| VFPU context | `sdk/include/pspvfpu.h` | |
+| GE + EDRAM | `sdk/include/pspge.h` | |
+| scalar FPU + math helpers | `sdk/include/pspmath.h` | `libpspmath.a` |
+| `libpspgu.a` | `sdk/lib` | 953,488 B |
+| `libpspgum.a` | `sdk/lib` | 222,440 B — **the default**, what every sample links |
+| `libpspgum_vfpu.a` | `sdk/lib` | 225,846 B — opt-in `-DUSE_VFPU=1` build; **no sample links it** |
+| `libpspvfpu.a` | `sdk/lib` | 9,772 B |
+| `libpspge.a` | `sdk/lib` | EDRAM/GE control |
+
+A GU program links `-lpspgum -lpspgu` (that is the samples' line). GUM usually needs `-lm`-equivalent helpers
+from `libpspmath` only if it is called directly.
+
+### GU: what exists, verified by signature
+
+- `int sceGuStart(int ctype, void* list)` — **two arguments** in PSPSDK. Sony's three-argument form does not
+  exist here, and a port that keeps it will not compile.
+- Primitives: `GU_POINTS 0`, `GU_LINES 1`, `GU_TRIANGLES 3`, `GU_TRIANGLE_STRIP 4`, `GU_TRIANGLE_FAN 5`,
+  **`GU_SPRITES 6`** — the 2-vertex axis-aligned sprite primitive is real and available.
+- Transform modes: **`GU_TRANSFORM_2D`** ("coordinate is passed directly to the rasterizer") and
+  `GU_TRANSFORM_3D` ("transformed before passed to rasterizer"). Both exist; the header states the 2D form
+  bypasses the transform, which is the through mode a 2D batcher wants.
+- Vertex format flags: `GU_TEXTURE_16BIT`, `GU_TEXTURE_32BITF`, `GU_COLOR_5551`, `GU_COLOR_8888`,
+  `GU_VERTEX_8BIT`, `GU_VERTEX_16BIT`, `GU_VERTEX_32BITF`, `GU_NORMAL_8BIT`, `GU_INDEX_16BIT`,
+  `GU_WEIGHTS(n)` for 1–8 bones.
+- `sceGuScissor(int x, int y, int w, int h)` — width/height, **not** an end coordinate.
+- Textures: `sceGuTexImage(mipmap, width, height, tbw, tbp)`, `sceGuTexMode(tpsm, maxmips, mc, swizzle)`,
+  `sceGuTexFlush()`, `sceGuTexSync()`, `sceGuClutLoad(num_blocks, cbp)`, `sceGuTexOffset(u, v)`,
+  `sceGuTexScale(u, v)`.
+- Depth: `sceGuDepthRange(near, far)`, `sceGuDepthOffset(offset)`.
+- Matrices/bones: `sceGuSetMatrix(type, matrix)`, `sceGuBoneMatrix(index, matrix)`.
+
+### GUM: CPU-side matrix maths, verified
+
+`sceGumDrawArray(prim, vtype, count, indices, vertices)`, `sceGumMatrixMode`, `sceGumLoadIdentity`,
+`sceGumOrtho`, `sceGumPerspective`, `sceGumLookAt`, `sceGumRotateXYZ`, `sceGumScale`, `sceGumPushMatrix`,
+`sceGumPopMatrix`, `sceGumUpdateMatrix`. GUM computes matrices on the CPU and hands them to the GE — the
+comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affine transform while
+`sceGumDrawArray` does.
+
+### VFPU: available, but not as intrinsics
+
+- Context management: `pspvfpu_initcontext()`, `pspvfpu_use_matrices(ctx, ...)`, `pspvfpu_deletecontext()`,
+  and `VFPU_ALIGNMENT` (= 16 bytes) for matrix loads/stores.
+- **`__builtin_vfpu_*` and `__builtin_allegrex_*` do not exist in psp-gcc 15.2.0** — verified with
+  `__has_builtin`, which answered no. VFPU work is inline asm (`mtv`/`mfv`/`vrsq`/`vrot`…), as the
+  [compute-units section](#101-vfpu--cop2-128-single-precision-registers) describes.
+- `libpspgum_vfpu.a` is the GUM built with VFPU paths. It is not the default and no sample uses it; adopting it
+  is a deliberate choice and must be A/B measured like anything else.
+
+### VRAM: 2 MB is the whole budget on this console
+
+- `sceGeEdramGetAddr()` returns the base (`0x04000000`), `sceGeEdramGetSize()` the size.
+- `sceGeEdramSetSize(int size)` takes `0x200000` or `0x400000`, and the header states **0x400000 returns an
+  error on the PSP FAT** — our PSP-1000. So the "upper 2 MB" the blueprint mentions as opt-in is not available
+  to us at all; 2 MB is the budget, of which framebuffers and depth already take 816 KiB.
+
+### Samples worth reading
+
+`psp/sdk/samples/gu/`: `beginobject`, `blend`, `blit`, `celshading`, `clut`, `copy`, `cube`, `doublelist`,
+`envmap`, `font`, plus `common/`. They are short, they compile with our toolchain, and they show the idiomatic
+call order for each feature. `doublelist` is directly relevant to phase 5's list rotation.
+
+### Blueprint claims, checked
+
+| blueprint claim | verified against pspsdk | verdict |
+|---|---|---|
+| `GU_SPRITES` = 2-vertex axis-aligned rect | `GU_SPRITES 6` exists | **confirmed** |
+| through mode for 2D | `GU_TRANSFORM_2D` = "passed directly to the rasterizer" | **confirmed** |
+| scissor takes width/height | `sceGuScissor(x, y, w, h)` | **confirmed** |
+| `sceGuStart` arity differs from Sony's | 2 arguments here | **confirmed** |
+| VFPU intrinsics absent from pspdev GCC | `__has_builtin` says no | **confirmed** |
+| `libgum_vfpu` is not the default GUM | separate archive, no sample links it | **confirmed** |
+| 4 MB EDRAM is opt-in, not automatic | `sceGeEdramSetSize(0x400000)` errors on PSP FAT | **confirmed, and unavailable to us** |
+| 8 KiB texture cache, 512x512 max texture | not in the headers — hardware facts | **from the blueprint only; treat as untested by us** |
+| through-mode UVs are texels and `TexScale`/`TexOffset` are ignored | header says the opposite direction: it suggests `sceGuTexOffset`/`sceGuTexScale` *for* scaling texcoords in this path | **conflict — verify with one quad on device before designing around it** |
