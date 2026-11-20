@@ -341,6 +341,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 
 | date | decision | evidence |
 |---|---|---|
+| 2026-11-20 | Instrumentation counts at the GL boundary via `-Wl,--wrap` in the test harness, **not** inside `rlgl.h` | keeps rlgl byte-identical to upstream ahead of the planned native rGL backend, and counts what crosses into pspGL rather than what raylib intended; the same harness re-points at `sceGuDrawArray` in phase 5 |
 | 2026-11-20 | Merged `psp-6.2` into `master` (6.5-dev) at the user's request | 0 textual conflicts; merged tree compiles (0 errors, 0 warnings), links `basic_shapes.prx` (1,415,522 B) and **runs on the device**: 600 frames, 30 fps, 284 colours, no exception |
 | 2026-11-20 | Base on release tag 6.2, not `master` (6.5.0-dev) | stable baseline; full history keeps `git merge` available |
 | 2026-11-20 | Start from upstream raylib, not from the port repos | `raylib4Psp` holds no library code; fork `master` is pure upstream 6.0; the PSP delta is one platform file |

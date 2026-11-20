@@ -47,8 +47,8 @@ vertex traffic, texture binds, GE waits or frame CPU time, and the one counter t
 
 ## Sprints and features
 
-- [Sprint 003 — Backend counters that mean something](../sprints/003-phase2-counters.md) — rewritten after
-  sprint 002: the workload must be button-free (bunny count as a build parameter), counters must be falsifiable
-  twice over (known workload + mutation), and the `rlEnd`→submission mapping is an assumption to be confirmed
-  in phase 3
+- [Sprint 003 — Backend counters that mean something](../sprints/003-phase2-counters.md) — the workload is
+  button-free (bunny count as a build parameter), counters are falsifiable twice over (known workload +
+  mutation), and counting happens at the **GL boundary** through `-Wl,--wrap` in the test harness: `src/` is
+  untouched, so rlgl stays mergeable ahead of the planned native backend
 - [Sprint 004 — Timing, fixed-count runs, repeatability floor](../sprints/004-phase2-baselines.md)
