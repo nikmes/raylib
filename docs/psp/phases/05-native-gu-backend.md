@@ -236,7 +236,30 @@ raylib, geometry now reaches the GE but the screen goes **black** once `GL_TEXTU
 enabled with no texture bound — the GE samples from an undefined address. That is task 6, and
 until it exists the driver is not usable.
 
-### Task 1 in detail — where the code goes and what order
+### Task 6 progress — textures draw, and disagree with pspGL in three measured ways
+
+`gl_texture.c` implements the six texture symbols. The review decided three things before any code:
+every source format is **expanded to GE 8888** (the GE has no LUMINANCE, and grey+alpha is what our
+sprite sheet and the font atlas decode to — 8888 matches pspGL's `copy_expand_LA`, so a comparison
+is meaningful), textures are uploaded **unswizzled** (`sceGuTexMode(..., GU_FALSE)`; swizzling is
+bandwidth, not texels), and a **1×1 white default** is created at boot so `bind(0)` can never leave
+the GE sampling an undefined address — which is what blacked the screen at the end of task 5.
+
+State: the scene renders (274 distinct colours against pspGL's 613, background and geometry in the
+right places), but three specific deltas remain, all measured on the same binary and scene:
+
+| what | pspgu | pspGL | first hypothesis |
+|---|---|---|---|
+| background green channel | (240,**244**,240) | (240,**240**,240) | pspGL dithers the clear (`GU_DITHER`); ours is flat |
+| inside a sprite | (0,32,192) — the tint | (0,0,0) | alpha not applied: transparent texture areas painted with the tint |
+| at (130,60) | (80,4,0) | (240,240,240) background | wrong texel fetched, not just wrong alpha — suspect the UV/`tbw` path |
+
+62.4 % of pixels differ, so this is not a rounding question; it is the sampling path. The next
+concrete step is a **known-pattern texture** (a 2×2 or 4×4 image with distinct corner colours drawn
+1:1 on screen), which separates "wrong texel" from "wrong alpha" from "wrong blend" in one capture.
+Guessing further without it would cost more than it saves.
+
+
 
 - **Source lives in `tools/pspgu/`**, built and installed by `tools/pspgu-build.sh` modelled on
   `tools/pspgl-build.sh` (build → install over `$PSPDEV/psp/lib/libGL.a` → `--check`). That keeps the A/B identical

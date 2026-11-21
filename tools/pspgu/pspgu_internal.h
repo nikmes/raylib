@@ -102,6 +102,9 @@ static inline void pspguWriteback(const void *addr, unsigned int bytes)
     sceKernelDcacheWritebackRange(addr, bytes);
 }
 
+// Textures (gl_texture.c)
+void pspguInitTextures(void);
+
 // Matrices (gl_matrix.c): the draw path pushes both before it emits vertices
 void pspguResetMatrices(void);
 void pspguUploadMatrices(void);

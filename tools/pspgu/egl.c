@@ -93,6 +93,7 @@ static void pspguInitGu(void)
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
 
+    pspguInitTextures();
     pspguResetMatrices();
     pspgu.clearColor = 0xFF000000;      // opaque black, what rlglInit clears to
     pspgu.clearDepth = 1.0f;

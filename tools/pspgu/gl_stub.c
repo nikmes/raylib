@@ -17,40 +17,6 @@
 unsigned int pspguStubCalls = 0;
 unsigned int pspguStubMatrix = 0;
 unsigned int pspguStubDraw = 0;
-unsigned int pspguStubTexture = 0;
-
-//------------------------------------------------------------------------------------
-// Textures - task 6
-//------------------------------------------------------------------------------------
-
-// Ids must look real to the library: 0 is "no texture" and raylib treats it that way
-static GLuint nextTextureId = 1;
-
-void glGenTextures(GLsizei n, GLuint *textures)
-{
-    if (textures == NULL) return;
-    for (GLsizei i = 0; i < n; i++) textures[i] = nextTextureId++;
-    pspguStubTexture++;
-}
-
-void glDeleteTextures(GLsizei n, const GLuint *textures)    { (void)n; (void)textures; pspguStubTexture++; }
-void glBindTexture(GLenum target, GLuint texture)           { (void)target; (void)texture; pspguStubTexture++; }
-void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height,
-                  GLint border, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target; (void)level; (void)internalFormat; (void)width; (void)height;
-    (void)border; (void)format; (void)type; (void)pixels;
-    pspguStubTexture++;
-}
-void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
-                     GLsizei height, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target; (void)level; (void)xoffset; (void)yoffset; (void)width; (void)height;
-    (void)format; (void)type; (void)pixels;
-    pspguStubTexture++;
-}
-void glTexParameteri(GLenum target, GLenum pname, GLint param)
-                                                            { (void)target; (void)pname; (void)param; pspguStubTexture++; }
 
 //------------------------------------------------------------------------------------
 // Queries and readback - task 7
