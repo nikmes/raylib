@@ -57,6 +57,28 @@
     // room and still holds a 2,000-sprite frame with plenty to spare.
     #define PSP_GU_LIST_BYTES (240*1024)
 #endif
+#ifndef PSP_GU_FB_COUNT
+    // Three framebuffers, not two. Two buffers can only be correct if the frame being
+    // displayed is the one just submitted, which forces a full GE wait before the swap.
+    // A third buffer lets the display show frame N-1 (finished) while frame N is still
+    // being drawn, which is what makes the queued submission tear-free. 272 KiB more
+    // VRAM, recorded in the sprint's budget.
+    #define PSP_GU_FB_COUNT 3
+#endif
+#ifndef PSP_GU_ARENA_BYTES
+    // Per-list vertex arena. One batcher flush at RLPSP_BATCH_CAP (4,096) vertices is
+    // 96 KiB; 128 KiB also holds the converted path's 32-byte vertices and the text runs
+    // that share the same frame. Two lists therefore cost 256 KiB of main RAM. Measured
+    // worst case at the 60 fps ceiling: 1,895 sprites = 3,790 vertices = 91.0 KiB.
+    #define PSP_GU_ARENA_BYTES (128*1024)
+#endif
+
+// libpspgu exposes the queue id of the last direct list it enqueued. sceGuStart()
+// enqueues immediately (with the stall address at the list start), so saving this after
+// sceGuStart identifies the list we are about to fill. That lets list reuse wait on the
+// exact list that used the memory before, instead of a full GE wait on the current frame.
+// Declared here rather than included: no pspsdk header exports it, but libpspgu.a does.
+extern int ge_list_executed[2];
 
 // One context and one window surface is all raylib ever makes
 typedef struct {
@@ -65,17 +87,45 @@ typedef struct {
     int vsync;                              // eglSwapInterval value
     int width, height, stride;
 
-    void *list;                             // the command list being filled
-    void *listBase;
+    void *listMem[2];                       // rotating command lists
+    int listIndex;                          // list being filled, -1 before the first
     int listOpen;                           // between sceGuStart and sceGuFinish
+    int listQid[2];                         // GE queue id of each list, -1 when unused
+    unsigned int listBytes;                 // capacity of one list
+    unsigned int listUsedMax;               // largest list sceGuFinish reported
+    unsigned long long listSubmits;
+    unsigned long long listWaitUs;          // time spent waiting for a reused list
+    unsigned long long listWaitMaxUs;
+    unsigned long long listWaits;
+
+    void *arenaMem[2];                      // per-list vertex memory
+    unsigned int arenaUsed[2];
+    unsigned int arenaBytes;                // capacity of one arena
+    unsigned long long arenaOverflows;      // frames that needed the full-sync fallback
 
     unsigned int fbBytes;                   // one framebuffer, bytes
-    void *drawOffset;                       // offsets inside EDRAM, as GU wants them
+    void *fbOffset[PSP_GU_FB_COUNT];         // the rotating framebuffers, EDRAM offsets
+    int bufQid[PSP_GU_FB_COUNT];             // GE queue id of the list that last drew each
+    int frames;                             // completed frames (incremented at swap)
+    int frameActive;                        // a frame has drawn since the last swap
+    int drawIndex;                          // buffer the open frame draws into
+    int swapDisplay;                        // buffer the next swap shows, -1 = keep
+    int swapRender;                         // buffer the next frame draws into
+    unsigned long long displayWaits;        // waits for the frame about to be shown
+    unsigned long long displayWaitUs;
+    unsigned long long displayWaitMaxUs;
+
+    void *drawOffset;                       // current draw buffer, as GU wants it
     void *dispOffset;
     void *depthOffset;                      // NULL when PSP_GU_DEPTH is 0
+    void *readOffset;                       // buffer holding the last completed frame
 
     unsigned int vramNext;                  // bump allocator for textures, after the buffers
     unsigned int vramEnd;
+    unsigned int vramAllocated;             // requested bytes handed to the allocator
+    unsigned int vramPeak;                  // high-water mark of vramNext
+    unsigned int vramAllocs;                // allocation counter
+    unsigned int texAllocated;              // texture bytes, from the same counter
 
     // GL state that GU needs on every draw because GU has no query for it
     unsigned int clearColor;                // 0xAABBGGRR
@@ -91,8 +141,15 @@ extern PspGuContext pspgu;
 
 // Framebuffer / list plumbing, used by egl.c and by every gl_*.c that needs to emit
 void pspguBeginFrame(void);                 // start a list if one is not open
-void pspguEndFrame(void);                   // finish + sync what is queued
+void pspguEndFrame(void);                   // finish the open list, no GE wait
+void pspguFinishAndWait(void);              // finish, then wait for it (readback/boot only)
 unsigned int pspguVramAlloc(unsigned int bytes);    // bump allocator, returns EDRAM offset
+void pspguVramReport(const char *when);     // one line: allocations, used, free tail, peak
+
+// Per-list vertex memory. Every draw copies its vertices here before handing the pointer
+// to GU, so a list queued two frames ago never points at memory this frame writes.
+void *pspguArenaAlloc(unsigned int bytes);  // 16-byte aligned, NULL when exhausted
+int pspguArenaReset(void);                  // rare fallback: finish+wait, empty the arena
 
 // The GE reads vertices and indices straight out of main RAM, through its own path, so
 // anything the CPU wrote has to be written back first. Without this the GE reads stale

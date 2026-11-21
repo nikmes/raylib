@@ -23,6 +23,20 @@ static unsigned int alignedListBytes(unsigned int n)
     return (n + 63) & ~63u;             // 64-byte alignment, as GU's own examples use
 }
 
+static unsigned long long pspguNowUs(void)
+{
+    return (unsigned long long)sceKernelGetSystemTimeWide();
+}
+
+// sceGuSwapBuffers normally just exchanges two pointers. With three buffers we choose
+// which completed frame to show and which free buffer the next frame draws into. GU then
+// sends the new draw pointer on the next sceGuStart, so the list carries it.
+static void pspguSwapCallback(void **display, void **render)
+{
+    if (pspgu.swapDisplay >= 0) *display = pspgu.fbOffset[pspgu.swapDisplay];
+    *render = pspgu.fbOffset[pspgu.swapRender];
+}
+
 // Boot the GE. Called from eglMakeCurrent, which is the first moment a GL call is legal.
 static void pspguInitGu(void)
 {
@@ -36,30 +50,57 @@ static void pspguInitGu(void)
     unsigned int fb = pspgu.stride * pspgu.height * 2;      // 5650 = 2 bytes per pixel
 
     pspgu.fbBytes = fb;
+    pspgu.listBytes = alignedListBytes(PSP_GU_LIST_BYTES);
+    pspgu.arenaBytes = PSP_GU_ARENA_BYTES;
 
-    pspgu.listBase = memalign(64, alignedListBytes(PSP_GU_LIST_BYTES));
-    pspgu.list = pspgu.listBase;
+    // Two of each. Frame N fills one list and one arena; frame N+1 the other pair. A list
+    // is only rewritten after the GE has finished the frame that last used it (see
+    // pspguBeginFrame), so its vertex memory is never overwritten under the hardware.
+    for (int i = 0; i < 2; i++)
+    {
+        pspgu.listMem[i] = memalign(64, pspgu.listBytes);
+        pspgu.listQid[i] = -1;
+        pspgu.arenaMem[i] = memalign(64, pspgu.arenaBytes);
+        pspgu.arenaUsed[i] = 0;
+    }
+    pspgu.listIndex = -1;
 
-    // VRAM map: draw framebuffer, display framebuffer, optional depth, then textures
-    pspgu.drawOffset = EDRAM(0);
-    pspgu.dispOffset = EDRAM(fb);
-    pspgu.vramNext = 2*fb;
+    // VRAM map: three framebuffers, optional depth, then textures. Three buffers are what
+    // makes a queued submission tear-free: the display can show frame N-1 while frame N
+    // is still being drawn, so no steady frame has to wait for the GE before swapping.
+    for (int i = 0; i < PSP_GU_FB_COUNT; i++)
+    {
+        pspgu.fbOffset[i] = EDRAM(i*fb);
+        pspgu.bufQid[i] = -1;
+    }
+    pspgu.vramNext = PSP_GU_FB_COUNT*fb;
 
 #if PSP_GU_DEPTH
-    pspgu.depthOffset = EDRAM(2*fb);
-    pspgu.vramNext = 3*fb;
+    pspgu.depthOffset = EDRAM(PSP_GU_FB_COUNT*fb);
+    pspgu.vramNext = (PSP_GU_FB_COUNT + 1)*fb;
 #else
     pspgu.depthOffset = NULL;
 #endif
     pspgu.vramEnd = 2*1024*1024;        // the whole of EDRAM
+    pspgu.readOffset = pspgu.fbOffset[PSP_GU_FB_COUNT - 1];
+    pspgu.drawOffset = pspgu.fbOffset[0];
+    pspgu.dispOffset = pspgu.fbOffset[PSP_GU_FB_COUNT - 1];
 
     sceGuInit();
 
-    sceGuStart(GU_DIRECT, pspgu.listBase);
-    pspgu.listOpen = 1;
+    // Switch the display at the vblank the swap already waited for, not one frame later.
+    // NEXTFRAME sounds safer but schedules the switch a full vblank after the call, so a
+    // three-buffer rotation shows buffer (f-1) two frames later - which is exactly the
+    // buffer frame f+2 draws into. Measured with sceDisplayGetFrameBuf: the display and
+    // the draw buffer became the same address. NEXTHSYNC makes the completed frame visible
+    // for the very next frame; the wait at swap guarantees it is complete.
+    guSwapBuffersBehaviour(PSP_DISPLAY_SETBUF_NEXTHSYNC);
+    guSwapBuffersCallback(pspguSwapCallback);
 
-    sceGuDrawBuffer(GU_PSM_5650, pspgu.drawOffset, pspgu.stride);
-    sceGuDispBuffer(PSP_GU_WIDTH, PSP_GU_HEIGHT, pspgu.dispOffset, pspgu.stride);
+    pspgu.listIndex = 0;
+    int bootList = sceGuStart(GU_DIRECT, pspgu.listMem[0]);
+    pspgu.listQid[0] = (bootList >= 0)? ge_list_executed[0] : -1;
+    pspgu.listOpen = 1;
 
     // 480 centred in a 512-wide buffer: the recipe in the phase page, with numbers
     // GU's matrices are undefined after sceGuInit: samples always set all three. The view
@@ -92,12 +133,41 @@ static void pspguInitGu(void)
     sceGuDepthRange(65535, 0);
 #endif
 
-    sceGuFinish();
-    sceGuSync(0, 0);
-    pspgu.listOpen = 0;
+    // Clear every buffer once, before sceGuDispBuffer sets the height. After that,
+    // sceGuDrawBuffer's convenience auto-assignment would invent a depth buffer in the
+    // PSP_GU_DEPTH=0 build, so this is the only safe point to move the draw pointer.
+    {
+        unsigned int clearBits = GU_COLOR_BUFFER_BIT;
+#if PSP_GU_DEPTH
+        clearBits |= GU_DEPTH_BUFFER_BIT;
+#endif
+        sceGuClearColor(0xFF000000);
+
+        for (int i = 0; i < PSP_GU_FB_COUNT; i++)
+        {
+            sceGuDrawBuffer(GU_PSM_5650, pspgu.fbOffset[i], pspgu.stride);
+            sceGuClear(clearBits);
+        }
+
+        sceGuDrawBuffer(GU_PSM_5650, pspgu.fbOffset[0], pspgu.stride);
+        sceGuDispBuffer(PSP_GU_WIDTH, PSP_GU_HEIGHT,
+                        pspgu.fbOffset[PSP_GU_FB_COUNT - 1], pspgu.stride);
+    }
+
+    {
+        unsigned int used = sceGuFinish();      // bytes, as sceGuFinish reports them
+        pspgu.listUsedMax = used;
+        if (pspgu.listQid[0] >= 0) sceGeListSync(pspgu.listQid[0], PSP_GE_LIST_DONE);
+        pspgu.listOpen = 0;
+    }
 
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
+
+    // Show a cleared buffer, never buffer 0 while frame 0 is drawing into it.
+    sceDisplaySetFrameBuf((void *)((unsigned int)sceGeEdramGetAddr() +
+                          (unsigned int)pspgu.fbOffset[PSP_GU_FB_COUNT - 1]),
+                          pspgu.stride, GU_PSM_5650, PSP_DISPLAY_SETBUF_NEXTHSYNC);
 
     pspguInitTextures();
     pspguResetMatrices();
@@ -107,35 +177,101 @@ static void pspguInitGu(void)
     pspgu.vsync = 1;
     pspgu.current = 1;
 
-    pspguLog("GU up: %dx%d stride %d, fb %u KiB x2, depth %s (%u KiB), textures from %u KiB, list %u KiB",
-                 pspgu.width, pspgu.height, pspgu.stride, pspgu.fbBytes/1024,
+    pspguLog("GU up: %dx%d stride %d, fb %u KiB x%d, depth %s (%u KiB), lists 2 x %u KiB, arenas 2 x %u KiB",
+                 pspgu.width, pspgu.height, pspgu.stride, pspgu.fbBytes/1024, PSP_GU_FB_COUNT,
                  (pspgu.depthOffset != NULL)? "yes":"no",
                  (pspgu.depthOffset != NULL)? (pspgu.fbBytes/1024) : 0,
-                 pspgu.vramNext/1024, PSP_GU_LIST_BYTES/1024);
+                 pspgu.listBytes/1024, pspgu.arenaBytes/1024);
+    pspguVramReport("boot");
 }
 
 // Start a list if none is open. Every emitter calls this; it is free when already open.
+//
+// Rotation: before a list is reused, wait for the GE to finish the frame that last used
+// it. That is two frames old, so the wait is normally already satisfied, but it is a real
+// guarantee that this frame cannot overwrite a list or arena the hardware is still
+// reading. It is a targeted wait, not the old full sync on the frame just submitted.
 void pspguBeginFrame(void)
 {
-    if (!pspgu.current) return;
+    if (!pspgu.current || pspgu.listOpen) return;
 
-    if (!pspgu.listOpen)
+    // One framebuffer per display frame. EndFrame/readback may close and reopen lists
+    // inside the same frame, so this is keyed on the frame, not on list submissions.
+    if (!pspgu.frameActive)
     {
-        pspgu.list = pspgu.listBase;
-        sceGuStart(GU_DIRECT, pspgu.list);
-        pspgu.listOpen = 1;
+        pspgu.drawIndex = pspgu.frames % PSP_GU_FB_COUNT;
+        pspgu.drawOffset = pspgu.fbOffset[pspgu.drawIndex];
+        pspgu.frameActive = 1;
     }
+
+    int next = (pspgu.listIndex == 0)? 1 : 0;
+
+    if (pspgu.listQid[next] >= 0)
+    {
+        unsigned long long start = pspguNowUs();
+        sceGeListSync(pspgu.listQid[next], PSP_GE_LIST_DONE);
+        unsigned long long spent = pspguNowUs() - start;
+
+        pspgu.listWaits++;
+        pspgu.listWaitUs += spent;
+        if (spent > pspgu.listWaitMaxUs) pspgu.listWaitMaxUs = spent;
+    }
+
+    pspgu.listIndex = next;
+    pspgu.arenaUsed[next] = 0;
+
+    int res = sceGuStart(GU_DIRECT, pspgu.listMem[next]);
+    pspgu.listQid[next] = (res >= 0)? ge_list_executed[0] : -1;
+    pspgu.listOpen = 1;
 }
 
-// Finish the list and let the GE work through it. GU_SYNC_WHAT_QUEUED would be cheaper;
-// the slice uses a full sync so a hang is a hang and not a mystery.
+// Finish the open list and let the GE work through it. No wait: the display switch is
+// deferred to the next frame (guSwapBuffersBehaviour), which gives the GE a period.
 void pspguEndFrame(void)
 {
     if (!pspgu.current || !pspgu.listOpen) return;
 
-    sceGuFinish();
-    sceGuSync(0, 0);
+    unsigned int used = sceGuFinish();
+
     pspgu.listOpen = 0;
+    pspgu.listSubmits++;
+    pspgu.bufQid[pspgu.drawIndex] = pspgu.listQid[pspgu.listIndex];
+    if (used > pspgu.listUsedMax) pspgu.listUsedMax = used;
+
+    if (used >= pspgu.listBytes)
+    {
+        // GU has no capacity check of its own and a list that runs past its buffer
+        // corrupts memory; this is the assertion the sprint asks for.
+        pspguLog("LIST OVERFLOW: %u bytes used of %u", used, pspgu.listBytes);
+    }
+
+    // One steady-state line, early enough not to disturb the percentiles: the point of
+    // T5 is a targeted wait on the list two frames old, and these counters are how that
+    // claim is checked rather than felt.
+    if (pspgu.listSubmits == 50)
+    {
+        unsigned long long avg = (pspgu.listWaits > 0)? pspgu.listWaitUs/pspgu.listWaits : 0;
+        unsigned long long davg = (pspgu.displayWaits > 0)?
+                                  pspgu.displayWaitUs/pspgu.displayWaits : 0;
+        pspguLog("lists: submits=%llu waits=%llu avg_wait=%llu us max_wait=%llu us | "
+                 "display waits=%llu avg=%llu us max=%llu us | list_used_max=%u "
+                 "arena_bytes=%u arena_overflows=%llu",
+                 pspgu.listSubmits, pspgu.listWaits, avg, pspgu.listWaitMaxUs,
+                 pspgu.displayWaits, davg, pspgu.displayWaitMaxUs,
+                 pspgu.listUsedMax, pspgu.arenaBytes, pspgu.arenaOverflows);
+    }
+}
+
+// Finish and wait for the list just submitted. Used at boot and by readback; a steady
+// frame must not call this.
+void pspguFinishAndWait(void)
+{
+    if (!pspgu.current || !pspgu.listOpen) return;
+
+    int qid = pspgu.listQid[pspgu.listIndex];
+
+    pspguEndFrame();
+    if (qid >= 0) sceGeListSync(qid, PSP_GE_LIST_DONE);
 }
 
 unsigned int pspguVramAlloc(unsigned int bytes)
@@ -145,8 +281,79 @@ unsigned int pspguVramAlloc(unsigned int bytes)
     if ((off + bytes) > pspgu.vramEnd) return 0;        // out of VRAM; caller decides
 
     pspgu.vramNext = off + bytes;
+    pspgu.vramAllocated += bytes;
+    pspgu.vramAllocs++;
+    pspgu.texAllocated += bytes;                        // only textures allocate after boot
+    if (pspgu.vramNext > pspgu.vramPeak) pspgu.vramPeak = pspgu.vramNext;
 
     return off;
+}
+
+// One line, from the allocator's own counters. "used" is the bump pointer; the padding
+// column accounts for the 64-byte alignment between allocations, so the totals add up
+// exactly. The display lists live in main RAM and are deliberately not part of this sum.
+void pspguVramReport(const char *when)
+{
+    unsigned int used = pspgu.vramNext;
+    unsigned int buffers = PSP_GU_FB_COUNT*pspgu.fbBytes +
+                           ((pspgu.depthOffset != NULL)? pspgu.fbBytes : 0u);
+    unsigned int pad = (used > buffers + pspgu.texAllocated)?
+                       (used - buffers - pspgu.texAllocated) : 0u;
+
+    pspguLog("VRAM [%s]: fb=%u x%d + depth=%u + textures=%u + pad=%u = used=%u free=%u peak=%u allocs=%u (bytes)",
+             when, pspgu.fbBytes, PSP_GU_FB_COUNT,
+             (pspgu.depthOffset != NULL)? pspgu.fbBytes : 0u,
+             pspgu.texAllocated, pad, used, pspgu.vramEnd - used, pspgu.vramPeak,
+             pspgu.vramAllocs);
+}
+
+// Per-list vertex memory. The pointer handed to sceGuDrawArray must stay valid until the
+// GE has finished that list; with two lists in flight, one arena per list is what makes
+// that true without a full wait.
+void *pspguArenaAlloc(unsigned int bytes)
+{
+    int i = pspgu.listIndex;
+
+    if ((i < 0) || !pspgu.listOpen) return NULL;
+
+    // 64 bytes, not 16: the PSP D-cache line is 64 bytes and the GE reads this memory
+    // after sceKernelDcacheWritebackRange. An allocation that starts mid-line shares a
+    // dirty line with the previous draw; one polyline in basic_shapes showed a one-pixel
+    // edge shift that way. Line-aligned starts make every writeback cover its own lines.
+    unsigned int off = (pspgu.arenaUsed[i] + 63) & ~63u;
+
+    if ((off + bytes) > pspgu.arenaBytes) return NULL;
+
+    pspgu.arenaUsed[i] = off + bytes;
+
+    return (unsigned char *)pspgu.arenaMem[i] + off;
+}
+
+// A frame larger than the arena cannot be rotated without overwriting vertices the GE
+// may still read. The safe fallback is a full wait on the list just finished, then a
+// fresh list on the same memory. It is counted, and it should stay zero for the measured
+// configuration: the 60 fps ceiling uses 91 KiB of the 128 KiB arena.
+int pspguArenaReset(void)
+{
+    int i = pspgu.listIndex;
+
+    if (!pspgu.current || (i < 0) || !pspgu.listOpen) return 0;
+
+    int qid = pspgu.listQid[i];
+
+    pspguEndFrame();
+    if (qid >= 0) sceGeListSync(qid, PSP_GE_LIST_DONE);
+
+    pspgu.arenaUsed[i] = 0;
+
+    int res = sceGuStart(GU_DIRECT, pspgu.listMem[i]);
+    pspgu.listQid[i] = (res >= 0)? ge_list_executed[0] : -1;
+    pspgu.listOpen = 1;
+    pspgu.arenaOverflows++;
+
+    pspguLog("vertex arena exhausted: full sync fallback (%llu total)", pspgu.arenaOverflows);
+
+    return 1;
 }
 
 //------------------------------------------------------------------------------------
@@ -237,8 +444,49 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     pspguEndFrame();
 
+    // One line, once, after the application's textures are loaded: the boot line cannot
+    // know them yet. It is printed before the first swap so the frame times that follow
+    // are not measured with the log in them.
+    static int vramAssetsReported = 0;
+    if (!vramAssetsReported) { pspguVramReport("assets"); vramAssetsReported = 1; }
+
+    int finished = pspgu.frames;
+
+    if (finished >= 1)
+    {
+        // Show frame finished-1, the one that had this whole frame to complete. This is
+        // the only wait on the display path, and it targets a finished frame, not the one
+        // just submitted.
+        int show = (finished - 1) % PSP_GU_FB_COUNT;
+
+        if (pspgu.bufQid[show] >= 0)
+        {
+            unsigned long long start = pspguNowUs();
+            sceGeListSync(pspgu.bufQid[show], PSP_GE_LIST_DONE);
+            unsigned long long spent = pspguNowUs() - start;
+
+            pspgu.displayWaits++;
+            pspgu.displayWaitUs += spent;
+            if (spent > pspgu.displayWaitMaxUs) pspgu.displayWaitMaxUs = spent;
+        }
+
+        pspgu.swapDisplay = show;
+        pspgu.readOffset = pspgu.fbOffset[show];
+    }
+    else
+    {
+        // Nothing has completed yet: show a cleared buffer, never the one being drawn.
+        pspgu.swapDisplay = PSP_GU_FB_COUNT - 1;
+        pspgu.readOffset = pspgu.fbOffset[pspgu.swapDisplay];
+    }
+
+    pspgu.swapRender = (finished + 1) % PSP_GU_FB_COUNT;
+    pspgu.frames++;
+    pspgu.frameActive = 0;
+
     if (pspgu.vsync) sceDisplayWaitVblankStart();
-    sceGuSwapBuffers();
+
+    sceGuSwapBuffers();     // callback picks swapDisplay/swapRender
 
     return EGL_TRUE;
 }
@@ -265,7 +513,7 @@ EGLBoolean eglTerminate(EGLDisplay dpy)
 
     if (!pspgu.current) return EGL_TRUE;
 
-    pspguEndFrame();
+    pspguFinishAndWait();
     sceGuTerm();
     pspgu.current = 0;
 

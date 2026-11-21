@@ -31,7 +31,7 @@ typedef struct {
 
 static PspGuArray arrVertex, arrTexCoord, arrColor, arrNormal;
 
-// Scratch for the slow path, in GU order: texcoord, colour, normal, position
+// One converted vertex, in GU order: texcoord, colour, normal, position
 typedef struct {
     float u, v;
     unsigned int color;                 // 0xAABBGGRR
@@ -39,7 +39,27 @@ typedef struct {
     float x, y, z;
 } PspGuVertex;                          // 32 bytes
 
-static PspGuVertex scratch[PSPGU_MAX_CONVERT];
+// Vertices live in the current list's arena, never in a shared scratch buffer: with two
+// lists in flight a single scratch buffer would be rewritten by frame N while frame N-1
+// still pointed at it. This is the per-list vertex memory T5 requires.
+static void *arenaCopy(const void *src, unsigned int bytes)
+{
+    unsigned char *dst;
+
+    pspguBeginFrame();
+
+    dst = (unsigned char *)pspguArenaAlloc(bytes);
+    while (dst == NULL)
+    {
+        if (!pspguArenaReset()) return NULL;
+        dst = (unsigned char *)pspguArenaAlloc(bytes);
+    }
+
+    memcpy(dst, src, bytes);
+    pspguWriteback(dst, bytes);
+
+    return dst;
+}
 
 static unsigned int guPrimitive(GLenum mode)
 {
@@ -180,27 +200,39 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 
     if (isBatchedLayout())
     {
-        // Direct: GU's vertex order is the batch's vertex order
-        const unsigned char *v = arrTexCoord.ptr + (size_t)first*24;
+        // Same layout as GU: copy the run into this list's arena, then hand GU the copy.
+        // The batcher's own buffer is reused next frame, so a direct pointer would let
+        // frame N rewrite vertices that frame N-1's list still reads.
+        unsigned int bytes = (unsigned int)count*24;
+        void *v = arenaCopy(arrTexCoord.ptr + (size_t)first*24, bytes);
 
-        pspguWriteback(v, (unsigned int)count*24);
-        pspguBeginFrame();
-        sceGuDrawArray(prim, fmt, count, NULL, v);
+        if (v != NULL) sceGuDrawArray(prim, fmt, count, NULL, v);
     }
     else
     {
         int done = 0;
+        int chunk = (int)(pspgu.arenaBytes / sizeof(PspGuVertex));
+
+        if (chunk > PSPGU_MAX_CONVERT) chunk = PSPGU_MAX_CONVERT;
 
         while (done < count)
         {
             int n = count - done;
-            if (n > PSPGU_MAX_CONVERT) n = PSPGU_MAX_CONVERT;
+            if (n > chunk) n = chunk;
 
-            for (int i = 0; i < n; i++) convertVertex(&scratch[i], first + done + i);
-
-            pspguWriteback(scratch, (unsigned int)n*sizeof(PspGuVertex));
             pspguBeginFrame();
-            sceGuDrawArray(prim, fmt, n, NULL, scratch);
+
+            PspGuVertex *out = (PspGuVertex *)pspguArenaAlloc((unsigned int)n*sizeof(PspGuVertex));
+            while (out == NULL)
+            {
+                if (!pspguArenaReset()) return;
+                out = (PspGuVertex *)pspguArenaAlloc((unsigned int)n*sizeof(PspGuVertex));
+            }
+
+            for (int i = 0; i < n; i++) convertVertex(&out[i], first + done + i);
+
+            pspguWriteback(out, (unsigned int)n*sizeof(PspGuVertex));
+            sceGuDrawArray(prim, fmt, n, NULL, out);
 
             done += n;
         }
@@ -234,13 +266,16 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
     {
         int done = 0;
 
+        // 2,048 indices with a 2,048-vertex range is 64 KiB of vertices plus 4 KiB of
+        // indices, which always fits one arena even after the 16-byte alignment.
+        int chunk = 2048;
+
         while (done < count)
         {
             int n = count - done;
             unsigned short lo = 0xFFFF, hi = 0;
-            unsigned short rebased[PSPGU_MAX_CONVERT];
 
-            if (n > PSPGU_MAX_CONVERT) n = PSPGU_MAX_CONVERT;
+            if (n > chunk) n = chunk;
 
             for (int i = 0; i < n; i++)
             {
@@ -248,15 +283,28 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
                 if (idx[done + i] > hi) hi = idx[done + i];
             }
 
-            if ((int)(hi - lo + 1) > PSPGU_MAX_CONVERT) n = 1;   // pathological fan; step one at a time
+            int range = (int)hi - (int)lo + 1;
+            if (range > chunk) { n = 1; range = 1; }   // pathological fan; step one at a time
+            if (n <= 0) return;
 
-            for (int i = 0; i <= (int)(hi - lo); i++) convertVertex(&scratch[i], lo + i);
+            pspguBeginFrame();
+
+            PspGuVertex *verts = (PspGuVertex *)pspguArenaAlloc((unsigned int)range*sizeof(PspGuVertex));
+            unsigned short *rebased = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
+
+            while ((verts == NULL) || (rebased == NULL))
+            {
+                if (!pspguArenaReset()) return;
+                verts = (PspGuVertex *)pspguArenaAlloc((unsigned int)range*sizeof(PspGuVertex));
+                rebased = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
+            }
+
+            for (int i = 0; i < range; i++) convertVertex(&verts[i], lo + i);
             for (int i = 0; i < n; i++) rebased[i] = idx[done + i] - lo;
 
-            pspguWriteback(scratch, (unsigned int)(hi - lo + 1)*sizeof(PspGuVertex));
+            pspguWriteback(verts, (unsigned int)range*sizeof(PspGuVertex));
             pspguWriteback(rebased, (unsigned int)n*sizeof(unsigned short));
-            pspguBeginFrame();
-            sceGuDrawArray(prim, fmt, n, rebased, scratch);
+            sceGuDrawArray(prim, fmt, n, rebased, verts);
 
             done += n;
         }
