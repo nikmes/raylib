@@ -242,3 +242,32 @@ projection, captured and measured against the predicted screen coordinates — s
 at pixel X" rather than another inference from a whole scene. Two candidates it will separate: the projection
 really is being altered between our matrix and the GE's registers (float24 truncation, or `sceGuSetMatrix`'s
 handling of the `w` row), or the modelview is being applied twice.
+
+
+## 9d. T1, the triangle probe: the 3D pipeline is correct — for a straight camera
+
+`psp-tests/triangle_probe` draws one triangle in world space through `BeginMode3D` with a camera at (0,0,2) looking
+down -Z, and prints its predicted screen positions:
+
+| | x | y |
+|---|---|---|
+| predicted | 158..322 | 54..218 |
+| **pspgu capture** | **158..321** | **55..217** |
+
+That is a match within one pixel of rasterisation. So the following are **proven correct** for the immediate 3D path:
+the frustum, the matrix upload (`sceGuSetMatrix` with the `w` row and all), the viewport/offset mapping, and the
+perspective divide. Both candidates the probe was built to separate — "the GE alters the matrix" and "the modelview
+is applied twice" — are **eliminated**.
+
+**What the probe does not exercise, and it is the last untested part: a rotated view matrix.** The probe camera
+looks straight down -Z, which makes the 3×3 rotation block of the view matrix the identity — exactly the case where
+a row/column-major confusion is invisible. The mesh scene's camera is at **(0,1,4)** looking at the origin, i.e. a
+real rotation. That is now the single remaining difference between the scene that matches and the scene that does not.
+
+**Next probe, one line of change:** move `triangle_probe`'s camera to (0,1,4) and predict the vertices from the
+rotated view. If the vertices land where predicted, the difference is in `DrawCube`/`DrawMesh` rather than the matrix
+path; if they do not, the view-matrix convention is the answer — and the two transposes already rejected were
+rejected at the wrong layer (ingest and upload), leaving the multiply order as the untested third.
+
+Status: the triangle probe is committed with its prediction in the log line, so the next run is a one-line edit and
+an immediate comparison.
