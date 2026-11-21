@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `ee3957a9` |
 | Started / closed | — / — |
 | Build number(s) | `b9` (sprint 008 reference, `04584553…`), `b10` (this sprint) |
-| Tasks | 0/6 done |
+| Tasks | 0/7 done |
 
 ## 0. Handover
 
@@ -55,6 +55,14 @@ order is the picture**, so a scene whose sprite and rotated primitive alternate 
 alternation however many buffers exist. The fix that preserves order is to bound the damage — an **alternation
 budget** per frame — and that is what T3 now specifies. The same constraint applies to `PSPRuntime`: its
 `FlushBuffer()` switches primitive the same way, and its bunnymark only ever runs in one mode at a time.
+
+**Correctness gap found at review, present in the shipped code today.** `DrawModel()` does **not** go through
+`rlBegin`/`rlVertex`: it calls `rlDrawVertexArray()`/`rlDrawVertexArrayElements()` (`rmodels.c:1477`), which are
+`glDrawArrays`/`glDrawElements` directly — so a mesh **bypasses the batch entirely**, and those entry points are
+**not** among the 31 flush hooks sprint 007 added. Consequence: in a frame that draws 2D, then a model, then 2D
+again, the buffered 2D geometry is emitted *after* the mesh. Immediate-mode 3D (`DrawCube`, `DrawSphere`, `DrawPlane`
+— `rmodels.c:1060`, `4129`) *is* batched and loses its normals. Both are fixed by T4b, which is a code change, not a
+test.
 
 **Read before acting:**
 
@@ -151,6 +159,7 @@ second batch buffer so sprite and triangle runs coexist; bunnymark's harness; `b
 | T2 | **bind cache**: remember the texture actually bound to the GL and skip `glBindTexture` when the run needs the same one. `rlPspBatchFlush` currently binds on every flush, and the mixed case flushes ~1,000 times a frame | `todo` | `binds`/frame drops from 2 to ≤2 with no change to `unbinds` in the normal case, and by ~1,000/frame in the mixed case; `ROTATE_ODD` improves measurably before T3 lands | — |
 | T3 | **alternation budget, not two buffers.** Two buffers cannot preserve 2D draw order: with alpha blending, submission order is the picture, so a sprite/draw order that alternates per sprite forces one draw per alternation no matter how many buffers exist. Instead: count primitive-class changes inside one frame and, after **K = 8**, stop offering the sprite path until the next `rlDrawRenderBatchActive`. Pure sprite frames are untouched; a frame that mixes rotation pays at most 8 flushes and then runs as a stable triangle stream | `todo` | `ROTATE_ODD=1` N=1,000: `draws`/frame **≤12** (from 1,001) and the frame **≤40 ms** (from 83.417) — the honest bound is the all-triangle arm (33.367 ms) plus ≤8 flushes, not a number that assumes order can be reordered | — |
 | T4 | **sample sweep under `PSP_BATCH=1`**: `basic_shapes`, `cubicmap`, `models` on the device, with `basic_shapes`/`cubicmap` frozen-scene captures compared against the unbatched arm. This is the first time the batch sees 3D content, which the flag drops normals for | `todo` | all three render and reach `DONE`; captures identical or the differing pixels counted and explained; the 3D verdict written down either way | — |
+| T4b | **flush on the vertex-array draw entry points**: add `RLPSP_FLUSH();` to `rlDrawVertexArray`, `rlDrawVertexArrayElements`, `rlDrawVertexArrayInstanced` and `rlDrawVertexArrayElementsInstanced`. Meshes bypass the immediate path, so without these hooks a frame that mixes batched 2D with a model emits the 2D geometry after the mesh — wrong picture, not slow picture. Same one-line pattern as the 31 hooks from sprint 007 | `todo` | a scene that draws 2D, then `DrawMesh(GenMeshCube(...))` — no asset file needed, and `DrawMesh` is the `rlDrawVertexArray` path — then 2D again; captured on both arms and identical, with `PSP_BATCH_TRACE=1` showing the `BATCH flush` *before* the mesh draw. `DrawCube` (immediate path) goes in the same scene so both 3D routes are covered | — |
 | T5 | **flip the default**: `PSP_BATCH=1` for `PLATFORM_PSP` unless T4 says otherwise, `PSP_BATCH=0` still building and still the documented escape hatch | `todo` | a clean build with **no** `PSP_BATCH` on the command line produces a batched library, and re-running the N=1,000 row reproduces the sprint's number | — |
 | T6 | **re-measure the model**: `work` at N = 100 / 1,000 / 1,500 / 2,000 / 2,500 / 4,000, the ceiling bisected, and `work` per sprite re-fitted. The sprint's headline is the slope, not one frame time | `todo` | a new `work = a + b·N` fit with `b ≤ 4.5 µs`, and the measured ceiling bracket ≥ 2,400 sprites | — |
 
@@ -196,6 +205,7 @@ Ceiling: bisect between the last N that holds 16.683 and the first that does not
       engaging rather than the ping-pong being hidden
 - [ ] `batch_check` byte-identical to `c4eb44e7…` at every arm
 - [ ] `basic_shapes`, `cubicmap`, `models` verified under `PSP_BATCH=1`, with the 3D verdict in §9
+- [ ] a 2D → mesh → 2D frame is identical between arms, proving T4b's flush ordering
 - [ ] `PSP_BATCH` is the default and a plain `make PLATFORM=PLATFORM_PSP` produces it
 - [ ] `memory-map.md` §4, `baselines.md` and `environment.md` updated with the new slope and the new default
 
