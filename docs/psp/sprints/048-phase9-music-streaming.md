@@ -55,8 +55,8 @@ control for the whole sprint.
   over budget. `sound.wav` is 32-bit mono, so the WAV arm also exercises conversion.
 - **No `sceAudio` in the game loop.** The backend owns the sink.
 - **`AudioStream` callbacks run on the audio thread.** They must not block, allocate, log or open files.
-  The callback receives the stream's native format; a 16-bit stream callback writes **s16**. Only
-  `AttachAudioStreamProcessor` receives f32 stereo.
+  The callback receives the stream's native format. Use a **32-bit f32 callback stream** here; the
+  `UpdateAudioStream` arm stays 16-bit s16. `AttachAudioStreamProcessor` receives f32 stereo.
 - **A 5-minute soak is 18,000 frames at 60 fps**, not 300 frames. Use `MODE=musicmix FRAMES=18000 COUNT=8`
   and a 320 s PSPLink window. The harness logs frame time each second; the backend reports rest/errors
   at close.
@@ -124,13 +124,13 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **`Music` API matrix**: `LoadMusicStream`, `IsMusicValid`, `Play`, `IsMusicStreamPlaying`, `Update`, `Stop`, `Pause`, `Resume`, `Seek`, `SetMusicVolume`, `SetMusicPitch`, `SetMusicPan`, `GetMusicTimeLength`, `GetMusicTimePlayed`, `Unload`; OGG and WAV | `done` | every call observed; seek/time within a frame; pitch changes duration; invalid music does nothing | OGG valid length 2.000, WAV 0.553, invalid=0; play/pause/resume/seek/time pass |
-| T2 | **`AudioStream` API**: `SetAudioStreamBufferSizeDefault(4096)`, `LoadAudioStream(44100,16,2)`, `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `doing` | a generated s16 stream plays; **callback fills native s16 stereo**; processor receives f32 stereo; neither blocks | update/callback/processor arms all ran, 60 fps, 0 errors; audible confirmation pending |
+| T2 | **`AudioStream` API**: `SetAudioStreamBufferSizeDefault(1024)`, 16-bit s16 for update/processor, 32-bit f32 for callback; `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `done` | all three arms continuous at 60 fps; callback f32 and processor f32; no blocking | update 433/43 (runClocks 1,065,045), callback 433/43 (1,310,585), processor 433/43 (1,287,450); 0 errors; low callback/processor gain is test-only |
 | T3 | **Main-thread baseline**: `UpdateMusicStream()` in the frame loop, OGG then WAV; 60 warm-up + 600 measured frames | `done` | p95/max from a static array, frames >2 ms, gate baseline; OGG and WAV separate | OGG p95 **16.908 ms**, max **21.622 ms**, 57 spikes; WAV p95 **13.172 ms**, max **15.124 ms**, 110 spikes |
 | T4 | **Decoder decision gate**: compare T3 p95/max with 1 ms/2 ms; if over, mark T4/T7 `blocked` and open a follow-up; do not add an unmeasured thread | `blocked` | written decision with numbers; no decoder thread unless authorized | both OGG and WAV exceed p95 1 ms and max 2 ms by a wide margin; **P9-S4a decoder/feeder follow-up required** |
 | T5 | **Track change / seek / loop**: loop on, seek, stop/start, change track; time queries | `doing` | no torn audio, no stale track; `GetMusicTimePlayed` consistent | OGG loops, seek 0.2 s and time queries pass; track change not yet exercised |
 | T6 | **File I/O**: OGG `setvbuf` 64 KiB via `fopen`/`stb_vorbis_open_file` in `raudio.c`; WAV read cost; open/read timing | `done` | card-stall spikes recorded; no file open from the feeder; OGG handle closes on unload | OGG setvbuf path used; OGG and WAV load/stream; WAV 32-bit mono conversion measured |
 | T7 | **5-minute soak**: music + 8 sounds, `MODE=musicmix FRAMES=18000 COUNT=8`, frame log each second | `blocked` | zero underruns; rest never 0; frame p95; blocked if T4 fails | not run: T4 blocked; a soak on the main-thread decoder would only reproduce the spikes |
-| T8 | **Heap/stream buffers**: record stream buffer/period, ring (if any), decoder stack and free bytes; `SetAudioStreamBufferSizeDefault(4096)` | `doing` | numbers in §7; no per-frame allocation after warm-up | 4096-byte stream default in use; heap decode buffers not yet isolated |
+| T8 | **Heap/stream buffers**: record stream buffer/period, ring (if any), decoder stack and free bytes; `SetAudioStreamBufferSizeDefault(1024)` | `doing` | numbers in §7; no per-frame allocation after warm-up | 1024-frame stream default in use; heap decode buffers not yet isolated |
 | T9 | **Regression**: `batch_check` and 018–021 gates; `git diff -- examples/` empty | `blocked` | gate `cf43ce6d…` byte-identical | installed `libGL.a` is **not a pspgu build**; `batch_check` capture is `b69830b8…` (old pspGL), not `cf43ce6d…`. Not an audio regression; restore pspgu before rerunning |
 
 ### Task log (append-only)
@@ -141,6 +141,7 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 - 2026-11-21 — implementation: OGG `setvbuf`; music/musicmix/stream modes; OGG/WAV baselines and 3 stream arms run
 - 2026-11-21 — T3 fails gate (OGG p95 16.9 ms, WAV 13.2 ms); T4/T7 blocked; no soak
 - 2026-11-21 — T9 blocked by installed pspGL, not the audio change; restore pspgu before gate
+- 2026-11-21 — stream arms fixed: 1024-frame sub-buffers, precomputed PCM for update/callback, f32/32-bit callback; continuous at 60 fps
 
 ## 6. Budgets
 
@@ -189,7 +190,8 @@ frame-time distribution.
 
 The `Music` API matrix itself passes: OGG valid (2.000 s), WAV valid (0.553 s), invalid music rejected;
 play/pause/resume/seek and time queries work. OGG uses the 64 KiB `setvbuf` path. The three `AudioStream`
-arms (update, s16 callback, f32 processor) all run at 58–60 fps with zero output errors.
+arms (update, 32-bit f32 callback, f32 processor) all run continuously at 60 fps with zero output errors;
+the 1024-frame sub-buffer and precomputed PCM removed the initial update/callback choppiness.
 
 T4 and T7 are **blocked**; the 5-minute soak was deliberately not run because it would only reproduce the
 spikes. T5 still needs a track-change arm; T8 needs an isolated heap count.

@@ -26,6 +26,7 @@ PITCH ?= 1.0
 MUSIC ?= /p9s4_target.ogg
 MUSIC_WAV ?= /p9s4_sound.wav
 STREAM_ARM ?= update
+STREAM_BUFFER ?= 1024
 
 ifeq ($(MODE),tone)
     CFLAGS += -DMODE_TONE
@@ -87,6 +88,7 @@ endif
 
 CFLAGS += -DAUDIO_COUNT=$(COUNT) -DAUDIO_FRAMES=$(FRAMES) \
           -DAUDIO_PITCH=$(PITCH) -DAUDIO_WAVE_MS=$(WAVE_MS) \
+          -DAUDIO_STREAM_BUFFER=$(STREAM_BUFFER) \
           -DMUSIC_PATH=\"$(MUSIC)\" -DMUSIC_WAV_PATH=\"$(MUSIC_WAV)\"
 
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu

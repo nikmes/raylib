@@ -33,6 +33,9 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #ifndef AUDIO_WAVE_MS
     #define AUDIO_WAVE_MS 1000
 #endif
+#ifndef AUDIO_STREAM_BUFFER
+    #define AUDIO_STREAM_BUFFER 1024
+#endif
 #ifndef MUSIC_PATH
     #define MUSIC_PATH "/p9s4_target.ogg"
 #endif
@@ -50,6 +53,8 @@ static int CompareFloat(const void *a, const void *b)
     return (fa > fb) - (fa < fb);
 }
 static float StreamPhase = 0.0f;
+static short StreamPcm[44100*2];
+static int StreamPcmOffset;
 
 #if !defined(MODE_TONE) && !defined(MODE_SOUND) && !defined(MODE_API) && \
     !defined(MODE_MIX) && !defined(MODE_PITCH) && !defined(MODE_LEVELS) && !defined(MODE_HEAP) && \
@@ -289,7 +294,7 @@ static void HeapMode(void)
 #if defined(MODE_MUSIC) || defined(MODE_MUSICMIX)
 static void MusicBaseline(const char *tag, int withSounds)
 {
-    SetAudioStreamBufferSizeDefault(4096);
+    SetAudioStreamBufferSizeDefault(AUDIO_STREAM_BUFFER);
 
     Music music = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
     if (!IsMusicValid(music))
@@ -362,7 +367,7 @@ static void MusicBaseline(const char *tag, int withSounds)
 
 static void MusicApiMode(void)
 {
-    SetAudioStreamBufferSizeDefault(4096);
+    SetAudioStreamBufferSizeDefault(AUDIO_STREAM_BUFFER);
 
     Music ogg = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
     Music wav = LoadMusicStream(TextFormat("host0:%s", MUSIC_WAV_PATH));
@@ -421,17 +426,16 @@ static void MusicMixMode(void)
 #if defined(MODE_STREAM)
 static void StreamCallback(void *bufferData, unsigned int frames)
 {
-    // The callback receives the stream's native format: this is a 16-bit stream.
-    short *out = (short *)bufferData;
+    // The callback arm uses a 32-bit float stream, so the callback buffer is f32.
+    // Copy precomputed PCM; do not synthesize on the audio thread.
+    float *out = (float *)bufferData;
     for (unsigned int i = 0; i < frames; i++)
     {
-        float value = sinf(2.0f*3.14159265f*440.0f*(StreamPhase/44100.0f))*0.10f;
-        short sample = (short)(value*32767.0f);
-        out[i*2 + 0] = sample;
-        out[i*2 + 1] = sample;
-        StreamPhase += 1.0f;
-        if (StreamPhase >= 44100.0f) StreamPhase -= 44100.0f;
+        int j = (StreamPcmOffset + (int)i)%44100;
+        out[i*2 + 0] = (float)StreamPcm[j*2 + 0]/32768.0f;
+        out[i*2 + 1] = (float)StreamPcm[j*2 + 1]/32768.0f;
     }
+    StreamPcmOffset = (StreamPcmOffset + (int)frames)%44100;
 }
 
 static void StreamProcessor(void *bufferData, unsigned int frames)
@@ -442,17 +446,21 @@ static void StreamProcessor(void *bufferData, unsigned int frames)
 
 static void AudioStreamMode(void)
 {
-    SetAudioStreamBufferSizeDefault(4096);
+    SetAudioStreamBufferSizeDefault(AUDIO_STREAM_BUFFER);
 
+#if defined(STREAM_CALLBACK)
+    AudioStream stream = LoadAudioStream(44100, 32, 2);
+#else
     AudioStream stream = LoadAudioStream(44100, 16, 2);
+#endif
     if (!IsAudioStreamValid(stream))
     {
         TraceLog(LOG_ERROR, "STREAM invalid AudioStream");
         return;
     }
 
-    SetAudioStreamVolume(stream, 0.5f);
-    SetAudioStreamPan(stream, -0.5f);
+    SetAudioStreamVolume(stream, 1.0f);
+    SetAudioStreamPan(stream, 0.0f);
     SetAudioStreamPitch(stream, 1.0f);
 
 #if defined(STREAM_CALLBACK)
@@ -461,7 +469,17 @@ static void AudioStreamMode(void)
     AttachAudioStreamProcessor(stream, StreamProcessor);
 #endif
 
-    short pcm[1024*2];
+    short pcm[AUDIO_STREAM_BUFFER*2];
+    for (int i = 0; i < 44100; i++)
+    {
+        float value = sinf(2.0f*3.14159265f*440.0f*((float)i/44100.0f))*0.20f;
+        short sample = (short)(value*32767.0f);
+        StreamPcm[i*2 + 0] = sample;
+        StreamPcm[i*2 + 1] = sample;
+    }
+    int pcmOffset = 0;
+    StreamPcmOffset = 0;
+
     PlayAudioStream(stream);
 
     for (int frame = 0; frame < AUDIO_FRAMES; frame++)
@@ -469,16 +487,14 @@ static void AudioStreamMode(void)
 #if !defined(STREAM_CALLBACK)
         if (IsAudioStreamProcessed(stream))
         {
-            for (int i = 0; i < 1024; i++)
+            for (int i = 0; i < AUDIO_STREAM_BUFFER; i++)
             {
-                float value = sinf(2.0f*3.14159265f*440.0f*(StreamPhase/44100.0f))*0.10f;
-                short sample = (short)(value*32767.0f);
-                pcm[i*2 + 0] = sample;
-                pcm[i*2 + 1] = sample;
-                StreamPhase += 1.0f;
-                if (StreamPhase >= 44100.0f) StreamPhase -= 44100.0f;
+                int j = (pcmOffset + i)%44100;
+                pcm[i*2 + 0] = StreamPcm[j*2 + 0];
+                pcm[i*2 + 1] = StreamPcm[j*2 + 1];
             }
-            UpdateAudioStream(stream, pcm, 1024);
+            pcmOffset = (pcmOffset + AUDIO_STREAM_BUFFER)%44100;
+            UpdateAudioStream(stream, pcm, AUDIO_STREAM_BUFFER);
         }
 #endif
         DrawFrame(frame, "stream", TextFormat("playing=%d", IsAudioStreamPlaying(stream)));
