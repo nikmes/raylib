@@ -22,8 +22,13 @@
 
 typedef struct {
     int used;
-    unsigned int offset;        // EDRAM offset of the texels
+    unsigned int offset;        // EDRAM offset of the texels (0 when non-resident)
     unsigned int requestedBytes; // logical allocation size, for reuse and freeing
+    int resident;               // 1 = offset holds valid texels
+    unsigned int lastUsed;      // pspgu.frames at the last bind/use
+    float priority;             // 0..1, higher is kept (glPrioritizeTextures)
+    unsigned char *shadow;      // packed linear texels in main RAM, for reload
+    unsigned int shadowBytes;
     int width, height;          // logical size the application asked for
     int tbw;                    // texture buffer width: power of two >= width, as GU wants
     int padW, padH;             // allocated size: powers of two >= width/height
@@ -196,62 +201,31 @@ static unsigned int chooseFormat(GLenum format, GLenum type, const unsigned char
     return GU_PSM_8888;
 }
 
-// Upload any source into the texture's chosen PSM. One swizzle block is 16 bytes x 8 rows
-// (128 B): fill a 128-byte stack tile, then write it to the block's address. The old path
-// allocated and zeroed the whole padded image on the heap and copied it; this path uses
-// no heap and writes through the uncached EDRAM alias. Padding is zeroed because every
-// block, including the all-padding ones, is written.
-static void uploadTexels(PspGuTexture *t, const unsigned char *pixels, GLenum format, GLenum type)
+static unsigned int texBytes(const PspGuTexture *t)
+{
+    return (unsigned int)t->padW*(unsigned int)t->padH*(unsigned int)bytesPerTexel(t->guFormat);
+}
+
+// Write the packed linear shadow to VRAM. One 8-row band at a time keeps the source reads
+// sequential and cache-resident; the destination is the swizzled block layout, followed
+// by one exact range writeback. No full-image scratch and no whole-cache invalidate.
+static void uploadShadowToVram(PspGuTexture *t)
 {
     int bpp = bytesPerTexel(t->guFormat);
     unsigned int widthBytes = (unsigned int)t->tbw*(unsigned int)bpp;
     unsigned int texelsPerBlock = 16u/(unsigned int)bpp;
-    int bytes = sourceBytesPerPixel(format, type);
-    // Cached base + one range writeback, not the uncached alias: the direct uncached
-    // block writes measured 26.2 ms against 21.1 ms for this path on a 256x256 upload.
+    unsigned int bandRow = widthBytes;
+    unsigned int total = bandRow*(unsigned int)t->padH;
     unsigned char *base = (unsigned char *)sceGeEdramGetAddr() + t->offset;
-    unsigned int total = widthBytes*(unsigned int)t->padH;
 
-    t->swizzled = PSPGU_SWIZZLE? 1 : 0;
+    if (!t->shadow || (t->shadowBytes < total)) return;
 
     if (!t->swizzled)
     {
-        // Diagnostic build (PSP_GU_NO_SWIZZLE): linear layout, padding zeroed explicitly.
-        for (unsigned int y = 0; y < (unsigned int)t->padH; y++)
-        {
-            for (unsigned int x = 0; x < (unsigned int)t->tbw; x++)
-            {
-                unsigned int texel = 0;
-
-                if ((x < (unsigned int)t->width) && (y < (unsigned int)t->height))
-                {
-                    int r, g, b, a;
-                    readSourceRGBA(pixels + ((size_t)y*t->width + x)*bytes, format, type, &r, &g, &b, &a);
-                    texel = packRGBA(r, g, b, a, t->guFormat);
-                }
-
-                if (bpp == 4) *(unsigned int *)(base + ((size_t)y*t->tbw + x)*4) = texel;
-                else *(unsigned short *)(base + ((size_t)y*t->tbw + x)*2) = (unsigned short)texel;
-            }
-        }
-
+        memcpy(base, t->shadow, total);
         pspguWriteback(base, total);
-
-        if (!t->warnedNonSwizzle)
-        {
-            pspguLog("texture %ux%u: swizzle disabled by build (PSP_GU_NO_SWIZZLE)", t->width, t->height);
-            t->warnedNonSwizzle = 1;
-        }
         return;
     }
-
-    // One 8-row band, cache-resident and bounded by the GE's 512-pixel maximum
-    // (16 KiB at 512 x 8888). The first attempt filled one 128-byte block at a time and
-    // read the source in a strided order; that measured 26.2 ms against 21.1 ms for the
-    // old full-image scratch. A band keeps the source reads sequential and still uses no
-    // full-image heap allocation.
-    unsigned char band[8*512*4];
-    unsigned int bandRow = (unsigned int)t->tbw*(unsigned int)bpp;
 
     if (t->tbw > 512)
     {
@@ -259,28 +233,11 @@ static void uploadTexels(PspGuTexture *t, const unsigned char *pixels, GLenum fo
         return;
     }
 
+    unsigned char band[8*512*4];
+
     for (unsigned int by = 0; by < (unsigned int)t->padH; by += 8)
     {
-        memset(band, 0, bandRow*8);
-
-        for (unsigned int row = 0; row < 8; row++)
-        {
-            unsigned int y = by + row;
-
-            if (y >= (unsigned int)t->height) break;
-
-            for (unsigned int x = 0; x < (unsigned int)t->width; x++)
-            {
-                int r, g, b, a;
-                unsigned int texel;
-
-                readSourceRGBA(pixels + ((size_t)y*t->width + x)*bytes, format, type, &r, &g, &b, &a);
-                texel = packRGBA(r, g, b, a, t->guFormat);
-
-                if (bpp == 4) *(unsigned int *)(band + row*bandRow + x*4) = texel;
-                else *(unsigned short *)(band + row*bandRow + x*2) = (unsigned short)texel;
-            }
-        }
+        memcpy(band, t->shadow + (size_t)by*bandRow, bandRow*8);
 
         for (unsigned int bx = 0; bx < (unsigned int)t->tbw; bx += texelsPerBlock)
         {
@@ -288,12 +245,51 @@ static void uploadTexels(PspGuTexture *t, const unsigned char *pixels, GLenum fo
 
             for (unsigned int row = 0; row < 8; row++)
             {
-                memcpy(base + (size_t)block*128 + row*16, band + row*bandRow + bx*bpp, 16);
+                memcpy(base + (size_t)block*128 + row*16,
+                       band + row*bandRow + bx*bpp, 16);
             }
         }
     }
 
     pspguWriteback(base, total);
+}
+
+// Decode the source into the packed linear shadow, then write it to VRAM. The shadow is
+// the reload source for residency; padding is zeroed here, once.
+static void uploadTexels(PspGuTexture *t, const unsigned char *pixels, GLenum format, GLenum type)
+{
+    int bpp = bytesPerTexel(t->guFormat);
+    unsigned int bandRow = (unsigned int)t->tbw*(unsigned int)bpp;
+    unsigned int total = bandRow*(unsigned int)t->padH;
+    int bytes = sourceBytesPerPixel(format, type);
+
+    if (!t->shadow || (t->shadowBytes < total)) return;
+
+    t->swizzled = PSPGU_SWIZZLE? 1 : 0;
+    memset(t->shadow, 0, total);
+
+    for (unsigned int y = 0; y < (unsigned int)t->height; y++)
+    {
+        for (unsigned int x = 0; x < (unsigned int)t->width; x++)
+        {
+            int r, g, b, a;
+            unsigned int texel;
+
+            readSourceRGBA(pixels + ((size_t)y*t->width + x)*bytes, format, type, &r, &g, &b, &a);
+            texel = packRGBA(r, g, b, a, t->guFormat);
+
+            if (bpp == 4) *(unsigned int *)(t->shadow + ((size_t)y*t->tbw + x)*4) = texel;
+            else *(unsigned short *)(t->shadow + ((size_t)y*t->tbw + x)*2) = (unsigned short)texel;
+        }
+    }
+
+    if (!t->swizzled && !t->warnedNonSwizzle)
+    {
+        pspguLog("texture %ux%u: swizzle disabled by build (PSP_GU_NO_SWIZZLE)", t->width, t->height);
+        t->warnedNonSwizzle = 1;
+    }
+
+    uploadShadowToVram(t);
 }
 
 // Push the bound texture's state into the GE, which has no texture objects of its own
@@ -325,10 +321,117 @@ static void applyTexture(PspGuTexture *t)
     sceGuTexFlush();
 }
 
+// Evict until one span can satisfy `bytes`. Priority is the strong weight; age breaks
+// ties. A texture used in the last 2 frames is pinned: a list in flight may still sample
+// it. If every candidate is pinned, finish and wait for the lists, then retry. If the
+// total free is enough but no single span is (fragmentation), the evictions coalesce it;
+// that is counted as `coalesced`, not as a data-moving compaction.
+static int residencyEvictFor(unsigned int bytes, PspGuTexture *exclude)
+{
+    int waited = 0, evicted = 0;
+    int totalEnough = (pspguVramFreeBytes() >= bytes);
+
+    while (pspguVramLargestBytes() < bytes)
+    {
+        int victim = -1;
+        float bestPriority = 2.0f;
+        unsigned int bestAge = 0;
+
+        for (unsigned int i = 2; i < PSPGU_MAX_TEXTURES; i++)
+        {
+            PspGuTexture *t = &textures[i];
+
+            if (!t->used || !t->resident || !t->shadow) continue;
+            if (t == exclude) continue;
+            if (i == pspgu.boundTexture) continue;
+            if (!waited && ((pspgu.frames - t->lastUsed) <= 2)) continue;
+
+            unsigned int age = pspgu.frames - t->lastUsed;
+
+            if ((t->priority < bestPriority) ||
+                ((t->priority == bestPriority) && (age > bestAge)))
+            {
+                bestPriority = t->priority;
+                bestAge = age;
+                victim = (int)i;
+            }
+        }
+
+        if (victim < 0)
+        {
+            if (!waited)
+            {
+                pspguFinishAndWait();
+                waited = 1;
+                continue;
+            }
+            return 0;
+        }
+
+        PspGuTexture *v = &textures[victim];
+        pspguVramFree(v->offset);
+        v->offset = 0;
+        v->resident = 0;
+        pspgu.residencyEvictions++;
+        evicted = 1;
+    }
+
+    if (evicted && totalEnough) pspgu.residencyCoalesced++;
+    return 1;
+}
+
+static int residencyAlloc(PspGuTexture *t, unsigned int bytes)
+{
+    unsigned int off = pspguVramAlloc(bytes);
+
+    if (off == 0)
+    {
+        if (!residencyEvictFor(bytes, t))
+        {
+            pspgu.residencyFailed++;
+            return 0;
+        }
+
+        off = pspguVramAlloc(bytes);
+        if (off == 0)
+        {
+            pspgu.residencyFailed++;
+            return 0;
+        }
+    }
+
+    t->offset = off;
+    t->requestedBytes = bytes;
+    t->resident = 1;
+    return 1;
+}
+
+static int residencyMakeResident(PspGuTexture *t)
+{
+    if (t->resident) return 1;
+    if (!t->shadow || (t->padW <= 0) || (t->padH <= 0)) return 0;
+
+    unsigned int bytes = texBytes(t);
+
+    if (!residencyAlloc(t, bytes)) return 0;
+
+    uploadShadowToVram(t);
+    pspgu.residencyReloads++;
+    applyTexture(t);
+
+    return 1;
+}
+
 void pspguInitTextures(void)
 {
     memset(textures, 0, sizeof(textures));
     currentTexture = 0;
+
+    pspgu.residencyEvictions = 0;
+    pspgu.residencyReloads = 0;
+    pspgu.residencyFailed = 0;
+    pspgu.residencyCoalesced = 0;
+    pspgu.shadowBytes = 0;
 
     // A 1x1 white texel, so bind(0) can never leave the GE sampling an undefined address -
     // which is what blacked the whole screen when GL_TEXTURE_2D was first enabled.
@@ -345,6 +448,9 @@ void pspguInitTextures(void)
             textures[1].used = 1;
             textures[1].offset = offset;
             textures[1].requestedBytes = 4;
+            textures[1].resident = 1;
+            textures[1].priority = 1.0f;
+            textures[1].lastUsed = pspgu.frames;
             textures[1].width = textures[1].height = 1;
             textures[1].tbw = 1;
             textures[1].padW = textures[1].padH = 1;
@@ -367,7 +473,19 @@ void glGenTextures(GLsizei n, GLuint *ids)
         while ((id < PSPGU_MAX_TEXTURES) && textures[id].used) id++;
         if (id >= PSPGU_MAX_TEXTURES) { ids[i] = 0; continue; }
 
-        textures[id].used = 2;      // reserved, dimensions unknown until glTexImage2D
+        PspGuTexture *t = &textures[id];
+
+        if (t->shadow != NULL)
+        {
+            if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+            else pspgu.shadowBytes = 0;
+            free(t->shadow);
+        }
+
+        memset(t, 0, sizeof(*t));
+        t->used = 2;                // reserved; dimensions unknown until glTexImage2D
+        t->priority = 1.0f;
+        t->lastUsed = pspgu.frames;
         ids[i] = id;
     }
 }
@@ -383,12 +501,23 @@ void glDeleteTextures(GLsizei n, const GLuint *ids)
         if (t == NULL) continue;
         if (ids[i] == defaultTexture) continue;     // bind(0) must always have a texel
 
-        if (t->offset != 0)
+        if (t->resident && (t->offset != 0))
         {
             pspguVramFree(t->offset);
             t->offset = 0;
+            t->resident = 0;
             t->requestedBytes = 0;
         }
+
+        if (t->shadow != NULL)
+        {
+            if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+            else pspgu.shadowBytes = 0;
+            free(t->shadow);
+            t->shadow = NULL;
+            t->shadowBytes = 0;
+        }
+
         t->used = 0;
     }
 }
@@ -407,10 +536,33 @@ void glBindTexture(GLenum target, GLuint id)
         t = lookup(id);
     }
 
-    pspgu.boundTexture = (id == 0)? defaultTexture : id;
-    // glGenTextures reserves an id and raylib binds it before glTexImage2D; there is no
-    // image to describe yet, and guarding here avoids a 0x0 sceGuTexImage.
-    if ((t != NULL) && (t->offset != 0) && (t->padW > 0) && (t->padH > 0)) applyTexture(t);
+    if (t != NULL)
+    {
+        t->lastUsed = pspgu.frames;
+
+        if ((t->padW > 0) && !t->resident)
+        {
+            if (!residencyMakeResident(t))
+            {
+                // A texture that cannot be made resident must not sample freed VRAM.
+                pspguLog("residency: texture %u could not be made resident", id);
+                t = NULL;
+            }
+        }
+    }
+
+    if ((t != NULL) && (t->padW > 0) && t->resident)
+    {
+        pspgu.boundTexture = (id == 0)? defaultTexture : id;
+        applyTexture(t);
+    }
+    else
+    {
+        // Reserved (generated, no image yet) or a failed reload: sample the white texel.
+        pspgu.boundTexture = defaultTexture;
+        PspGuTexture *d = lookup(defaultTexture);
+        if ((d != NULL) && d->resident) applyTexture(d);
+    }
 }
 
 void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height,
@@ -426,55 +578,86 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t = lookup(currentTexture);
     if (t == NULL) { currentTexture = defaultTexture; return; }
 
-    // Sprint 015 T2: one format decision per texture. The default build is 8888, so the
-    // parity gate cannot move; `PSP_GU_TEXFMT=auto` is the measured 16-bit build.
+    // One format decision per texture; the default build is 8888.
     t->guFormat = chooseFormat(format, type, (const unsigned char *)pixels, width, height);
     t->width = width;
     t->height = height;
-    // GU wants power-of-two dimensions and row stride. The padding columns and rows are
-    // part of the image the GE samples (the swizzle moves them around), so they are
-    // allocated and zeroed; the logical size is restored with sceGuTexScale.
     t->tbw = nextPow2(width);
     t->padW = t->tbw;
     t->padH = nextPow2(height);
-    if (t->padH < 8) t->padH = 8;       // the swizzle is an 8-row block operation
+    if (t->padH < 8) t->padH = 8;
     t->scaleU = (float)width / (float)t->padW;
     t->scaleV = (float)height / (float)t->padH;
 
+    unsigned int bytes = texBytes(t);
+
+    pspguLog("texture %u: %dx%d src=0x%x -> PSM 0x%x (%u B)",
+             currentTexture, width, height, format, t->guFormat, bytes);
+
+    // Main-RAM shadow: the reload source, not VRAM.
+    if ((t->shadow == NULL) || (t->shadowBytes != bytes))
     {
-        int bpp = bytesPerTexel(t->guFormat);
-        unsigned int bytes = (unsigned int)(t->padW * t->padH * bpp);
-
-        pspguLog("texture %u: %dx%d src=0x%x -> PSM 0x%x (%u B)",
-                 currentTexture, width, height, format, t->guFormat, bytes);
-
-        // Reuse the block when the padded size is unchanged; otherwise return the old
-        // span and take a new one. The allocator rounds to 512-byte blocks.
-        if ((t->offset == 0) || (t->requestedBytes != bytes))
+        if (t->shadow != NULL)
         {
-            if (t->offset != 0)
-            {
-                pspguVramFree(t->offset);
-                t->offset = 0;
-            }
+            if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+            else pspgu.shadowBytes = 0;
+            free(t->shadow);
+            t->shadow = NULL;
+            t->shadowBytes = 0;
+        }
 
-            t->offset = pspguVramAlloc(bytes);
-            if (t->offset == 0)
+        t->shadow = (unsigned char *)calloc(1, bytes);
+        if (t->shadow == NULL)
+        {
+            pspguLog("texture %u: shadow allocation failed (%u B)", currentTexture, bytes);
+            t->used = 0;
+            return;
+        }
+        t->shadowBytes = bytes;
+        pspgu.shadowBytes += bytes;
+    }
+
+    int reused = (t->resident && (t->requestedBytes == bytes));
+
+    if (!reused)
+    {
+        if (t->resident && (t->offset != 0))
+        {
+            pspguVramFree(t->offset);
+            t->offset = 0;
+            t->resident = 0;
+            t->requestedBytes = 0;
+        }
+
+        if (!residencyAlloc(t, bytes))
+        {
+            PspGuVramStats st;
+            pspguVramStats(&st);
+            pspguLog("texture %u: out of VRAM for %dx%d (%u bytes; used=%u free=%u largest=%u)",
+                     currentTexture, width, height, bytes, st.used, st.free, st.largest);
+            if (t->shadow != NULL)
             {
-                PspGuVramStats st;
-                pspguVramStats(&st);
-                pspguLog("texture %u: out of VRAM for %dx%d (%u bytes; used=%u free=%u largest=%u)",
-                         currentTexture, width, height, bytes, st.used, st.free, st.largest);
-                t->used = 0;
-                return;
+                if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+                else pspgu.shadowBytes = 0;
+                free(t->shadow);
+                t->shadow = NULL;
+                t->shadowBytes = 0;
             }
-            t->requestedBytes = bytes;
+            t->used = 0;
+            return;
         }
     }
 
     if (pixels != NULL) uploadTexels(t, (const unsigned char *)pixels, format, type);
+    else
+    {
+        memset(t->shadow, 0, bytes);
+        uploadShadowToVram(t);
+    }
 
     t->used = 1;
+    t->resident = 1;
+    t->lastUsed = pspgu.frames;
     applyTexture(t);
 }
 
@@ -483,44 +666,55 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
 {
     PspGuTexture *t;
     unsigned char *dst;
-    int bpp, bytes;
+    int bpp, bytes, resident;
 
     (void)target;
 
     if (!pspgu.current || (pixels == NULL) || (level != 0)) return;
 
     t = lookup(currentTexture);
-    if ((t == NULL) || (t->offset == 0)) return;
+    if ((t == NULL) || (t->shadow == NULL)) return;
 
     bpp = bytesPerTexel(t->guFormat);
-    dst = (unsigned char *)sceGeEdramGetAddr() + t->offset;
     bytes = sourceBytesPerPixel(format, type);
+    resident = (t->resident && (t->offset != 0));
+    dst = resident? ((unsigned char *)sceGeEdramGetAddr() + t->offset) : NULL;
 
-    // A sub-rectangle goes straight into the existing layout (UpdateTexture's path),
-    // 8888 or 16-bit, with the same source decode as the full upload.
+    // A sub-rectangle updates the shadow always and VRAM only when resident. A
+    // non-resident texture picks the change up on its next reload.
     for (int y = 0; y < height; y++)
     {
         for (int x = 0; x < width; x++)
         {
             int r, g, b, a;
-            unsigned int off, texel;
+            unsigned int texel;
+            size_t index = (size_t)(yoffset + y)*t->tbw + (xoffset + x);
 
             readSourceRGBA((const unsigned char *)pixels + ((size_t)y*width + x)*bytes,
                            format, type, &r, &g, &b, &a);
             texel = packRGBA(r, g, b, a, t->guFormat);
 
-            off = t->swizzled
-                ? swizzledOffset(xoffset + x, yoffset + y, t->tbw, bpp)
-                : (unsigned int)((size_t)(yoffset + y)*t->tbw + (xoffset + x))*bpp;
+            if (bpp == 4) *(unsigned int *)(t->shadow + index*4) = texel;
+            else *(unsigned short *)(t->shadow + index*2) = (unsigned short)texel;
 
-            if (bpp == 4) *(unsigned int *)(dst + off) = texel;
-            else *(unsigned short *)(dst + off) = (unsigned short)texel;
+            if (resident)
+            {
+                unsigned int off = t->swizzled
+                    ? swizzledOffset(xoffset + x, yoffset + y, t->tbw, bpp)
+                    : (unsigned int)(index*bpp);
+
+                if (bpp == 4) *(unsigned int *)(dst + off) = texel;
+                else *(unsigned short *)(dst + off) = (unsigned short)texel;
+            }
         }
     }
 
-    pspguWriteback(dst, (unsigned int)(t->tbw * t->padH * bpp));
-    pspguBeginFrame();
-    sceGuTexFlush();
+    if (resident)
+    {
+        pspguWriteback(dst, (unsigned int)(t->tbw * t->padH * bpp));
+        pspguBeginFrame();
+        sceGuTexFlush();
+    }
 }
 
 void glTexParameteri(GLenum target, GLenum pname, GLint param)
@@ -546,5 +740,91 @@ void glTexParameteri(GLenum target, GLenum pname, GLint param)
         default: return;
     }
 
-    if ((t->offset != 0) && (t->padW > 0) && (t->padH > 0)) applyTexture(t);
+    if (t->resident && (t->padW > 0) && (t->padH > 0)) applyTexture(t);
+}
+
+// GL 1.1 application priority: higher is kept. The default is 1.0; the residency victim
+// rule uses this first and age second.
+void glPrioritizeTextures(GLsizei n, const GLuint *ids, const GLclampf *priorities)
+{
+    if ((ids == NULL) || (priorities == NULL)) return;
+
+    for (GLsizei i = 0; i < n; i++)
+    {
+        PspGuTexture *t = lookup(ids[i]);
+        if (t == NULL) continue;
+
+        float p = priorities[i];
+        if (p < 0.0f) p = 0.0f;
+        if (p > 1.0f) p = 1.0f;
+        t->priority = p;
+    }
+}
+
+// The probe asks whether a texture is resident; GL_TEXTURE_RESIDENT is the standard query.
+void glGetTexParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    PspGuTexture *t;
+
+    (void)target;
+    if (params == NULL) return;
+
+    t = lookup(currentTexture);
+
+    switch (pname)
+    {
+        case GL_TEXTURE_RESIDENT:
+            *params = (t != NULL && t->resident)? 1 : 0;
+            break;
+        case GL_TEXTURE_PRIORITY:
+            *params = (t != NULL)? (GLint)(t->priority*1000.0f) : 0;
+            break;
+        default:
+            *params = 0;
+            break;
+    }
+}
+
+// Standard GL 1.1 query: report residency without binding, so the prioritisation probe
+// can inspect the victim without reloading it.
+GLboolean glAreTexturesResident(GLsizei n, const GLuint *ids, GLboolean *residences)
+{
+    GLboolean all = GL_TRUE;
+
+    if ((ids == NULL) || (residences == NULL)) return GL_FALSE;
+
+    for (GLsizei i = 0; i < n; i++)
+    {
+        PspGuTexture *t = lookup(ids[i]);
+        residences[i] = (t != NULL && t->resident)? GL_TRUE : GL_FALSE;
+        if (!residences[i]) all = GL_FALSE;
+    }
+
+    return all;
+}
+
+void pspguResidencyStats(PspGuResidencyStats *out)
+{
+    if (out == NULL) return;
+
+    memset(out, 0, sizeof(*out));
+    out->shadowBytes = pspgu.shadowBytes;
+    out->evictions = pspgu.residencyEvictions;
+    out->reloads = pspgu.residencyReloads;
+    out->failed = pspgu.residencyFailed;
+    out->coalesced = pspgu.residencyCoalesced;
+
+    for (unsigned int i = 1; i < PSPGU_MAX_TEXTURES; i++)
+    {
+        if (textures[i].used && textures[i].resident) out->resident++;
+    }
+}
+
+void pspguTextureReport(const char *when)
+{
+    PspGuResidencyStats st;
+
+    pspguResidencyStats(&st);
+    pspguLog("RESIDENCY [%s]: resident=%u shadow=%u evictions=%u reloads=%u failed=%u coalesced=%u (bytes/events)",
+             when, st.resident, st.shadowBytes, st.evictions, st.reloads, st.failed, st.coalesced);
 }

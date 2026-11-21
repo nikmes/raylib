@@ -514,6 +514,7 @@ void pspguVramReport(const char *when)
     pspguLog("VRAM [%s]: reserved=%u requested=%u used=%u free=%u largest=%u internal=%u allocs=%u frees=%u failures=%u (bytes)",
              when, s.reserved, s.requested, s.used, s.free, s.largest, s.internal,
              s.allocs, s.frees, s.failures);
+    pspguTextureReport(when);
 }
 
 // Per-list vertex memory. The pointer handed to sceGuDrawArray must stay valid until the

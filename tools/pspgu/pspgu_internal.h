@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b21"
+#define PSPGU_BUILD "b22"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -140,6 +140,14 @@ typedef struct {
     unsigned int vramFrees;
     unsigned int vramFailures;
 
+    // Residency/eviction (sprint 016). The texture table is in gl_texture.c; these are
+    // the counters that file updates and the report reads.
+    unsigned int residencyEvictions;
+    unsigned int residencyReloads;
+    unsigned int residencyFailed;
+    unsigned int residencyCoalesced;
+    unsigned int shadowBytes;               // main-RAM texture shadows, not VRAM
+
     // GL state that GU needs on every draw because GU has no query for it
     unsigned int clearColor;                // 0xAABBGGRR
     float clearDepth;
@@ -180,7 +188,20 @@ void pspguVramFree(unsigned int offset);                          // ignores fix
 void pspguVramStats(PspGuVramStats *out);
 unsigned int pspguVramFreeBytes(void);      // probes use these two for the churn self-check
 unsigned int pspguVramLargestBytes(void);
-void pspguVramReport(const char *when);     // one line: reserved/requested/used/free/largest/internal
+void pspguVramReport(const char *when);     // VRAM line + residency line
+
+// Residency (sprint 016): the probes need the counters and per-texture residency.
+typedef struct {
+    unsigned int resident;
+    unsigned int shadowBytes;
+    unsigned int evictions;
+    unsigned int reloads;
+    unsigned int failed;
+    unsigned int coalesced;
+} PspGuResidencyStats;
+
+void pspguResidencyStats(PspGuResidencyStats *out);
+void pspguTextureReport(const char *when);  // one residency line
 
 // Per-list vertex memory. Every draw copies its vertices here before handing the pointer
 // to GU, so a list queued two frames ago never points at memory this frame writes.

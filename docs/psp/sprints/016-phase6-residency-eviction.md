@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
 | Branch / base commit | `master` @ `ae4b098c` (sprint 015 closed) |
-| Started / closed | 2026-11-21 / — |
-| Build number(s) | `b22` (metadata/eviction), `b23` (probes) |
-| Tasks | 0/4 done |
+| Started / closed | 2026-11-21 / 2026-11-21 |
+| Build number(s) | `b22` (metadata, shadow, eviction; probes run on it) |
+| Tasks | 4/4 done |
 
 ## 0. Handover
 
@@ -124,18 +124,18 @@ mipmaps (sprint 017); 512-pixel windowing (phase 7); the batcher.
 - [x] `psp-tests/texture_churn` exists and returns free/largest exactly after 100 cycles
 - [x] 2D gate 0 differing pixels; `basic_shapes` 284 colours
 - [x] pspGL restorable, content hash `2ab7378e`
-- [ ] A residency probe exists with `MODE=fit|over|priority|frag` (T4 creates it)
-- [ ] The current free tail after the probe's default font is recorded before the policy change
-      (expected ~912,896 B from `batch_check` at b21)
+- [x] A residency probe exists with `MODE=fit|over|priority|frag` (T4)
+- [x] The free tail after the default font was recorded before the policy change: **916,992 B** in the probe
+      (`batch_check` at assets: 912,896 B)
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Residency metadata + shadow + priority**: `resident`, `lastUsed`, `priority`, `shadow`, `shadowBytes`; a linear packed shadow on upload; `glPrioritizeTextures`; counters in the VRAM line | `todo` | a texture can be freed and reloaded from the shadow with identical pixels; the shadow bytes are counted; priority is stored and clamped | — |
-| T2 | **Eviction and reload**: on allocation failure choose lowest-priority/oldest evictable victim, free it, retry; a bind of a non-resident texture reloads from the shadow; pin the last 2 frames; finish+wait fallback; counters `evictions/reloads/failed/coalesced` | `todo` | fit workload: 0 evictions; over-budget: evictions and reloads with correct images; no in-flight texture is reused | — |
-| T3 | **Large-allocation and fragmentation fallback**: when enough total bytes exist but no single span, evict adjacent victims to coalesce; record `coalesced`; if still impossible, fail with free/largest and the requested size | `todo` | mixed-size load/unload/evict churn leaves a bounded largest-block loss; a large allocation succeeds after coalescing; no data-moving compaction claimed | — |
-| T4 | **Residency probe** (`psp-tests/texture_residency`): `MODE=fit|over|priority|frag`; loads/draws the workload, sets priorities, prints the VRAM/residency lines and the victim IDs; writes a PASS/FAIL marker file | `todo` | fit 120 frames 0 evictions; over 28 textures >0 evictions/reloads, 0 failures; priority A/B swaps the victim; frag returns a bounded largest block | — |
+| T1 | **Residency metadata + shadow + priority**: `resident`, `lastUsed`, `priority`, `shadow`, `shadowBytes`; a linear packed shadow on upload; `glPrioritizeTextures`; counters in the VRAM line | `done` | a texture can be freed and reloaded from the shadow with identical pixels; the shadow bytes are counted; priority is stored and clamped | Shadow counted: fit **851,968 B**, over **1,900,544 B**, priority **1,114,112 B**, frag **851,968 B**. `glPrioritizeTextures`/`glAreTexturesResident` implemented; the default 8888 2D gate is **byte-identical**. `b22` |
+| T2 | **Eviction and reload**: on allocation failure choose lowest-priority/oldest evictable victim, free it, retry; a bind of a non-resident texture reloads from the shadow; pin the last 2 frames; finish+wait fallback; counters `evictions/reloads/failed/coalesced` | `done` | fit workload: 0 evictions; over-budget: evictions and reloads with correct images; no in-flight texture is reused | **fit: 0 evictions, 0 reloads, 0 failed** over 120 frames. **over (28×128²): 3,363 evictions, 3,348 reloads, 0 failed**; all 28 drawn cells match their generated colour within 12/255 (max channel delta 10; 5650 quantisation), so the reloads are the right images. Priority A/B: 1.0/0.1 → victim low; swapped → victim swapped. |
+| T3 | **Large-allocation and fragmentation fallback**: when enough total bytes exist but no single span, evict adjacent victims to coalesce; record `coalesced`; if still impossible, fail with free/largest and the requested size | `done` | mixed-size load/unload/evict churn leaves a bounded largest-block loss; a large allocation succeeds after coalescing; no data-moving compaction claimed | Frag probe: 12×128², unload every third (four 64 KiB holes), request 256² → **3 evictions, 1 coalesced event, the 256² resident**, 0 failed. No data-moving compaction; the allocator coalesces freed spans. |
+| T4 | **Residency probe** (`psp-tests/texture_residency`): `MODE=fit|over|priority|frag`; loads/draws the workload, sets priorities, prints the VRAM/residency lines and the victim IDs; writes a PASS/FAIL marker file | `done` | fit 120 frames 0 evictions; over 28 textures >0 evictions/reloads, 0 failures; priority A/B swaps the victim; frag returns a bounded largest block | Five runs, all **PASS**: `MODE=fit`, `over`, `priority`, `priority PRIORITY_SWAP=1`, `frag`. Markers and captures in `/home/psp/evidence/sprint016/` (`res_*.txt`, `r16_gate.raw`, `r16_bs.raw`, `r16_over.raw`, `SHA256SUMS`). |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -194,44 +194,71 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### Task log (append-only)
 
-- 2026-11-21 — sprint written; T1 is the first action.
+- 2026-11-21 — sprint started; T1 `doing`.
+- 2026-11-21 — T1 `done`: packed linear shadow, `priority`/`lastUsed`/`resident`, `glPrioritizeTextures`,
+  `glAreTexturesResident`; the default 8888 2D gate is byte-identical with the shadow path.
+- 2026-11-21 — T2 `done`: eviction by priority then age, last-2-frames pinning, finish+wait fallback, reload
+  from shadow; fit 0 evictions, over 3,363/3,348/0, reloaded cells correct.
+- 2026-11-21 — T3 `done`: frag 3 evictions, 1 coalesce, 256² resident, no data-moving compaction.
+- 2026-11-21 — T4 `done`: five probe runs PASS; markers in `/home/psp/evidence/sprint016/`.
+  **Sprint 016 closed 4/4.**
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| fit workload | 12 × 128×128 = 768 KiB < 913,344 B | 0 evictions, 0 coalesced | — |
-| over-budget workload | 28 × 128×128 = 1.75 MiB | evictions > 0, reloads > 0, failed 0 | — |
-| priority A/B victim order | swaps with the priorities | victim ids printed by the probe | — |
-| fragmentation | largest-block loss bounded; exact return where possible | — | — |
-| shadow memory | main RAM, counted; no duplicate VRAM | `shadowBytes` in the line | — |
-| 2D gate | 0 differing pixels | — | — |
-| in-flight texture reuse | 0 | pinned last 2 frames; 0 by construction + probe | — |
+| fit workload | 12 × 128×128 = 786,432 B < 916,992 B | **0 evictions, 0 reloads, 0 failed** | `[measured: b22]` |
+| over-budget workload | 28 × 128×128 = 1,835,008 B | **3,363 evictions, 3,348 reloads, 0 failed** | `[measured: b22]` |
+| reloaded images | correct colours | **28/28 cells within 12/255** (max delta 10) | `[measured]` |
+| priority A/B victim order | swaps with the priorities | **low 0.1 evicted, high 1.0 resident; swap reverses** | `[measured]` |
+| fragmentation | large allocation after holes | **3 evictions, 1 coalesced, 256² resident** | `[measured]` |
+| shadow memory | main RAM, counted; no duplicate VRAM | **851,968 / 1,900,544 / 1,114,112 / 851,968 B** | `[measured]` |
+| 2D gate | 0 differing pixels | **byte-identical** `batch_check`, `basic_shapes` | `[measured: b22]` |
+| in-flight texture reuse | 0 | pinned last 2 frames; probe reloads only, no wrong image | `[measured]` |
 
 ## 7. Measurements
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline | b21 | `batch_check` | free / largest after assets | 912,896 / 912,896 B | before the policy |
-| change | b22 | fit | evictions / coalesced | expected 0 / 0 | 120 frames |
-| change | b22 | over | evictions / reloads / failed | expected >0 / >0 / 0 | 28 textures |
-| change | b22 | priority A | victim id | | 1.0 vs 0.1 |
-| change | b22 | priority B | victim id | | swapped priorities, victim swapped |
-| change | b22 | frag | free / largest | | mixed sizes |
-| control | b22 | `batch_check` / `basic_shapes` | differing pixels | expected 0 | gate |
+| baseline | b21 | `batch_check` | free / largest after assets | **912,896 / 912,896 B** | before the policy |
+| change | b22 | fit (12×128²) | evictions / reloads / failed | **0 / 0 / 0** | 120 frames; PASS |
+| change | b22 | over (28×128²) | evictions / reloads / failed | **3,363 / 3,348 / 0** | 120 frames; PASS |
+| change | b22 | over reloaded cells | colour error | **0/28 over 12/255** (max 10) | 5650 quantisation |
+| change | b22 | priority A (high=2, low=3) | resident high / low | **1 / 0** | 0.1 evicted |
+| change | b22 | priority B (swap) | resident high=3 / low=2 | **1 / 0** | victim swapped; PASS |
+| change | b22 | frag | evictions / coalesced / big resident | **3 / 1 / 1** | 12×128², holes, 256² |
+| control | b22 | `batch_check` / `basic_shapes` | differing pixels | **0 / 0** | byte-identical |
 
 ## 8. Exit criteria
 
-- [ ] fit workload: 0 evictions and 0 coalesced events over 120 frames; the 2D gate is 0
-- [ ] over-budget workload: evictions and reloads > 0, failed allocations 0, reloaded pixels correct
-- [ ] priority A/B demonstrably changes the victim order (ids printed)
-- [ ] fragmentation bounded; large allocation after mixed churn; no data-moving compaction claimed
-- [ ] shadow bytes counted; no VRAM double count; 2D gate 0
-- [ ] phase-6 facts written back into the phase page and `memory-map.md`
+- [x] fit workload: 0 evictions and 0 coalesced events over 120 frames; the 2D gate is 0
+- [x] over-budget workload: evictions and reloads > 0, failed allocations 0, reloaded pixels correct
+- [x] priority A/B demonstrably changes the victim order (ids printed)
+- [x] fragmentation bounded; large allocation after mixed churn; no data-moving compaction claimed
+- [x] shadow bytes counted; no VRAM double count; 2D gate 0
+- [x] phase-6 facts written back into the phase page and `memory-map.md`
 
 ## 9. Result
 
-(To fill in on close.)
+Sprint 016 closed 4/4 on `b22`. The texture table now carries `resident`, `lastUsed`, `priority` and a packed
+linear CPU shadow; allocation failure evicts by **priority then age**, pins anything used in the last two frames,
+and reloads a non-resident texture from its shadow on bind. The allocator coalesces freed spans; when enough total
+bytes exist but no single span does, evicting adjacent residents produces the span and is counted
+`coalesced` — no data-moving compaction was needed or implemented.
+
+| workload | result |
+|---|---|
+| fit (12×128², 786,432 B) | **0 evictions, 0 reloads, 0 failed**, 120 frames; 2D gate byte-identical |
+| over (28×128², 1,835,008 B) | **3,363 evictions, 3,348 reloads, 0 failed**; all 28 reloaded cells within 12/255 |
+| priority 1.0 / 0.1 | the 0.1 texture is evicted; swapping the pair swaps the victim |
+| frag (12×128², four holes, 256²) | **3 evictions, 1 coalesced, 256² resident**, 0 failed |
+
+Shadow is main RAM and counted: 851,968 B (fit), 1,900,544 B (over), 1,114,112 B (priority), 851,968 B (frag).
+The 2D parity scenes are byte-identical; the probe markers and captures are in
+`/home/psp/evidence/sprint016/`.
+
+Phase 6 still needs sprint 017's matrix and the CLUT/mipmap decisions; residency, priority and fragmentation are
+answered.
 
 ## 10. Follow-ups
 

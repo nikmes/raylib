@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
-| Branch / base commit | `master` @ after sprint 016 (record the closing sha when it starts) |
+| Branch / base commit | `master` @ after sprint 016 (driver `b22`; record the closing sha when it starts) |
 | Started / closed | — / — |
-| Build number(s) | `b24` (matrix), `b25` (CLUT/mipmap probes) |
+| Build number(s) | `b22` driver; matrix/CLUT/mipmap probe app builds |
 | Tasks | 0/4 done |
 
 ## 0. Handover
@@ -97,8 +97,8 @@ done or dropped. This is the measurement that lets phase 6 close — or hands a 
 
 ## 4. Preconditions
 
-- [ ] Sprint 016 closed; residence/eviction counters exist and the fit workload is 0 evictions
-- [ ] pspgu `b23` or later; default 8888 and `--texfmt=auto` both build and are pixel-gated
+- [x] Sprint 016 closed; residency/eviction counters exist and the fit workload is 0 evictions
+- [x] pspgu `b22` or later; default 8888 and `--texfmt=auto` both build and are pixel-gated
 - [ ] `texture_pattern` and `texture_churn` capture/marker patterns are in hand
 - [ ] The free region after the probe's default font is recorded (b21: 912,896 B in `batch_check`)
 - [ ] pspGL restorable, content hash `2ab7378e`

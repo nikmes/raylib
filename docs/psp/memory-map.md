@@ -863,6 +863,13 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   entirely 0/255, otherwise 8888. A 32×32 `GL_RGB` texture is 2,048 B instead of 4,096; the 128×128 LA font is
   32,768 instead of 65,536 (its alpha is binary). The measured `auto` delta is 7,843 px in `batch_check` and 0 in
   `basic_shapes`; the default build does not move (sprint 015 T2).
+- **Residency is priority + age, with a main-RAM shadow.** Each texture keeps a packed linear shadow (same bytes as
+  its PSM allocation, main RAM), a 0–1 `glPrioritizeTextures` priority and a last-used frame. Allocation failure
+  evicts the lowest priority, oldest first; a texture used in the last 2 frames is pinned so an in-flight list is
+  never sampled from freed VRAM. A bind of a non-resident texture reloads it from the shadow. Counters live in the
+  `RESIDENCY` line. Measured: fit 12×128² **0 evictions**; over 28×128² **3,363 evictions / 3,348 reloads / 0
+  failed**; priority 1.0/0.1 swaps the victim; fragmentation coalesces a 256² after 3 evictions. Shadows measured
+  0.85–1.90 MB of main RAM, not VRAM (sprint 016).
 - **Full texture uploads use an 8-row band**, not a full-image scratch: the band is ≤16 KiB at 512×8888, the
   source reads stay sequential, and the swizzled blocks are written to a cached EDRAM base followed by one exact
   range writeback. A 256×256 8888 upload measured **21.088 → 19.849 ms** with the heap allocation removed. A

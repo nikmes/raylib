@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); sprint 016 (residency/eviction) is next, sprint 017 (format/size matrix and gated decisions) written; 018 is conditional on 017 |
+| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); **sprint 016 done** (residency/eviction); sprint 017 (format/size matrix and gated decisions) is next; 018 is conditional on 017 |
 | Depends on | Phase 5 (a backend that owns the upload path) |
 | Exit criterion | no eviction when the working set fits in VRAM, upload benchmarks by format, fragmentation bounded under load/unload churn |
 
@@ -36,9 +36,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
       separately — one allocator for framebuffers *and* textures — **sprint 015 T3**: 4,096 blocks over 2 MiB,
       32 KiB metadata, framebuffers/depth as fixed 8 KiB-aligned reservations, live `requested` and `internal`.
       Churn 100 × 16 textures: free and largest return exactly (916,992 → 916,992 B), 1,600 frees, 0 failures
-- [ ] Residency: priority-aware eviction where application priority is a strong weight; usage that ages per
+- [x] Residency: priority-aware eviction where application priority is a strong weight; usage that ages per
       frame, never accumulating forever — **sprint 016**: `glPrioritizeTextures`, victim by priority then age,
-      pin the last 2 frames, CPU shadow reload, coalesce-by-eviction
+      pin the last 2 frames, CPU shadow reload, coalesce-by-eviction. Fit: **0 evictions**; over 28×128²:
+      **3,363 evictions / 3,348 reloads / 0 failed**; priority A/B swaps the victim; frag coalesces a 256²
 - [x] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame — one
       `pspguWriteback(base, tbw*padH*bpp)` per upload; no invalidate
 - [ ] No mipmaps unless a measurement says they pay — **decision in sprint 017**; 3D minification is phase 10
@@ -59,10 +60,11 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## Exit criteria
 
-- [ ] no eviction or compaction in a workload whose working set fits — **sprint 016** fit probe
+- [x] no eviction or compaction in a workload whose working set fits — fit probe: **0 evictions**, 120 frames
 - [ ] upload/swizzle benchmarked by pixel format and size — **sprint 017** matrix
-- [ ] fragmentation bounded across repeated load/unload — **sprint 016** mixed-size/eviction churn
-- [ ] priority changes demonstrably alter eviction order — **sprint 016** A/B victim ids
+- [x] fragmentation bounded across repeated load/unload — sprint 016: over-budget 3,363 evictions/3,348 reloads,
+      0 failed; frag 3 evictions / 1 coalesce / 256² resident; no data-moving compaction
+- [x] priority changes demonstrably alter eviction order — sprint 016: 1.0/0.1 victim swaps with the priorities
 
 ## Sprints and features
 
@@ -74,9 +76,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
 - [Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../sprints/015-phase6-npot-and-vram.md)
   — **done 4/4.** NPOT padding; 512-byte block allocator with free/coalesce and a real largest block; per-texture
   PSM (default 8888, `auto` 5650/4444); direct 8-row-band upload with no full-image scratch.
-- [Sprint 016 — Texture residency and eviction](../sprints/016-phase6-residency-eviction.md) — **written, next.**
+- [Sprint 016 — Texture residency and eviction](../sprints/016-phase6-residency-eviction.md) — **done 4/4.**
   CPU shadow, `glPrioritizeTextures`, victim by priority then age, last-2-frames pinning, reload on bind,
-  coalesce-by-eviction, and the fit/over/priority/frag probes. Closes exits 1, 3 and 4.
+  coalesce-by-eviction. Fit 0 evictions; over 3,363/3,348/0; priority A/B swaps; frag coalesces. Closes exits
+  1, 3 and 4.
 - [Sprint 017 — Upload/swizzle matrix and the gated texture features](../sprints/017-phase6-format-matrix-and-gated-features.md)
-  — **written.** Format/size matrix; CLUT T4 glyph probe; mipmap probe; the two decisions recorded. Closes exit 2.
-  018 is the CLUT implementation only if 017 measures that it pays; otherwise phase 6 closes at 017.
+  — **written, next.** Format/size matrix; CLUT T4 glyph probe; mipmap probe; the two decisions recorded. Closes
+  exit 2. 018 is the CLUT implementation only if 017 measures that it pays; otherwise phase 6 closes at 017.
