@@ -50,10 +50,29 @@ capture*, which collides head-on with the exit criterion "identical output to ph
 
 Two 512×272 buffers are 557 KiB either way; 8888 would be 1,114 KiB. Use 5650 and say why.
 
-**Finding 3: dropping the depth buffer drops 3D.** `BeginMode3D` enables `GL_DEPTH_TEST`; with no depth buffer
-every 3D sample breaks. Sprint 009's 2D→`DrawCube`+`DrawMesh` scene is the regression test. Either ship phase 5 as a
-2D-only backend with `BeginMode3D` documented as unsupported, or budget the +272 KiB depth buffer and keep 3D. This
-must be decided before the first line — it changes the VRAM accounting the phase exits on.
+**Finding 3: the depth buffer — decided: allocate it, 16-bit, behind a switch.** `BeginMode3D` enables
+`GL_DEPTH_TEST`, and **pspGL allocates a depth buffer today** (`eglCreateWindowSurface.c:86-90`, 16-bit,
+`height × stride × 2` = 278,528 B), because the platform layer's config asks for `EGL_DEPTH_SIZE, 1`. So "2D-only,
+no depth" would be a *regression*, invisible to every test we own: sprint 009's 2D→3D→2D scene renders two cubes
+that do not overlap, so it passes with or without depth.
+
+Decision, recorded: **allocate a 16-bit depth buffer by default**, matching today, and put it behind
+`PSP_GU_DEPTH ?= 1` so a shipping 2D-only build can drop it and get 272 KiB of VRAM back. In the depth-less
+configuration the `GL_DEPTH_BUFFER_BIT` inside `glClear` becomes the documented no-op of finding 7.
+
+The budget, for the record (2 MiB of EDRAM):
+
+| allocation | size | with depth | without depth |
+|---|---|---|---|
+| two 512×272×16bpp framebuffers | 544 KiB | 544 | 544 |
+| 16-bit depth, 512 stride | 272 KiB | 272 | 0 |
+| **free for textures** | | **1,232 KiB** | 1,504 KiB |
+| 512×512 `5650` backgrounds that fit | | 2 | 2 |
+| 32×32 `5650` sprites that fit | | 616 | 752 |
+
+272 KiB is 13.3 % of VRAM and it buys the 3D phase (§10) without reopening this decision later; the switch means no
+2D game has to pay it. **Lazy allocation** (allocate on first `glEnable(GL_DEPTH_TEST)`) is a follow-up, not a
+phase-5 feature: it adds a mid-run allocation and a stall on the first 3D frame.
 
 **Finding 4: what the measured case is, after sprint 009.** The ceiling is 1,600 sprites at 60 fps, held there by
 `work (11.0 ms) + GE fill (~5.5 ms)` against a 16.683 ms period. A backend can move the *work* half only: it removes
@@ -148,9 +167,9 @@ enters as a handful of calls per frame and `sceGuDrawArray` does the work. GUM's
       sort -u` against whatever build is current; it changes if raylib's modules change
 - [x] Phase 4's captures exist as the oracle: `/home/psp/evidence/sprint009/` (`c4eb44e7…` 2D, `58bcbb9b…` 3D scene),
       `/home/psp/evidence/sprint008/` for the `-O2` pair
-- [ ] The framebuffer format decision (§0 finding 2): `GU_PSM_5650` to stay pixel-identical, and a written note that
-      `5551` would shift every capture
-- [ ] The depth decision (§0 finding 3): 2D-only, or +272 KiB and 3D kept — this sets the VRAM budget the phase exits on
+- [x] Framebuffer format (§0 finding 2): **`GU_PSM_5650`**, to stay pixel-identical; `5551` would shift every capture
+- [x] Depth (§0 finding 3): **allocated, 16-bit, 272 KiB, behind `PSP_GU_DEPTH ?= 1`** — matches today, keeps 3D open,
+      and a 2D-only build can switch it off
 - [ ] A worst-case display-list size measured from a real frame (N=5,000 bunnymark = 9 draws, 30,150 vertices), not
       guessed from the GL11 path's 1,025 submissions
 
@@ -172,7 +191,25 @@ optimises.
 | 8 | **display lists**: two rotating, 16-byte aligned, sized from a measured worst case; submit frame N, sync frame N-1 (`GU_SYNC_WHAT_QUEUED`); never a per-frame `FINISH` | `SPLIT work/swap` shows no full wait in steady state; a deliberately undersized list asserts instead of overrunning |
 | 9 | **cache discipline**: `sceKernelDcacheWritebackRange()` over exactly the ranges the CPU wrote, then publish the pointer | a texture uploaded then drawn in the same frame is correct on hardware (this is the classic PSP-only corruption) |
 | 10 | **VRAM accounting at boot**: framebuffers, textures, free bytes, largest block | printed once at boot and matching the budget in §"What we already know" |
-| 11 | **the depth decision** (§0 finding 3): 2D-only with `BeginMode3D` documented unsupported, **or** +272 KiB depth and 3D kept | written down before task 1, and the 3D scene either passes or is explicitly out of scope |
+| 11 | **the depth switch**: allocate the 16-bit depth buffer at 512 stride when `PSP_GU_DEPTH=1` (default), treat `GL_DEPTH_BUFFER_BIT` inside `glClear` as a no-op when it is 0, and report the choice in the boot VRAM line | both configurations build and boot; the 3D scene is depth-correct with the buffer and painter-ordered without it, and the boot line shows the 272 KiB either way |
+
+### Task 1 in detail — where the code goes and what order
+
+- **Source lives in `tools/pspgu/`**, built and installed by `tools/pspgu-build.sh` modelled on
+  `tools/pspgl-build.sh` (build → install over `$PSPDEV/psp/lib/libGL.a` → `--check`). That keeps the A/B identical
+  to sprint 005/006: swap one archive, run the same binaries, compare captures. Nothing in `src/` changes.
+- **Keep pspdev's headers.** We implement the *symbols*, not the headers — `GL/gl.h`, `GL/glext.h` and `GLES/egl.h`
+  stay as pspGL left them, so the library and the tests compile unchanged. Forking headers would double the surface
+  for no gain.
+- **Files, in the order they get written:** `egl.c` (display/config/context/surface/swap + framebuffers + the boot
+  sequence of finding 6) → `gl_state.c` (enable/disable, blend, depth, cull, scissor, viewport, clear) →
+  `gl_matrix.c` (the ten matrix calls + `glGetFloatv`) → `gl_draw.c` (the three `*Pointer` calls, client state,
+  `glDrawArrays`/`glDrawElements`, modes 10/4/1) → `gl_texture.c` (gen/bind/image/subimage/parameters) →
+  `gl_query.c` (`glGetString`, `glGetFloatv`, `glReadPixels`). The first two files are the vertical slice; the rest
+  are stubs until their task comes up.
+- **First acceptance, before any drawing:** swap the archive, run `psp-tests/batch_check` unmodified, and expect a
+  cleared screen in the requested colour, `psp-nm <elf> | grep -c pspgl_` at 0, and the boot log showing the eleven
+  init calls in order. Drawing comes after that.
 
 ## What we already know
 
@@ -191,8 +228,8 @@ optimises.
 - [ ] the 60 fps ceiling **beats 1,600 sprites**, by bisection; if fill stops it below 2,000, that is the finding and
       it is written down with the fill rate
 - [ ] no full GE wait in a steady-state frame (counters, not feel)
-- [ ] VRAM high-water documented against the 2 MiB budget, including the depth decision
-- [ ] the 3D verdict: supported, or explicitly unsupported with `BeginMode3D` documented
+- [ ] VRAM high-water documented against the 2 MiB budget, with and without `PSP_GU_DEPTH`
+- [ ] 3D depth-correct with `PSP_GU_DEPTH=1` (the sprint-009 scene with **overlapping** cubes, which is the test the current one lacks)
 
 **Not** an exit criterion: "frame time ≤ best pspGL result". Phase 4 already achieved that (16.683 ms at N=1,000)
 without any of this work, so it cannot certify it.
