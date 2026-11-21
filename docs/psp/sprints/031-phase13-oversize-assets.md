@@ -17,8 +17,10 @@ itself already exists (sprint 020); this sprint handles the assets that still do
 
 ## Planned scope
 
-3 texture samples plus asset prep:
+4 texture samples plus asset prep:
 
+- `textures_image_channel` — six textures (five 512² fudesumi channel images + a 480×272 checked background);
+  needs a downscale or a sample rewrite before it can fit
 - `textures_sprite_stacking` — `booth.png` 112×11468 pads to 128×16384, over the 1024 buffer; downscale or split
 - `textures_image_drawing` — `parrots.png` 512×384 (512² 5650 = 524,288 B under `auto`) plus a font atlas from
   `custom_jupiter_crash.png` 426×284 RGBA non-binary (512² 8888 = 1,048,576 B); 1,572,864 B total is over the

@@ -191,12 +191,13 @@ These eight were ported in P13-S2; only their interaction waits for `G1`.
 `textures_mouse_painting`, `textures_portal_window`. `core_vr_simulator` also needs shaders.
 
 **Texture size / VRAM (11).**
-- Padded to 1 MiB, over the 982,528 B budget; needs `G2`: `textures_image_channel`,
-  `textures_image_kernel`, `textures_image_processing`, `textures_image_text`,
-  `textures_polygon_drawing`, `textures_raw_data`, `textures_background_scrolling`,
-  `textures_blend_modes`; plus the 45° `textures_image_rotate` case.
-- Beyond the 1024 buffer or needs a downscale; `G3`: `textures_image_drawing` (non-binary font atlas),
-  `textures_sprite_stacking` (11468-tall sheet), `textures_image_generation` (nine 1 MiB textures plus the heap).
+- Padded to 1 MiB, over the 982,528 B budget; needs `G2`: `textures_image_kernel`,
+  `textures_image_processing`, `textures_image_text`, `textures_polygon_drawing`,
+  `textures_raw_data`, `textures_background_scrolling`, `textures_blend_modes`; plus the 45°
+  `textures_image_rotate` case.
+- Beyond the 1024 buffer, or needs a downscale/rewrite; `G3`: `textures_image_channel` (six textures),
+  `textures_image_drawing` (non-binary font atlas), `textures_sprite_stacking` (11468-tall sheet),
+  `textures_image_generation` (nine 1 MiB textures plus the heap).
 
 **Audio, Phase 9 (2).** `textures_sprite_button`, `textures_sprite_explosion`.
 `textures_sprite_explosion` also carries a 1024×1024 = 4 MiB asset and needs `G3`.
@@ -221,8 +222,8 @@ the exit-key path is ever worth testing.
 |---|---|---|---|
 | `G0` | harness, 480×272, asset staging | this phase | 13 Tier A + 8 small-asset texture samples |
 | `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 53 Tier B core/shapes, 5 input testbeds |
-| `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 8 texture samples + 45° `image_rotate` |
-| `G3` | downscale or slice assets beyond 1024 or over budget | Phase 7 (windows already done in sprint 020) | 3 texture samples + pad art + explosion |
+| `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 7 texture samples + 45° `image_rotate` |
+| `G3` | downscale or slice assets beyond 1024 or over budget | Phase 7 (windows already done in sprint 020) | 4 texture samples + pad art + explosion |
 | `G4` | render targets / FBO on the native backend | Phase 10 (with Phase 5) | 16 render-target samples |
 | `G5` | `sceAudio` output | Phase 9 | 2 audio samples |
 | `G6` | clipboard | Phase 8 / platform | 2 clipboard samples |
@@ -337,9 +338,9 @@ the exit-key path is ever worth testing.
 - [P13-S6 — Shapes sweep B and testbeds](../../sprints/029-phase13-shapes-sweep-b.md) —
   placeholder; gate `G1`; 16 samples + 5 testbeds
 - [P13-S7 — Texture budget](../../sprints/030-phase13-texture-budget.md) —
-  **written**; gate `G2`; 8 samples + 45° `image_rotate`; `image_drawing` moved to S8
+  **written**; gate `G2`; 7 samples + 45° `image_rotate`; T2 (`image_channel`) dropped to S8
 - [P13-S8 — Oversize assets](../../sprints/031-phase13-oversize-assets.md) —
-  placeholder; gate `G3`; 3 samples + asset prep
+  placeholder; gate `G3`; 4 samples + asset prep
 - [P13-S9 — Render targets: core and shapes](../../sprints/032-phase13-render-targets-core-shapes.md) —
   placeholder; gate `G4`; 11 samples
 - [P13-S10 — Render targets: textures](../../sprints/033-phase13-render-targets-textures.md) —

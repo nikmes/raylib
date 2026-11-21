@@ -7,13 +7,13 @@
 | Branch / base commit | `master` @ `e01028fe` (drafted 2026-11-21; set to the open sha when started) |
 | Started / closed | — / — |
 | Build number(s) | pspgu default `b24`; four variant content hashes recorded in T1 |
-| Tasks | 0/11 done |
+| Tasks | 0/10 done, T2 dropped to P13-S8 |
 
 ## 0. Handover
 
 **Situation.** P13-S1 and P13-S2 are done: Tier A is complete and 21 samples have two identical captures each.
 The remaining texture samples are code-correct but blocked by the 1 MiB padded-texture budget. This is the first
-`G2` sprint: it builds the driver in four configurations (depth on/off × 8888/auto), ports the eight samples that
+`G2` sprint: it builds the driver in four configurations (depth on/off × 8888/auto), ports the seven samples that
 fit under one of them, and closes the deferred 45° `image_rotate` case. `image_drawing` is **not** in this sprint:
 its font atlas comes from a non-binary RGBA image and still needs a downscale, which belongs to `G3`/P13-S8.
 
@@ -87,7 +87,7 @@ directory. The variants are build options, not driver changes.
 
 ## 1. Objective
 
-Eight `G2` texture samples and the 45° `image_rotate` case render on the PSP-1000 under a recorded build
+Seven `G2` texture samples and the 45° `image_rotate` case render on the PSP-1000 under a recorded build
 configuration whose boot/texture lines prove the padded texture fits. The default 8888/depth build remains the
 parity gate, and `image_drawing` is explicitly moved to P13-S8 with the font-atlas reason recorded.
 
@@ -100,12 +100,13 @@ be ported now without waiting for input (`G1`) or render targets (`G4`). The spr
 
 ## 3. Scope
 
-**In:** the four driver build arms, eight sample copies (`image_channel`, `image_kernel`, `image_processing`,
-`image_text`, `polygon_drawing`, `raw_data`, `background_scrolling`, `blend_modes`), the 45° `image_rotate` case,
-the evidence archive, and the Phase 13/memory-map updates.
+**In:** the four driver build arms, seven sample copies (`image_kernel`, `image_processing`, `image_text`,
+`polygon_drawing`, `raw_data`, `background_scrolling`, `blend_modes`), the 45° `image_rotate` case, the evidence
+archive, and the Phase 13/memory-map updates.
 
-**Out:** `image_drawing` (font atlas downscale; P13-S8), `sprite_stacking` and `image_generation` (P13-S8),
-`textures_sprite_explosion` (audio + asset; P13-S11), any asset downscale, and any driver source change.
+**Out:** `image_channel` (six textures; P13-S8), `image_drawing` (font atlas downscale; P13-S8), `sprite_stacking`
+and `image_generation` (P13-S8), `textures_sprite_explosion` (audio + asset; P13-S11), any asset downscale, and
+any driver source change.
 
 ## 4. Preconditions
 
@@ -116,7 +117,7 @@ the evidence archive, and the Phase 13/memory-map updates.
 - [ ] The capture runner (copy the P13-S2 pattern to `psp-tests/samples/run_sample.sh`) waits for the full
       391,734-byte BMP and verifies two identical captures
 - [ ] Assets staged at `host0:/resources` using the P13-S2 usbhostfs root (`/tmp/s3/resources`):
-      `fudesumi.png`, `cat.png`, `parrots.png`, `KAISG.ttf`, `fudesumi.raw`,
+      `cat.png`, `parrots.png`, `KAISG.ttf`, `fudesumi.raw`,
       `cyberpunk_street_background.png`, `cyberpunk_street_midground.png`,
       `cyberpunk_street_foreground.png`
 - [ ] `PSP_HEAP_SIZE_KB` set explicitly in the sample Makefile (not in the shared `Makefile.inc`) for samples
@@ -128,22 +129,27 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Build matrix, runner and parity gate**: build/archive default, `--depth=0`, `--texfmt=auto`, and depth-off+auto; record content hash and boot line for each; add `psp-tests/samples/run_sample.sh` with the wait/retry logic from `/tmp/run_s025.sh` (or its P13-S2 log); re-run `batch_check`/`basic_shapes` on the default | `todo` | four arms archived; runner waits for the full 391,734-byte BMP and two identical captures; default gate 0 differing pixels / 284 colours; boot lines quoted | — |
-| T2 | `textures_image_channel` — `fudesumi.png` 384×512 RGBA non-binary → 512×512 8888 = 1,048,576 B; `--depth=0` | `todo` | texture line shows 512×512 8888; fits depth-off; `DONE`; two identical captures | — |
-| T3 | `textures_image_kernel` — `cat.png` 384×512 RGB → 512×512 5650 = 524,288 B under `auto` | `todo` | texture line shows 5650; fits with depth on; `DONE`; two identical captures | — |
-| T4 | `textures_image_processing` — `parrots.png` 512×384 RGB → 512×512 5650 = 524,288 B under `auto` | `todo` | texture line shows 5650; fits; `DONE`; two identical captures | — |
+| T1 | **Build matrix, runner and parity gate**: build/archive default, `--depth=0`, `--texfmt=auto`, and depth-off+auto; record content hash and boot line for each; add `psp-tests/samples/run_sample.sh` with the wait/retry logic from `/tmp/run_s025.sh` (or its P13-S2 log); re-run `batch_check`/`basic_shapes` on the default | `doing` | four arms archived; runner waits for the full 391,734-byte BMP and two identical captures; default gate 0 differing pixels / 284 colours; boot lines quoted | **HOST-ONLY** — four arms at `/home/psp/evidence/sprint030/libs/`, `CONTENT_SHA256` and `LIBS_SHA256` written; pre-sprint `libGL.a` was pspGL, default pspgu restored (symbol hash `4570e…`); `run_sample.sh` added; device gate pending permission | — |
+| T2 | `textures_image_channel` — **dropped from S7**: the sample creates six textures (five 512² fudesumi channel images + a 480×272 checked background); they cannot fit; move to P13-S8 for a downscale or rewrite | `dropped` | moved to S8 with the six-texture reason | — |
+| T3 | `textures_image_kernel` — four 200×450 crops → 256×512 5650 (262,144 each) = 1,048,576 B total; depth-off+auto; draw the four at 0.5 scale | `todo` | four texture lines 5650; total fits depth-off+auto; `DONE`; two identical captures | — |
+| T4 | `textures_image_processing` — `parrots.png` via `ImageFormat` RGBA → 512×512 4444 = 524,288 B; `auto` with depth on; set `COLOR_GRAYSCALE` at init to exercise the update path; draw scaled 0.5 | `todo` | texture line 4444; processed image visible; `DONE`; two identical captures | — |
 | T5 | `textures_image_text` — `parrots.png` RGB 5650 524,288 B + `KAISG.ttf` 64 px font atlas; use depth-off+auto and measure the atlas size and PSM | `todo` | atlas size and PSM recorded; total fits; if the atlas is 512² 8888 (1 MiB, anti-aliased alpha) or >512², reduce to 32 px or move to P13-S8 with the measured bytes | — |
 | T6 | `textures_polygon_drawing` — `cat.png` RGB 5650 524,288 B; port with the P13-S1 `gl*` substitution (`<GL/gl.h>`, no GL11 `rl*` vertex wrappers) | `todo` | texture fits; direct `gl*` path links; `DONE`; two identical captures | — |
-| T7 | `textures_raw_data` — `fudesumi.raw` 384×512 RGBA non-binary → 1,048,576 B; `--depth=0` | `todo` | texture line 8888 1 MiB; fits depth-off; `DONE`; two identical captures | — |
+| T7 | `textures_raw_data` — `fudesumi.raw` 384×512 RGBA non-binary → 8888 1,048,576 B + generated checked 240×136 → 256×256 4444 131,072 B = 1,179,648 B; depth-off+auto | `todo` | both textures fit; checked image reduced and drawn 2×; `DONE`; two identical captures | — |
 | T8 | `textures_background_scrolling` — background/midground 512×192 → 512×256 4444 (262,144 each), foreground 704×192 → 1024×256 4444 (524,288) = 1,048,576 B; depth-off+auto | `todo` | three textures fit; no seam; `DONE`; two identical captures | — |
 | T9 | `textures_blend_modes` — background 262,144 + foreground 524,288 = 786,432 B under `auto` with depth on | `todo` | both fit; blend modes render; `DONE`; two identical captures | — |
 | T10 | `textures_image_rotate` 45° — re-add `image45` to the P13-S2 copy (`NUM_TEXTURES 3`, `currentTexture = 0`); `raylib_logo.png` RGB → 362×362 → 512×512 5650 = 524,288 B; plus the two 256² rotations (262,144 each); depth-off+auto | `todo` | three textures total 1,048,576 B; 45° frame renders; `DONE`; two identical captures | — |
-| T11 | Evidence, classification and phase write-back | `todo` | `/home/psp/evidence/sprint030/` has `libs/libGL-<arm>.a`, `CONTENT_SHA256`, nine logs, nine capture pairs and `SHA256SUMS`; `image_drawing` moved to P13-S8; Phase 13/memory map updated; `git diff -- examples/` empty | — |
+| T11 | Evidence, classification and phase write-back | `todo` | `/home/psp/evidence/sprint030/` has `libs/libGL-<arm>.a`, `CONTENT_SHA256`, eight logs, eight capture pairs and `SHA256SUMS`; `image_channel` and `image_drawing` recorded as P13-S8; Phase 13/memory map updated; `git diff -- examples/` empty | — |
 
 ### Task log (append-only)
 
 - 2026-11-21 — sprint written from the placeholder; scope corrected to 8 samples + 45° image_rotate;
   `image_drawing` moved to P13-S8
+- 2026-11-21 — implementation audit: `image_channel` creates six textures → moved to P13-S8;
+  `image_kernel` creates four → depth-off+auto; `image_processing` becomes 4444; `raw_data` also generates a
+  checked texture, so its total is 1,179,648 B
+- 2026-11-21 — T1 host-only: four arms archived; pre-sprint `libGL.a` was pspGL, pspgu default restored;
+  `run_sample.sh` added; device parity gate pending permission
 
 ## 6. Budgets
 
@@ -172,12 +178,11 @@ Protocol: device only; one variable per arm; the default build is the control. E
 
 | sample | arm | texture bytes / PSM | fps | result |
 |---|---|---|---|---|
-| `image_channel` | depth-off | 1,048,576 / 8888 | | |
-| `image_kernel` | auto | 524,288 / 5650 | | |
-| `image_processing` | auto | 524,288 / 5650 | | |
+| `image_kernel` | depth-off+auto | 1,048,576 total / 5650 | | |
+| `image_processing` | auto | 524,288 / 4444 | | |
 | `image_text` | depth-off+auto | 524,288 + font atlas (size and PSM measured) | | |
 | `polygon_drawing` | auto | 524,288 / 5650 | | |
-| `raw_data` | depth-off | 1,048,576 / 8888 | | |
+| `raw_data` | depth-off+auto | 1,179,648 total / 8888 + 4444 | | |
 | `background_scrolling` | depth-off+auto | 1,048,576 total / 4444 | | |
 | `blend_modes` | auto | 786,432 total / 4444 | | |
 | `image_rotate` 45° | depth-off+auto | 1,048,576 total / 5650 | | |
@@ -185,9 +190,10 @@ Protocol: device only; one variable per arm; the default build is the control. E
 ## 8. Exit criteria
 
 - [ ] the four arms are built and archived with content hashes; the default gate is 0 / 284 before and after
-- [ ] the eight samples plus the 45° `image_rotate` render under a recorded arm, each with two identical captures
+- [ ] the seven samples plus the 45° `image_rotate` render under a recorded arm, each with two identical captures
 - [ ] every texture line proves the padded texture fits the arm's boot free bytes
 - [ ] `image_text`'s font atlas is measured; it either fits or is moved to P13-S8 with the bytes
+- [ ] `image_channel` is explicitly recorded as P13-S8 (six textures; needs a downscale or rewrite)
 - [ ] `image_drawing` is explicitly recorded as P13-S8 (non-binary font atlas requires a downscale)
 - [ ] the default 8888/depth library is restored and verified with `--check`
 - [ ] no `examples/` file is modified; no build artifacts are left in the tree
@@ -198,9 +204,10 @@ Protocol: device only; one variable per arm; the default build is the control. E
 
 ## 10. Follow-ups
 
-- **P13-S8**: `image_drawing` (font atlas from `custom_jupiter_crash.png`, 512² 8888 = 1 MiB, plus
-  `parrots.png` 524,288 B, over the depth-off budget), `sprite_stacking` (11468-tall sheet), `image_generation`
-  (nine full-screen textures + heap), and the explosion asset for P13-S11.
+- **P13-S8**: `image_channel` (six textures: five 512² fudesumi channels + a 480×272 checked background),
+  `image_drawing` (font atlas from `custom_jupiter_crash.png`, 512² 8888 = 1 MiB, plus `parrots.png` 524,288 B,
+  over the depth-off budget), `sprite_stacking` (11468-tall sheet), `image_generation` (nine full-screen textures
+  + heap), and the explosion asset for P13-S11.
 - **P13-S3** can start once Phase 8 closes `G1`; the `G2` arm selection recorded here is the default for the
   texture samples that need it.
 - If `image_text`'s 64 px TTF atlas is 512² with non-binary alpha (8888, 1 MiB) or exceeds 512², a 32 px font is
