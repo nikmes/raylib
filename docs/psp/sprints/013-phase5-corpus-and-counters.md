@@ -352,3 +352,30 @@ Open, for the next session, in order of cheapness:
    x 81..191, so a missing cube would mean the draw never happens at all — and then the question moves to whether
    `rlDrawRenderBatchActive()` inside `EndMode3D` reaches our hook.
 3. Only after that: `DrawMesh`/`glDrawElements`.
+
+### `DrawCube` was never broken — the build flag was
+
+`triangle_probe`'s Makefile was `CFLAGS = -Wall`, which never referenced `EXTRA_CFLAGS`, so
+`make EXTRA_CFLAGS=-DDRAW_CUBE` compiled the **triangle** build three times. The log finally showed it:
+`draw mode=4 count=3 pos0=(-0.5,-0.5)` where a cube should have been 36 vertices. Every earlier "CUBE NOT
+DRAWN" was a red triangle being drawn while the measurement filtered for green.
+
+With the flag actually reaching the compiler, at the same verified camera:
+
+| | x | y |
+|---|---|---|
+| predicted | 81..191 | 92..189 |
+| **captured** | **81..190** | **92..188** |
+
+So `DrawCube` — the deferred batch, the quad expansion, the frustum — is correct to within a pixel, and the
+"sprite eligibility needs `z == 0`" fix stays as a correctness improvement (the 2D gate re-ran at **0 differing
+pixels** with it in place) rather than the fix for anything measured.
+
+**The mesh scene is unchanged at 691 colours / 25.6 %** with that fix in. So the difference is *not* the cube, and by
+elimination it is the last untested call: **`DrawMesh` → `glDrawElements`** (36 indices, index rebasing, the
+converting vertex path). That is the only drawing call in the corpus that has never had a probe, and it now has a
+proven template to copy: known vertices, predicted bbox, one capture.
+
+**Process note worth keeping:** two of the three "the cube is not drawn" results were my own instrument lying — a
+grep missing the `]` in `[PSPGU]` once, and a Makefile ignoring `EXTRA_CFLAGS` twice. The trace line that made the
+difference possible (`count=3` where 36 was expected) cost four lines of code and would have saved three runs.
