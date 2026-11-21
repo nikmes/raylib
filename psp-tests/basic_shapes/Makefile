@@ -11,7 +11,10 @@ OBJS = main.o
 CFLAGS = -Wall
 
 # Only libraries build.mak does not already link.
-LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu
+# -lpspgu: the pspgu driver reaches the GE through GU (pspGL used libpspge directly), so
+# every app that links it needs the GU library. Missed here in sprint 013, which is why its
+# basic_shapes build failed and ran a stale binary.
+LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = basic shapes (raylib 6.2)

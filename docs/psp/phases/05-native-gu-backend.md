@@ -256,7 +256,7 @@ Four sprints, in order. 011 and 012 are done and written up; 013 is written out 
 |---|---|---|---|
 | [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
 | [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
-| [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **written, not started** | every archived capture reproduced; `bunnymark` links and runs `WRAP=1` |
+| [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
 | [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **written, next** | 60 fps ceiling **> 1,600 sprites**, VRAM accounted, no stubs, phase exit met |
 
 Where the phase stands in one paragraph: the driver renders **byte-identically to pspGL on the 2D scene** —

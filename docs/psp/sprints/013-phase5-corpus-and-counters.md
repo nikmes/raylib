@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
 | Branch / base commit | `master` @ `f0cec42a` |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
-| Tasks | 4/6 done; T1 split — 2D corpus parity met, 3D handed to phase 10 |
+| Tasks | **closed** — 5/6 done, T1 split (T1a met, T1b to phase 10) |
 
 ## 0. Handover
 
@@ -157,10 +157,10 @@ they are link-time wrappers that do not exist yet.
 **Re-tested under clean conditions, still rejected:** the transpose was first rejected while the depth clear value and the depth comparison were both still wrong, so its earlier failure could have been the depth test rather than the transpose. Re-run with the depth system fixed it produces **613 colours again — the 2D-only count, cubes gone**. So raylib's `MatrixToFloat` output really is what GL expects, and the modelview is being fed correctly. Reverted again.
 
 **Two real depth bugs found by reading pspGL, both fixed:** (1) the depth **clear** value — GU's range is reversed (`sceGuDepthRange(65535, 0)`), so GL's `glClearDepth(1.0)` must become **0**, not 65535; pspGL converts with `65535 - 65535*depth` and we did not, so every fragment passed `LEQUAL` and the cube's faces painted over each other (722 colours, mottled). (2) the **comparison itself** — pspGL inverts every operator ("the PSP's Z coordinate system is backwards from OpenGL's"), so `GL_LEQUAL` must map to `GE_GREATER`, not `GE_LEQUAL`. Applying (1) alone made the cubes vanish (613 colours) because with `LEQUAL` on a reversed range nothing passes; applying both restores drawing (**691 colours, 25.6 % differing**) but does not reach parity, so a third cause remains |
-| T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
+| T2 | **`basic_shapes`** on both drivers | `done` | identical, and the 284-colour fingerprint holds | **0 differing pixels, 284 colours on both.** The sprint's first attempt failed to build because `basic_shapes`' Makefile never got `-lpspgu` (pspGL used `libpspge`), so the app that ran was a stale pspGL binary — recorded rather than used |
 | T3 | **immediate-mode symbols** (task 12) | `done` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts` | `tools/pspgu/gl_immediate.c`: buffers into the array layout, emits through the `glDrawArrays` path, expands `GL_QUADS` to two triangles, 1,024-vertex buffer with emit-on-overflow. `bunnymark` now **links and runs with `WRAP=1`** — the first time since phase 5 began |
 | T4 | **counters under the new driver**, both builds | `done` | batched: `arrays`/`arrayVerts` non-zero, `begins`/`verts` zero by design; immediate: `begins`/`ends`/`verts` non-zero | `PSP_BATCH=1`: `begins=0 verts=0 arrays=400 arrayVerts=409,998`, `work 6.565 ms`. `PSP_BATCH=0`: `begins=204,999 ends=204,999 verts=819,996 arrays=0`, `work 25.980 ms` — against pspGL's 48.8 ms for the same unbatched workload |
-| T5 | **`PSP_DISABLE_VSYNC`** build links and runs (`eglSwapInterval` is compiled out of the 52-symbol list) | `todo` | the build links, the app runs, and the counter's swap figure changes versus the vsync build | — |
+| T5 | **`PSP_DISABLE_VSYNC`** build links and runs | `done` | the build links, the app runs, and the swap figure changes | builds with 0 errors, links, runs; `SPLIT ... swap=2.433 ms` against ~9.4 ms with vsync, counters intact (`arrays=400 arrayVerts=409,998`) |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
@@ -404,3 +404,24 @@ which would have corrupted every 3D scene.
 
 **Still open in this sprint, both cheap:** T2 (`basic_shapes` against its 284-colour fingerprint) and T5
 (`PSP_DISABLE_VSYNC` build). Neither depends on 3D.
+
+## 11. Closed
+
+**Sprint 013 closed 2026-11-21: 5/6 done, T1 split.**
+
+| task | result |
+|---|---|
+| T0 current colour | `done` — shared through `PspGuContext`; 2D gate unchanged |
+| T1 mesh scene | **split**: T1a 2D corpus parity **met**, T1b (`DrawMesh`) to phase 10 |
+| T2 `basic_shapes` | `done` — **0 differing pixels, 284 colours** on both drivers |
+| T3 immediate symbols | `done` — `WRAP=1` links and runs for the first time in phase 5 |
+| T4 counters, both builds | `done` — batched and `PSP_BATCH=0` both report the expected counters |
+| T5 `PSP_DISABLE_VSYNC` | `done` — builds, runs, `swap` 9.4 → 2.433 ms |
+
+What the sprint leaves behind, in the order it happened: a `basic_shapes` build that silently ran a stale binary
+because of a missing `-lpspgu`; two "the cube is not drawn" results that were my own instrument lying (a grep missing
+`]`, then a Makefile ignoring `EXTRA_CFLAGS`); two real depth defects fixed from pspGL's source; and one genuine,
+narrow, well-instrumented 3D problem handed on.
+
+The pattern worth carrying into sprint 014: **every wrong conclusion in this sprint came from a measurement, not from
+reasoning** — and the two that cost the most were the two where the *instrument* was wrong rather than the driver.
