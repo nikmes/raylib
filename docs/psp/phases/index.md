@@ -20,11 +20,14 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | [8 — Input](08-input.md) | pad mapping, nub calibration, edge detection | not started |
 | [9 — Audio](09-audio.md) | `sceAudio` output without costing frame time | not started |
 | [10 — 3D and advanced](10-3d-advanced.md) | models, RTT, culling, ME options | not started |
-| [11 — Release gate](11-release-gate.md) | four configurations, one report | not started |
+| [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started |
+| [12 — Release gate](12-release-gate.md) | four configurations, one report | not started |
 
-Two notes on ordering that are easy to get wrong:
+Notes on ordering that are easy to get wrong:
 
 - **Phase 2 before phase 3 and 4.** Without counters there is no way to attribute a gain to a change, and the
   first two optimisations available are ones we did not write.
 - **Input and audio are late, not unimportant.** They are independent of the renderer, they do not block the
   measurements, and starting them early would mix two kinds of risk in one debug session.
+- **Phase 11 sits after the renderer phases on purpose.** It profiles the frame and load path those phases
+  produce; running it earlier would tune a workload that is about to change.

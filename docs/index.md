@@ -45,7 +45,8 @@ Everything in the roadmap follows from closing that gap without changing raylib'
 | [8](psp/phases/08-input.md) | Input: pad mapping, nub calibration, edge detection | |
 | [9](psp/phases/09-audio.md) | Audio: `sceAudio` output on its own thread | |
 | [10](psp/phases/10-3d-advanced.md) | 3D and advanced: models, RTT, culling | |
-| [11](psp/phases/11-release-gate.md) | Release gate: four-configuration comparison | |
+| [11](psp/phases/11-general-optimisation.md) | General optimisation: compiler, memory, I/O, startup | |
+| [12](psp/phases/12-release-gate.md) | Release gate: four-configuration comparison | |
 
 Each phase has its own page — tasks, preconditions and exit criteria — starting from the
 [phase index](psp/phases/index.md). A phase is not started before the previous one's criteria are met and

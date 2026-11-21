@@ -71,7 +71,8 @@ nav:
           - psp/phases/08-input.md
           - psp/phases/09-audio.md
           - psp/phases/10-3d-advanced.md
-          - psp/phases/11-release-gate.md
+          - psp/phases/11-general-optimisation.md
+          - psp/phases/12-release-gate.md
       - Sprints:
           - psp/sprints/000-phase0-baseline.md
           - psp/sprints/001-phase1-import-platform.md

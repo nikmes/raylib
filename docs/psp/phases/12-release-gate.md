@@ -1,9 +1,9 @@
-# Phase 11 — Release gate
+# Phase 12 — Release gate
 
 | | |
 |---|---|
 | State | not started |
-| Depends on | every previous phase, or a documented reason why one was skipped |
+| Depends on | every previous phase, including the build and config flags chosen in Phase 11, or a documented reason why one was skipped |
 | Exit criterion | four configurations measured on the same console, one report, and a decision about whether anything still needs the direct-GU path |
 
 ## What this phase is about
@@ -16,7 +16,9 @@ Proving the stack, not assembling it. Four configurations, same console, same wo
 4. native GU backend (phase 5 and later)
 
 That ordering is the whole point: it separates the library's contribution from ours, so a regression can be
-attributed instead of argued about.
+attributed instead of argued about. Compiler, linker and raylib config flags are held identical across all four
+configurations and printed with the report; [Phase 11](11-general-optimisation.md) chose them, this phase only
+proves them on the release workload.
 
 ## Tasks
 
