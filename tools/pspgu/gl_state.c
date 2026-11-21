@@ -48,7 +48,13 @@ void glClear(GLbitfield mask)
     // which would be told to clear through a null Z pointer.
     if ((mask & GL_DEPTH_BUFFER_BIT) && (pspgu.depthOffset != NULL))
     {
-        sceGuClearDepth((unsigned int)(pspgu.clearDepth * 65535.0f));
+        // GU's depth range is REVERSED, sceGuDepthRange(65535, 0) - near is 65535, far is 0 -
+        // so GL's glClearDepth(1.0) ("far") has to become 0, not 65535. pspGL does exactly
+        // this conversion (glClearDepth.c: 65535 - 65535*depth). Clearing to 65535 while the
+        // range is reversed stores the NEAR value everywhere, so with GL_LEQUAL no fragment is
+        // ever rejected and a cube's faces paint over each other in submission order - which
+        // is what 722 colours and a mottled cube look like.
+        sceGuClearDepth(65535u - (unsigned int)(pspgu.clearDepth * 65535.0f));
         bits |= GU_DEPTH_BUFFER_BIT;
     }
 
@@ -111,19 +117,25 @@ void glBlendFunc(GLenum sfactor, GLenum dfactor)
 
 void glDepthFunc(GLenum func)
 {
-    int ge = GU_LESS;
+    int ge = GU_GEQUAL;
 
     if (!pspgu.current) return;
 
+    // The PSP's Z coordinate system is backwards from OpenGL's, so EVERY comparison is
+    // inverted - pspGL says so in as many words (glDepthFunc.c: "we need to reverse order of
+    // depth comparisons") and its mapping table does exactly that. Our first version mapped
+    // GL_LEQUAL to GU_LEQUAL: with a reversed range that rejects every fragment, so the 3D
+    // cubes vanished entirely (613 colours = the 2D-only frame).
     switch (func)
     {
-        case GL_NEVER: ge = GU_NEVER; break;
-        case GL_LESS: ge = GU_LESS; break;
-        case GL_EQUAL: ge = GU_EQUAL; break;
-        case GL_LEQUAL: ge = GU_LEQUAL; break;
-        case GL_GREATER: ge = GU_GREATER; break;
-        case GL_GEQUAL: ge = GU_GEQUAL; break;
-        case GL_ALWAYS: ge = GU_ALWAYS; break;
+        case GL_NEVER:   ge = GU_NEVER; break;
+        case GL_LESS:    ge = GU_GEQUAL; break;
+        case GL_EQUAL:   ge = GU_EQUAL; break;
+        case GL_LEQUAL:  ge = GU_GREATER; break;
+        case GL_GREATER: ge = GU_LEQUAL; break;
+        case GL_GEQUAL:  ge = GU_LESS; break;
+        case GL_NOTEQUAL: ge = GU_NOTEQUAL; break;
+        case GL_ALWAYS:  ge = GU_ALWAYS; break;
         default: break;
     }
 
