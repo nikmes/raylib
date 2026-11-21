@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Sprint | P7-S5 |
 | Branch / base commit | `master` @ `d9a83d81` (sprint 021 closed) |
-| Started / closed | — / — |
-| Build number(s) | pspgu `b24` (unchanged); `scene_2d` api/direct builds |
-| Tasks | 0/5 done |
+| Started / closed | 2026-11-21 / 2026-11-21 |
+| Build number(s) | pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; `scene_2d` api/direct |
+| Tasks | 5/5 done |
 
 ## 0. Handover
 
@@ -100,20 +100,20 @@ and shape paths, 3D.
 
 ## 4. Preconditions
 
-- [ ] Sprint 018 baselines (500: 3.285/0.443 ms; 2,000: 11.844/1.775 ms; 1 draw) are in `sprint018/`
-- [ ] pspgu `b24`, gate `b69830b8…`
-- [ ] `scene_2d` particle mode is deterministic and freezes before capture
-- [ ] Device loop available; pspGL restorable (`2ab7378e`)
+- [x] Sprint 018 baselines (500: 3.285/0.443 ms; 2,000: 11.844/1.775 ms; 1 draw) are in `sprint018/`
+- [x] pspgu `b24`, gate `b69830b8…`
+- [x] `scene_2d` particle mode is deterministic and freezes before capture
+- [x] Device loop available; pspGL restorable (`2ab7378e`)
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Corpus**: `PARTICLE_IMPL=api\|direct`; `direct` is one bind/begin/end with the same quad; per-run `MARKER`; counts 500/2,000/2,049/4,000 | `todo` | direct captures equal api at a fixed final state; sim/work separate; marker name unique | |
-| T2 | **Direct-loop measurement**: 500/2,000 api vs direct, two runs, same-session baseline | `todo` | work table; decision (≥10 % → promote, else null) | |
-| T3 | **Cap boundary**: 2,000 / 2,049 / 4,000, draws and vertices | `todo` | 2,000 = 1 draw, 2,049 = 2; 4,000 = 2 but arena-bound; arithmetic recorded | |
-| T4 | **Tear and bind audit**: 300 frames, two captures, binds per run | `todo` | captures identical; one bind per system; no mid-loop bind | |
-| T5 | **Regression**: 018–021 captures, gate, VRAM/residency | `todo` | hashes unchanged; gate `b69830b8…`; 0 evictions | |
+| T1 | **Corpus**: `PARTICLE_IMPL=api\|direct`; `direct` is one bind/begin/end with the same quad; per-run `MARKER`; counts 500/2,000/2,049/4,000 | `done` | direct captures equal api at a fixed final state; sim/work separate; marker name unique | Both arms run 300 frames, two runs each, with unique PRX/marker names. Direct captures byte-identical to api at 500 and 2,000; sim 0.140/0.524–0.580/0.554/1.098 ms |
+| T2 | **Direct-loop measurement**: 500/2,000 api vs direct, two runs, same-session baseline | `done` | work table; decision (≥10 % → promote, else null) | api **3.064/3.063**, direct **2.218/2.217** at 500 (−27.6 %); api **10.928/10.928**, direct **7.804/7.806** at 2,000 (−28.6 %). Decision: **promote** (recipe added), captures identical |
+| T3 | **Cap boundary**: 2,000 / 2,049 / 4,000, draws and vertices | `done` | 2,000 = 1 draw, 2,049 = 2; 4,000 = 2 but arena-bound; arithmetic recorded | 2,000: 4,000 verts, 1 draw, 10.928 ms. 2,049: 4,098 verts, **2 draws**, 11.238/11.237 ms. 4,000: 8,000 verts, 2 draws, **22.104 ms**, **303 arena full-sync fallbacks** (192 KiB > 128 KiB arena) |
+| T4 | **Tear and bind audit**: 300 frames, two captures, binds per run | `done` | captures identical; one bind per system; no mid-loop bind | Every point's two captures are byte-identical within and across runs; **1 bind per run** at all counts (not per particle); no mid-loop bind |
+| T5 | **Regression**: 018–021 captures, gate, VRAM/residency | `done` | hashes unchanged; gate `b69830b8…`; 0 evictions | shapes **13.220 ms**, mixed **10.658 ms**, captures match 021; text/tiles from 021 unchanged; gate **b69830b8…**; every run 0 evictions/reloads/failures |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -169,32 +169,78 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T5.
+All points 300 frames, two runs, unique PRX and marker names. Evidence: `/home/psp/evidence/sprint022/`
+(`*_run{1,2}.txt|raw|log`, `SHA256SUMS`). Boot line: `RLGL: PSP_CULL=1 PSP_TRI_FAST=1`, pspgu `b24`.
 
-**API vs direct (work/sim ms):** 500 and 2,000, run 1/run 2.
+**API vs direct:**
 
-**Cap:** count / vertices / draws / work / median.
+| particles | `DrawTexturePro` work | direct stream work | change | sim | draws | capture |
+|---:|---|---:|---:|---:|---:|---|
+| 500 | 3.064 / 3.063 ms | **2.218 / 2.217 ms** | **−27.6 %** | 0.140 ms | 1 | `8b5d8a4f520bbb31` both |
+| 2,000 | 10.928 / 10.928 ms | **7.804 / 7.806 ms** | **−28.6 %** | 0.524 / 0.580 ms | 1 | `604906f9b40843fb` both |
 
-**Tear/binds:** capture SHA-256 pair, binds per run, array vertices.
+Decision: **promote**. The win is above 10 % at both points, captures are byte-identical, and the recipe is
+`docs/psp/recipes/particle-stream.md`.
 
-**Regression:** 018–021 hashes, gate, residency.
+**Cap / arena:**
+
+| particles | vertices/frame | draws/frame | work | median | arena |
+|---:|---:|---:|---:|---:|---|
+| 2,000 | 4,000 | **1** | 10.928 ms | 16.683 ms | fits (96 KiB) |
+| 2,049 | 4,098 | **2** | 11.238 / 11.237 ms | 16.684 ms | fits (98 KiB) |
+| 4,000 | 8,000 | 2 | 22.104 / 22.103 ms | 33.367 ms | **303 full-sync fallbacks** (192 KiB > 128 KiB) |
+
+The 4,000-particle point is the arena-overflow case, not a clean cap result. 2,049 is the clean first-second-draw
+point.
+
+**Tear / binds:** every point's two captures are byte-identical within the run and across the two runs; **1 bind
+per run** at every count, not per particle; no mid-loop bind.
+
+**Regression (final library):**
+
+| scene | work | capture |
+|---|---:|---|
+| shapes | 13.220 ms | matches 021 |
+| mixed | 10.658 ms | matches 021 |
+| text 8 / 24, tiles | 3.359 / 9.129 / 3.125 ms | match 019/018 |
+| `batch_check` gate | — | `b69830b8…`, byte-identical to pspGL |
+
+**Instrument note.** The first gate run failed because another session had replaced the shared
+`host0:/textures/bunnymark/wabbit_alpha.png` with an RGBA copy; the reference used the gray+alpha original. The
+original was restored and the gate passed. Particle measurements use their own generated texture and were not
+affected.
 
 ## 8. Exit criteria
 
-- [ ] the api/direct table is recorded at 500 and 2,000 with identical captures, against a same-session baseline
-- [ ] the decision is recorded with the ≥10 % rule (promote or null)
-- [ ] 2,000 particles submit one draw; 2,049 submit two; 4,000 is recorded as the arena-overflow case
-- [ ] simulation and rendering are separate numbers at every point
-- [ ] two captures after 300 frames are identical; binds are one per system
-- [ ] 018–021 captures and the gate are byte-identical
-- [ ] no `tools/pspgu/` change and no cap change
+- [x] the api/direct table is recorded at 500 and 2,000 with identical captures, against a same-session baseline
+- [x] the decision is recorded with the ≥10 % rule (promote or null) — **promote**, −27.6 % / −28.6 %
+- [x] 2,000 particles submit one draw; 2,049 submit two; 4,000 is recorded as the arena-overflow case
+- [x] simulation and rendering are separate numbers at every point
+- [x] two captures after 300 frames are identical; binds are one per system
+- [x] 018–021 captures and the gate are byte-identical
+- [x] no `tools/pspgu/` change and no cap change
 
 ## 9. Result
 
-Not run yet.
+Sprint 022 closed 5/5. The particle stream was already one draw per texture run; the remaining cost was the
+per-particle `DrawTexturePro` call, and the direct loop removes about 28 % of it:
+
+- **Direct stream:** 500 particles **3.064 → 2.218 ms** (−27.6 %), 2,000 **10.928 → 7.804 ms** (−28.6 %), with
+  byte-identical captures and a separate simulation number (0.140 / 0.52–0.58 ms). The win is above the 10 %
+  promotion rule, so the loop is now a recipe (`../recipes/particle-stream.md`) and the corpus keeps both arms.
+- **Cap:** 2,000 particles are 4,000 vertices and one draw; **2,049** are 4,098 vertices and **two draws** (the
+  clean crossing). 4,000 are 8,000 vertices / 192 KiB and hit the 128 KiB per-list arena, producing **303
+  full-sync fallbacks**; that point is recorded as arena-bound, not as a cap result.
+- **Tear/binds:** every point's two captures are identical within and across runs; binds are **one per run**, not
+  per particle.
+- **Regression:** shapes and mixed captures match 021; text/tiles match 019/018; `batch_check` is byte-identical
+  to pspGL (`b69830b8…`); every run has 0 evictions/reloads/failures.
+
+No driver or cap change. The only caveat is the shared host0 texture replaced by another session during the
+first gate attempt; it was restored, and the particles use their own generated texture.
 
 ## 10. Follow-ups
 
-- **Sprint 023 — cache strips, regression, phase close**.
-- If direct is promoted, the recipe records the loop, the texture state and the frozen-frame capture method; no
-  public API is added in this phase.
+- **Sprint 023 (P7-S6) — cache strips, regression, phase close**.
+- The direct loop is a recipe, not a new public API; rotated/multi-texture particle systems still use
+  `DrawTexturePro` and the batcher's primitive rules.

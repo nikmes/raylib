@@ -944,6 +944,11 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   (`PSP_TRI_FAST=1`) instead of a 4-vertex quad: the shape scene goes from **10,000 to 7,000 vertices**, 4 to 3
   draws, **17.78 to 12.81 ms** work, and its median from **33.4 to 16.68 ms** (60 fps), capture byte-identical
   (`b9cd43b6…`). Shapes bind the shapes texture once per frame, not per object. Gate `b69830b8…`.
+- **One vertex stream per particle system (sprint 022, b24):** a direct `rlSetTexture` + `RL_QUADS` loop with four
+  vertices per particle removes the per-particle `DrawTexturePro` call: 500 particles **3.064 → 2.218 ms**
+  (−27.6 %), 2,000 **10.928 → 7.804 ms** (−28.6 %), captures byte-identical, one draw and one bind per run.
+  2,000 = 4,000 vertices / one draw; **2,049 = 4,098 / two draws**; 4,000 = 8,000 vertices / 192 KiB, over the
+  128 KiB arena, and falls back to a full sync. The loop is a recipe, not a public API.
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

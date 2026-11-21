@@ -148,5 +148,7 @@ nav:
           - psp/templates/sprint.md
           - psp/templates/feature.md
           - psp/templates/recipe.md
+      - Recipes:
+          - psp/recipes/particle-stream.md
 
 strict: true
