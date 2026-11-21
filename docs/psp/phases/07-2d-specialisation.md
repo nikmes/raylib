@@ -185,7 +185,7 @@ sprint's numbers are in hand (the fast paths depend on what the corpus measures)
 | sprint | scope | state |
 |---|---|---|
 | [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
-| 019 — Text runs and layout cache | submissions are already one per atlas run (018); target **work** with cached layout, the batch-cap boundary above ~2,048 glyphs, and paragraph parity | planned |
+| [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | written |
 | 020 — Tile maps and 512-pixel windowing | per-atlas-run tiles, scrolled traversal, window slicing with full-stride `tbw`, seam screenshots | planned |
 | 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
 | 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |

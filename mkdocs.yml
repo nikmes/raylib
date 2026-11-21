@@ -93,6 +93,7 @@ nav:
           - psp/sprints/016-phase6-residency-eviction.md
           - psp/sprints/017-phase6-format-matrix-and-gated-features.md
           - psp/sprints/018-phase7-corpus-and-budget.md
+          - psp/sprints/019-phase7-text-work.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md
