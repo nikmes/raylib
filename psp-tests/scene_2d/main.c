@@ -28,7 +28,7 @@
 #include "raylib.h"
 #include "psp_counters.h"
 
-#if defined(TEXT_IMPL_DIRECT)
+#if defined(TEXT_IMPL_DIRECT) || defined(PARTICLE_IMPL_DIRECT)
     #include "rlgl.h"       // the same inline PSP batcher the library uses
 #endif
 
@@ -95,6 +95,9 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #endif
 #ifndef OVERSIZE_ROTATE
     #define OVERSIZE_ROTATE 0
+#endif
+#ifndef SCENE_MARKER
+    #define SCENE_MARKER "scene2d_done.txt"
 #endif
 
 #define MAX_FRAMES     2000
@@ -508,7 +511,8 @@ static void particlesUpdate(void)
     }
 }
 
-static void particlesDraw(void)
+#if !defined(PARTICLE_IMPL_DIRECT)
+static void particlesDrawApi(void)
 {
     Rectangle src = { 0.0f, 0.0f, 32.0f, 32.0f };
 
@@ -517,6 +521,41 @@ static void particlesDraw(void)
         Rectangle dst = { particles[i].pos.x, particles[i].pos.y, 32.0f, 32.0f };
         DrawTexturePro(particleTex, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, particles[i].color);
     }
+}
+#endif
+
+#if defined(PARTICLE_IMPL_DIRECT)
+static void particlesDrawDirect(void)
+{
+    rlSetTexture(particleTex.id);
+    rlBegin(RL_QUADS);
+
+    for (int i = 0; i < particleCount; i++)
+    {
+        float x = particles[i].pos.x;
+        float y = particles[i].pos.y;
+        Color c = particles[i].color;
+
+        rlColor4ub(c.r, c.g, c.b, c.a);
+
+        rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x, y);
+        rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x, y + 32.0f);
+        rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + 32.0f, y + 32.0f);
+        rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + 32.0f, y);
+    }
+
+    rlEnd();
+    rlSetTexture(0);
+}
+#endif
+
+static void particlesDraw(void)
+{
+#if defined(PARTICLE_IMPL_DIRECT)
+    particlesDrawDirect();
+#else
+    particlesDrawApi();
+#endif
 }
 #endif
 
@@ -1080,7 +1119,7 @@ int main(void)
              SCENE_COUNT, spriteVisible, SCENE_OFFSCREEN_PCT);
 #endif
 
-    SaveFileText("scene2d_done.txt",
+    SaveFileText(SCENE_MARKER,
                  TextFormat("DONE mode=%s objects=%i runs=%i frames=%i begins=%u ends=%u draws=%u binds=%u unbinds=%u verts=%u windraws=%u winswitch=%u work=%.3f swap=%.3f sim=%.3f median=%.3f p95=%.3f free=%u largest=%u evict=%u reload=%u failed=%u verdict=%s%s\n",
                             sceneName(), sceneObjects(), sceneRuns(), frames,
                             cBegins, cEnds, cDraws, cBinds, cUnbinds, cVerts,

@@ -22,6 +22,7 @@ COUNT ?= 2000
 OFFSCREEN ?= 50
 LINES ?= 8
 BUDGET_FLOOR_KB ?= 128
+MARKER ?= scene2d_done.txt
 
 # Sprint 019: text implementation arm and the font-atlas probe.
 TEXT_IMPL ?= api
@@ -30,6 +31,9 @@ FONT_SIZE ?= 32
 FONT_SIZE2 ?= 12
 FONT_GLYPHS ?= 95
 FONT_ORDER ?= default
+
+# Sprint 022: particle implementation arm.
+PARTICLE_IMPL ?= api
 
 # Sprint 020: oversized texture and wide tile atlas.
 WIDE ?= 1024
@@ -42,6 +46,7 @@ ATLAS_REF ?= 0
 CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
          -DSCENE_OFFSCREEN_PCT=$(OFFSCREEN) \
          -DSCENE_LINES=$(LINES) -DBUDGET_FLOOR_KB=$(BUDGET_FLOOR_KB) \
+         -DSCENE_MARKER="\"$(MARKER)\"" \
          -DFONT_PATH="\"$(FONT_PATH)\"" -DFONT_SIZE=$(FONT_SIZE) -DFONT_SIZE2=$(FONT_SIZE2) -DFONT_GLYPHS=$(FONT_GLYPHS)
 
 ifeq ($(TEXT_IMPL),api)
@@ -55,6 +60,14 @@ else ifeq ($(TEXT_IMPL),direct)
     CFLAGS += -DTEXT_IMPL_DIRECT -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1 -I../../src
 else
     $(error TEXT_IMPL must be api, walk or direct)
+endif
+
+ifeq ($(PARTICLE_IMPL),api)
+    CFLAGS += -DPARTICLE_IMPL_API
+else ifeq ($(PARTICLE_IMPL),direct)
+    CFLAGS += -DPARTICLE_IMPL_DIRECT -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1 -I../../src
+else
+    $(error PARTICLE_IMPL must be api or direct)
 endif
 
 ifeq ($(FONT_ORDER),reverse)
