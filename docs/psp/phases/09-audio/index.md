@@ -99,6 +99,7 @@ hardware.
 | PSP link line | `libraylib.a` is static: append `-lpspaudio -lpthread -latomic` **after** `build.mak`; do not add `-lpspuser`; `libatomic.a` supplies miniaudio's 64-bit atomics; no `dlfcn` with `MA_NO_RUNTIME_LINKING` | `[measured: P9-S1, 2026-11-21]` |
 | PSP silent backend (P9-S1) | custom backend; client f32 -> internal s16; 44100; 1024-frame period x2; 128 KiB worker stack; 418 callbacks in 10.03 s (41/s); `raudio.o` text 422,129 B; app ELF text 1,245,592 B | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
 | PSP worker thread | default/32 KiB stack entered the audio loop and died before playback; `ma_device_init` waited on `stopEvent` forever; 128 KiB fixed it. Priority retained: `ma_thread_priority_normal` | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
+| PSP output backend (P9-S2) | one regular channel (unit: **7**), 1024-frame blocks, two alternating 64-byte-aligned buffers with cache writeback; 433 callbacks/10.03 s (43/s); rest 960–1024; errors 0; `runClocks` 410,966/411,441; 1 kHz tone audible | `[measured: PSP-1000, P9-S2, 2026-11-21]` |
 
 ## What the reference implementations do
 
@@ -188,8 +189,8 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 | sprint | file | scope | state |
 |---|---|---|---|
 | P9-S1 — Enable raudio and the silent backend | [045](../../sprints/045-phase9-enable-raudio.md) | build flags, `dlfcn`/atomics/pthread, silent custom backend, link line | **done** — 418 callbacks/41 per s; gate `cf43ce6d…` |
-| P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, 64-byte buffer, `onDeviceWrite`, one sound | next |
-| P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | written |
+| P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, two aligned buffers, `onDeviceWrite`, one sound | **done** — 433 callbacks/43 per s; tone audible; gate `cf43ce6d…` |
+| P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | next |
 | P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread decision, 5-minute soak | written |
 | P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | written |
 | P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | written |

@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S2 |
 | Branch / base commit | `master` @ `8de96c45` (P9-S1 close; pin at start) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `audio b2`; pspgu `b24` unchanged |
-| Tasks | 0/7 done |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -112,28 +112,30 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Descriptor**: native s16, 2 channels, 44100, `periodSizeInFrames=1024`, `periodCount=2`; keep the app format f32 | `todo` | boot log shows `Format: f32 -> s16`, `Channels: 2 -> 2`, `Sample rate: 44100 -> 44100`, period 2048 | — |
-| T2 | **Channel lifecycle**: reserve in `onDeviceStart()` only if channel is `-1`; release in `onDeviceUninit()`; leave reserved across stop/start; count failures | `todo` | two `run → DONE → reset → run` cycles reserve one channel; no double reserve; no leaked channel | — |
-| T3 | **`onDeviceWrite`**: copy each block into alternating 64-byte-aligned s16 buffers, write back the exact range, call `sceAudioOutputPannedBlocking(ch, 0x8000, 0x8000, pcm)`; no sleep; handle partial blocks | `todo` | no `sceAudio` in the frame loop; no `sceKernelDelayThread`; two buffers alternate; alignment assert never fires | — |
-| T4 | **Thread setup**: retain the S1 128 KiB stack and normal priority; record thread ID/`runClocks`; only test high/realtime as a separate A/B arm | `todo` | thread ID and 128 KiB stack logged; `runClocks` reads; no default-stack regression | — |
-| T5 | **Tone test**: extend the existing `audio_smoke` (do not create a second app) with a generated 1 kHz s16 stereo sine, `LoadSoundFromWave`, `PlaySound`, 600 frames | `todo` | tone audible; `DONE frames 600`; `IsSoundPlaying` transitions correctly | — |
-| T6 | **Measure**: audio-thread CPU, `sceAudioGetChannelRestLength()` min/max, output errors, frame time; control = S1 silent run | `todo` | numbers in §7; no underrun; frame time ≤ 16.7 ms | — |
-| T7 | **Regression**: `batch_check` and the 018–021 gates; `git diff -- examples/` empty | `todo` | gate `cf43ce6d…` byte-identical | — |
+| T1 | **Descriptor**: native s16, 2 channels, 44100, `periodSizeInFrames=1024`, `periodCount=2`; keep the app format f32 | `done` | boot log shows `Format: f32 -> s16`, `Channels: 2 -> 2`, `Sample rate: 44100 -> 44100`, period 2048 | boot log matches exactly |
+| T2 | **Channel lifecycle**: reserve in `onDeviceStart()` only if channel is `-1`; release in `onDeviceUninit()`; leave reserved across stop/start; count failures | `done` | two `run → DONE → reset → run` cycles reserve one channel; no double reserve; no leaked channel | channel **7** in both runs; reserve and release succeeded |
+| T3 | **`onDeviceWrite`**: copy each block into alternating 64-byte-aligned s16 buffers, write back the exact range, call `sceAudioOutputPannedBlocking(ch, 0x8000, 0x8000, pcm)`; no sleep; handle partial blocks | `done` | no `sceAudio` in the frame loop; no `sceKernelDelayThread`; two buffers alternate; alignment assert never fires | 433 output blocks; rest 960–1024; errors **0**; no delay call in backend |
+| T4 | **Thread setup**: retain the S1 128 KiB stack and normal priority; record thread ID/`runClocks`; only test high/realtime as a separate A/B arm | `done` | thread ID and 128 KiB stack logged; `runClocks` reads; no default-stack regression | 128 KiB/normal retained; `runClocks` 410,966 / 411,441 |
+| T5 | **Tone test**: extend the existing `audio_smoke` (do not create a second app) with a generated 1 kHz s16 stereo sine, `LoadSoundFromWave`, `PlaySound`, 600 frames | `done` | tone audible; `DONE frames 600`; `IsSoundPlaying` transitions correctly | tone valid=1; **audible on both runs**; `sound=1` at frame 60 run 1, `sound=0` at DONE |
+| T6 | **Measure**: audio-thread CPU, `sceAudioGetChannelRestLength()` min/max, output errors, frame time; control = S1 silent run | `done` | numbers in §7; no underrun; frame time ≤ 16.7 ms | 433 callbacks, 43/s, rest 960–1024, errors 0, 60 fps, two runs |
+| T7 | **Regression**: `batch_check` and the 018–021 gates; `git diff -- examples/` empty | `done` | gate `cf43ce6d…` byte-identical | `batch_check_s2.raw` hash `cf43ce6d…`, identical to both gate captures; no `examples/` change |
 
 ### Task log (append-only)
 
 - 2026-11-21 — sprint drafted; not started
 - 2026-11-21 — readiness review: double buffering, cache writeback, reserve-once and S1 baseline added
+- 2026-11-21 — T1–T7 done; two 600-frame device runs; tone audible
+- 2026-11-21 — implementation committed `49507c3f`; gate `cf43ce6d…` unchanged
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| frame time | ≤ 16.7 ms (60 fps) with one sound | | |
-| audio thread CPU | record; target ≤ 1 ms/frame for one sound | | |
-| heap | no allocation in `onDeviceWrite`; tone allocated at load | | |
-| PCM buffers | 2 × 1024 frames × 2 ch × 2 B = 8,192 B, both 64-byte aligned | | |
-| rest samples | never 0 at the output call; record min/max | | |
+| frame time | ≤ 16.7 ms (60 fps) with one sound | 16.7 ms / 60 fps | `[measured: PSP-1000, P9-S2]` |
+| audio thread CPU | record; target ≤ 1 ms/frame for one sound | `runClocks` 410,966 / 411,441 over 10.03 s (~0.12 % CPU) | `[measured: PSP-1000, P9-S2]` |
+| heap | no allocation in `onDeviceWrite`; tone allocated at load | not separately measured; no per-write allocation | `[derived]` |
+| PCM buffers | 2 × 1024 frames × 2 ch × 2 B = 8,192 B, both 64-byte aligned | 8,192 B static | `[measured: source]` |
+| rest samples | never 0 at the output call; record min/max | min 960, max 1024, errors 0 | `[measured: PSP-1000, P9-S2]` |
 
 ## 7. Measurements
 
@@ -143,27 +145,41 @@ audible confirmation by the operator.
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
 | control | `audio b1` | silent backend, 600 frames | ready, frame time, runClocks | 418 callbacks, 41/s, 315k | S1 |
-| tone | `audio b2` | 1 sound, 600 frames | audible, errors, rest min/max, runClocks | | first output |
-| tone again | `audio b2` | same, reset first | same counters | | repeatability |
+| tone | `audio b2` | 1 sound, 600 frames | audible, errors, rest min/max, runClocks | 433, 43/s, 960–1024, 0, 410,966 | first output |
+| tone again | `audio b2` | same, reset first | same counters | 433, 43/s, 960–1024, 0, 411,441 | repeat within 0.12 % |
+| gate | `audio b2` | `batch_check` 2 frames | capture hash | `cf43ce6d…` | identical to both controls |
 
 ## 8. Exit criteria
 
-- [ ] one tone/sound is audible on the PSP-1000
-- [ ] `onDeviceWrite()` uses two alternating static 64-byte-aligned buffers and blocks on the channel
-- [ ] the exact PCM range is written back before every output call
-- [ ] no `sceKernelDelayThread()` and no `sceAudio` call in the game frame loop
-- [ ] reserve/release survive two runs with `reset` between; no leaked or double-reserved channel
-- [ ] audio-thread CPU and rest-length min/max are recorded in §7
-- [ ] `batch_check` stays `cf43ce6d…`; the 018–021 gates are unchanged
-- [ ] blocking-call, alignment, cache and thread facts are written back into the Phase 9 page / memory map §9
+- [x] one tone/sound is audible on the PSP-1000
+- [x] `onDeviceWrite()` uses two alternating static 64-byte-aligned buffers and blocks on the channel
+- [x] the exact PCM range is written back before every output call
+- [x] no `sceKernelDelayThread()` and no `sceAudio` call in the game frame loop
+- [x] reserve/release survive two runs with `reset` between; no leaked or double-reserved channel
+- [x] audio-thread CPU and rest-length min/max are recorded in §7
+- [x] `batch_check` stays `cf43ce6d…`; the 018–021 gates are unchanged
+- [x] blocking-call, alignment, cache and thread facts are written back into the Phase 9 page / memory map §9
 
 ## 9. Result
 
-Not started.
+**Done and audible.** Two device runs reserved channel **7** and played the generated 1 kHz tone; the operator
+confirmed both. Each run produced **433 callbacks in 10.03 s (43/s)**, rest length **960–1024**, **0** output
+errors, `runClocks` **410,966 / 411,441**, and `DONE frames 600 audio=1 sound_playing=0` at 60 fps.
+
+Two alternating 64-byte-aligned buffers are used; each full 4096-byte block is written back before
+`sceAudioOutputPannedBlocking()`, and short tails are zero-filled. No `sceKernelDelayThread()` remains.
+`raudio.o` text is 422,877 B, the app ELF text 1,247,004 B, and the PRX 1,596,838 B.
+
+`batch_check_s2.raw` is byte-identical to both existing gate captures:
+`cf43ce6de867112b183412d31c5de9112fe7a7d59fc40620c6a426d4b2d732f8`.
+
+Implementation commit: `49507c3f`.
 
 ## 10. Follow-ups
 
 - P9-S3: multiple `Sound`s, volume/pan/pitch and the API conformance matrix.
+- `sceAudioChReserve()` from the miniaudio worker was accepted on this unit; keep the `onDeviceInit()`
+  fallback documented for a future firmware/pthread change.
 - If `sceAudioChReserve()` fails under heap pressure, record the free bytes and move `InitAudioDevice()` earlier.
 - If the blocking call holds `AUDIO.System.lock`, measure the main-thread `SetSoundVolume()` latency; do not
   change the lock without a measurement.
