@@ -45,10 +45,14 @@ sprites, 512 for quads.
 
 ## Exit criteria
 
-- [ ] submission count collapses from object count to state-run/capacity count (numbers, not impressions)
-- [ ] screenshots byte-identical where they should be, and diffs explained where not
-- [ ] no per-sprite heap allocation measurable
-- [ ] frame time improved at the high bunny counts, or the reason it did not is recorded
+- [x] submission count collapses from object count to state-run/capacity count — 1,025 `glEnd` → 2–3
+  `glDrawArrays` per frame at N=1,000, 5,024 → 9 at N=5,000 (sprints 007/008)
+- [x] screenshots byte-identical where they should be, and diffs explained where not — `batch_check` md5
+  `c4eb44e7…` on the unbatched, triangle and sprite arms, 0 differing bytes
+- [x] no per-sprite heap allocation measurable — one static 4,096-vertex buffer, `rcore.o` bss +98,328 B
+- [x] frame time improved at the high bunny counts — 66.733 → 16.683 ms at N=1,000 (60 fps), 316.98 → 66.733 ms at
+  N=5,000. **Remaining before this phase closes: sprint 009** — the mixed-scene regression, the samples and the
+  default
 
 ## Guidelines from the renderer blueprint
 
@@ -205,3 +209,8 @@ percent; the ceiling is pixels. Which lever matters next depends on one measurem
   — **done**. Axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, pixel-identical), and the discovery that the
   library had never been compiled with optimisation: `-O2` took 1,000 sprites from 33.37 to **16.68 ms**. The
   residual is now blended fill, not submission
+- [Sprint 009 — The per-sprite CPU budget, and shipping the batch](../sprints/009-phase4-inline-vertex-path.md)
+  — the last sprint of this phase. `work = 0.98 ms + 7.08 µs × sprites` is what puts the 60 fps ceiling at 1,500:
+  inline the vertex push path (it is cross-translation-unit call overhead, not arithmetic), add a texture-bind
+  cache, give sprite and triangle runs their own buffers so a mixed scene stops flushing per sprite (83.4 ms today),
+  verify the 3D samples, and turn `PSP_BATCH` on by default

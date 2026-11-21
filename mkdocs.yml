@@ -83,6 +83,7 @@ nav:
           - psp/sprints/006-phase3-decide.md
           - psp/sprints/007-phase4-batch-skeleton.md
           - psp/sprints/008-phase4-sprite-primitive.md
+          - psp/sprints/009-phase4-inline-vertex-path.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md
