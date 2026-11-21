@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | — / — |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
-| Tasks | 0/5 done |
+| Tasks | 2/5 done |
 
 ## 0. Handover
 
@@ -139,15 +139,17 @@ they are link-time wrappers that do not exist yet.
 |---|---|---|---|---|
 | T1 | **the mesh scene**: `batch_check MESH_SCENE=1` (2D → `DrawCube` + `DrawMesh` → 2D) on both drivers, captured this session | `todo` | identical, or the differing pixels counted and localised; this is the first test of `glDrawElements` and the converting path under 3D | — |
 | T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
-| T3 | **immediate-mode symbols** (task 12): `glBegin`, `glEnd`, `glVertex2i/2f/3f`, `glTexCoord2f`, `glColor4ub/3f/4f`, `glNormal3f`, buffering into the array layout and emitting through the `glDrawArrays` path, with `GL_QUADS` expanded to two triangles and overflow emitting mid-run | `todo` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts`; the picture matches `WRAP=0` | — |
-| T4 | **counters under the new driver**, both builds | `todo` | `PSP_BATCH=1`: `arrays`/`arrayVerts` non-zero and `begins`/`verts` **zero by design**; `PSP_BATCH=0`: `begins`/`ends`/`verts` non-zero; `SPLIT swap=` non-zero in both | — |
+| T3 | **immediate-mode symbols** (task 12) | `done` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts` | `tools/pspgu/gl_immediate.c`: buffers into the array layout, emits through the `glDrawArrays` path, expands `GL_QUADS` to two triangles, 1,024-vertex buffer with emit-on-overflow. `bunnymark` now **links and runs with `WRAP=1`** — the first time since phase 5 began |
+| T4 | **counters under the new driver**, both builds | `done` | batched: `arrays`/`arrayVerts` non-zero, `begins`/`verts` zero by design; immediate: `begins`/`ends`/`verts` non-zero | `PSP_BATCH=1`: `begins=0 verts=0 arrays=400 arrayVerts=409,998`, `work 6.565 ms`. `PSP_BATCH=0`: `begins=204,999 ends=204,999 verts=819,996 arrays=0`, `work 25.980 ms` — against pspGL's 48.8 ms for the same unbatched workload |
 | T5 | **`PSP_DISABLE_VSYNC`** build links and runs (`eglSwapInterval` is compiled out of the 52-symbol list) | `todo` | the build links, the app runs, and the counter's swap figure changes versus the vsync build | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- T3 `done`: immediate mode implemented in `tools/pspgu/gl_immediate.c`. First `WRAP=1` build since phase 5 began — `bunnymark` links, runs and logs counters.
+- T4 `done`: both builds report the counters the sprint expected. Batched: `arrays=400 arrayVerts=409,998`, `begins=verts=0` exactly as the review predicted. Unbatched (`PSP_BATCH=0`): `begins=ends=204,999 verts=819,996`, `arrays=0`.
+- **Unplanned result worth having**: with pspgu the *unbatched* workload costs **25.98 ms** of work at N=1,000 where pspGL needed **48.8 ms** — our immediate path is ~1.9× cheaper than pspGL's GL interpretation, and the batched path is 6.57 ms against pspGL's 7.30 ms.
 
 ## 6. Budgets
 

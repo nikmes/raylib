@@ -8,7 +8,7 @@
 #   make PSP_GU_TRACE=1       # log the unimplemented symbols a scene still calls
 
 TARGET_LIB = libGL.a
-OBJS = egl.o gl_state.o gl_matrix.o gl_draw.o gl_texture.o gl_stub.o
+OBJS = egl.o gl_state.o gl_matrix.o gl_draw.o gl_texture.o gl_immediate.o gl_stub.o
 
 PSPSDK ?= $(shell psp-config --pspsdk-path)
 
