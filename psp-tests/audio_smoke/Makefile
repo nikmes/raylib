@@ -1,7 +1,7 @@
-# P9-S1 audio smoke test: raudio present + silent PSP backend.
+# P9-S2 audio smoke test: generated 1 kHz tone through raylib's public audio API.
 #
-# No audio asset and no sound: this proves the module links, the custom backend
-# starts, and miniaudio's worker is paced rather than busy-spinning.
+# No asset and no Memory Stick I/O: the sine is generated at load, then played
+# through the silent-then-real PSP backend.
 
 BUILD_PRX = 1
 TARGET = audio_smoke
@@ -14,7 +14,7 @@ CFLAGS = -Wall
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP
-PSP_EBOOT_TITLE = audio smoke (P9-S1)
+PSP_EBOOT_TITLE = audio smoke (P9-S2)
 
 # PSP-1000: 32 MB. Never request the 40 MB partition the PSPSDK default asks for.
 PSP_LARGE_MEMORY = 0
