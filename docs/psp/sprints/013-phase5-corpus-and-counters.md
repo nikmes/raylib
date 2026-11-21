@@ -35,6 +35,30 @@ sprint 014's ceiling measurement.
   only 3D in the corpus, and it exercises `glDrawElements` and the converting vertex path.
 - pspGL's capture of the mesh scene exists (`/tmp/s3/mesh_b10.raw` in an earlier session; regenerate if absent).
 
+**Design settled at review — T3 has three answers the draft left open.**
+
+1. **Immediate mode buffers into the array layout, it does not draw per vertex.** `glBegin(mode)` records the
+   mode and resets a counter; `glVertex*` appends into a static buffer of the same 24-byte interleaved vertices the
+   batcher produces; `glEnd()` emits through the *same* code path `glDrawArrays` uses. That is the only way the two
+   paths stay honest — a second implementation would be untested by the 2D gate that protects everything else.
+2. **`GL_QUADS` has to be expanded, because GU has no quad.** raylib's immediate path draws quads (`rlBegin(RL_QUADS)`
+   → `glBegin(GL_QUADS)`), and GU offers only triangles/strips/fans/sprites. So the emitter splits each four-vertex
+   group into two triangles, exactly as the batcher does for non-sprite quads. Getting this wrong is invisible in a
+   `PSP_BATCH=1` library (which never calls it) and obvious in a `PSP_BATCH=0` one.
+3. **The buffer needs a defined overflow behaviour**: when it fills, emit and carry on, so a long `glBegin`/`glEnd`
+   run of thousands of vertices still draws. 1,024 vertices is enough for anything raylib draws in one call and
+   costs 24 KiB.
+
+**What the counters will and will not show — a correction to T4.** In a `PSP_BATCH=1` library the immediate-mode
+functions are **never called**, so `begins`/`ends`/`verts` stay 0 no matter what pspgu implements; only
+`arrays`/`arrayVerts` move. `--wrap` needs the symbols to *exist* (that is T3), but the immediate counters are only
+populated by a **`PSP_BATCH=0`** library. T4 checks both builds for exactly this reason, and a run that shows
+`verts=0` in the batched build is correct, not broken.
+
+**Known-good reference before starting:** the mesh scene already ran on pspGL in sprints 008–009 (`mesh_b9`,
+0 differing bytes against the batched triangle arm), so T1 has a valid oracle — unlike `texture_pattern`, which pspGL
+hangs on.
+
 **Read before acting:**
 
 1. [Sprint 012](012-phase5-texture-parity.md) §9a — the four fixes that produced parity, and the pattern test that
@@ -115,8 +139,8 @@ they are link-time wrappers that do not exist yet.
 |---|---|---|---|---|
 | T1 | **the mesh scene**: `batch_check MESH_SCENE=1` (2D → `DrawCube` + `DrawMesh` → 2D) on both drivers, captured this session | `todo` | identical, or the differing pixels counted and localised; this is the first test of `glDrawElements` and the converting path under 3D | — |
 | T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
-| T3 | **immediate-mode symbols** (task 12): `glBegin`, `glEnd`, `glVertex2i/2f/3f`, `glTexCoord2f`, `glColor4ub/3f/4f`, `glNormal3f`, accumulating into the same 24-byte layout the array path uses | `todo` | `psp-tests/*` link with `WRAP=1`; `bunnymark` logs `COUNT ... verts=` non-zero in a `PSP_BATCH=0` build, and the picture is unchanged | — |
-| T4 | **counters under the new driver**: `bunnymark` at N=1,000 with `WRAP=1`, both `PSP_BATCH=1` (arrays) and a `PSP_BATCH=0` build (immediate) | `todo` | `COUNT` shows `arrayVerts` for the array path and `verts` for the immediate path, and `SPLIT swap=` is non-zero | — |
+| T3 | **immediate-mode symbols** (task 12): `glBegin`, `glEnd`, `glVertex2i/2f/3f`, `glTexCoord2f`, `glColor4ub/3f/4f`, `glNormal3f`, buffering into the array layout and emitting through the `glDrawArrays` path, with `GL_QUADS` expanded to two triangles and overflow emitting mid-run | `todo` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts`; the picture matches `WRAP=0` | — |
+| T4 | **counters under the new driver**, both builds | `todo` | `PSP_BATCH=1`: `arrays`/`arrayVerts` non-zero and `begins`/`verts` **zero by design**; `PSP_BATCH=0`: `begins`/`ends`/`verts` non-zero; `SPLIT swap=` non-zero in both | — |
 | T5 | **`PSP_DISABLE_VSYNC`** build links and runs (`eglSwapInterval` is compiled out of the 52-symbol list) | `todo` | the build links, the app runs, and the counter's swap figure changes versus the vsync build | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
@@ -134,6 +158,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | `basic_shapes` colours | ≥ 284 | | |
 | `bunnymark` N=1,000 with `WRAP=1` | logs `COUNT` and `SPLIT` | | |
 | `src/` changes | 0 — the driver and the tests only | | |
+| immediate-mode buffer | 1,024 vertices (24 KiB), overflow emits mid-run | | |
 
 ## 7. Measurements
 

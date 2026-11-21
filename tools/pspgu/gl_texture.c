@@ -29,6 +29,7 @@ typedef struct {
     int width, height;
     int tbw;                    // texture buffer width: power of two >= width, as GU wants
     int swizzled;               // 1 when the texels are in the swizzled layout
+    int warnedNonSwizzle;       // the dimensions were complained about once
     unsigned int guFormat;      // GU_PSM_*
     int filter;                 // GU_NEAREST / GU_LINEAR
     int wrap;                   // GU_REPEAT / GU_CLAMP for both axes
@@ -184,6 +185,18 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
 
     if (t->swizzled) swizzleFast(base, (const unsigned char *)scratch, rowBytes, (unsigned int)t->height);
     else memcpy(base, scratch, total);
+
+    // A texture that cannot be swizzled still renders - but it samples wrong until phase-5
+    // task 6c pads the height and corrects with sceGuTexScale. Say so once, in the log,
+    // because the alternative is discovering it in a pixel comparison: that is exactly how
+    // the LA-decode bug cost 32 % of a frame before anyone knew where to look.
+    if (!t->swizzled && !t->warnedNonSwizzle)
+    {
+        pspguLog("texture %ux%u: not swizzle-compatible (needs pow2 width, height %% 8 == 0),"
+                 " using linear - sampling is wrong until task 6c",
+                 t->width, t->height);
+        t->warnedNonSwizzle = 1;
+    }
 
     free(scratch);
     pspguWriteback(base, total);
