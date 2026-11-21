@@ -19,7 +19,7 @@
 PSP_MODULE_INFO("image_rotate", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 
-#define NUM_TEXTURES  2
+#define NUM_TEXTURES  3
 
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -34,17 +34,21 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "raylib [textures] example - image rotate");
 
     // NOTE: Textures MUST be loaded after Window initialization (OpenGL context is required)
+    Image image45 = LoadImage("resources/raylib_logo.png");
     Image image90 = LoadImage("resources/raylib_logo.png");
     Image imageNeg90 = LoadImage("resources/raylib_logo.png");
 
+    ImageRotate(&image45, 45);
     ImageRotate(&image90, 90);
     ImageRotate(&imageNeg90, -90);
 
     Texture2D textures[NUM_TEXTURES] = { 0 };
 
-    textures[0] = LoadTextureFromImage(image90);
-    textures[1] = LoadTextureFromImage(imageNeg90);
+    textures[0] = LoadTextureFromImage(image45);
+    textures[1] = LoadTextureFromImage(image90);
+    textures[2] = LoadTextureFromImage(imageNeg90);
 
+    UnloadImage(image45);
     UnloadImage(image90);
     UnloadImage(imageNeg90);
 
@@ -70,7 +74,11 @@ int main(void)
 
             ClearBackground(RAYWHITE);
 
-            DrawTexture(textures[currentTexture], screenWidth/2 - textures[currentTexture].width/2, screenHeight/2 - textures[currentTexture].height/2, WHITE);
+            const float scale = 0.7f;
+            DrawTextureEx(textures[currentTexture],
+                          (Vector2){ (screenWidth - textures[currentTexture].width*scale)/2,
+                                     (screenHeight - textures[currentTexture].height*scale)/2 },
+                          0.0f, scale, WHITE);
 
             const char *note = "Press LEFT MOUSE BUTTON to rotate the image clockwise";
             DrawText(note, (screenWidth - MeasureText(note, 10))/2, screenHeight - 20, 10, DARKGRAY);

@@ -41,7 +41,9 @@ if [ "${STAGE_ASSETS:-0}" = "1" ]; then
 fi
 
 capture() {
-    local slot=$1 raw="$HOSTFS/${NAME}_${slot}.raw" attempt
+    local slot=$1
+    local raw="$HOSTFS/${NAME}_${slot}.raw"
+    local attempt
     for attempt in 1 2 3; do
         rm -f "$raw"
         timeout 15 pspsh -e "scrshot host0:/${NAME}_${slot}.raw" >/dev/null 2>&1

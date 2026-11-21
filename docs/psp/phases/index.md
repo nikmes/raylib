@@ -20,12 +20,12 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [5 — Native GU backend](05-native-gu-backend/index.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
 | [6 — Textures and VRAM](06-textures-vram/index.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
 | [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **in progress** — 018–021 done; 022–023 written |
-| [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | in progress — 041 implemented, device run pending; 042–044 written |
+| [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | in progress — P8-S1 done (5/5); 042–044 written |
 | [9 — Audio](09-audio/index.md) | `sceAudio` output without costing frame time | **planned** — seven sprints written (045–051) |
 | [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |
-| [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started — reviewed 2026-11-21; blocked on 7–10 |
+| [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started — reviewed; 8 sprints written (052–059); blocked on 7–10 |
 | [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
-| [13 — Samples porting](13-samples-porting/index.md) | the upstream core/shapes/textures corpus as a gated regression suite | in progress — P13-S1/S2 done; Tier A complete; P13-S7 written; S3–S6/S8–S11 remaining |
+| [13 — Samples porting](13-samples-porting/index.md) | the upstream core/shapes/textures corpus as a gated regression suite | in progress — P13-S1/S2 done; Tier A complete; P13-S7 samples captured, T1b gate blocked; S3–S6/S8–S11 remaining |
 
 Notes on ordering that are easy to get wrong:
 

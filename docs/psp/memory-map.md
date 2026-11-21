@@ -431,7 +431,8 @@ samples found **13 drop-in**, **61 that render but need input remapped**, **49 b
 ported. A 768-wide sheet (scarfy) fits through two 512 windows; a GIF is a frame-sized image with stacked data,
 not a stacked texture. The phase is capability-gated and runs alongside phases 6–11; it never blocks them.
 Wave 0 needs no new capability. Sprints 024–034: S1 done (9) and S2 done (12), each with two identical captures;
-P13-S7 written; S3–S6/S8–S11 remaining. Full tier lists, gates and the porting recipe:
+P13-S7 samples captured; its T1b `batch_check` gate is blocked by a shared `libraylib.a` rebuild. S3–S6/S8–S11
+remaining. Full tier lists, gates and the porting recipe:
 [Phase 13](phases/13-samples-porting/index.md).
 
 ---

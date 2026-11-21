@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — P13-S1/S2 done (21 samples, two identical captures each); Tier A complete; P13-S7 written; P13-S3–S6/S8–S11 placeholders |
+| State | **in progress** — P13-S1/S2 done; Tier A complete; P13-S7 samples captured, T1b `batch_check` gate blocked by a shared `libraylib.a` rebuild; P13-S3–S6/S8–S11 remaining |
 | Depends on | nothing for wave 0; later waves consume Phase 6 (texture budget), Phase 7 (oversize assets), Phase 8 (input), Phase 9 (audio), Phase 10 (render targets) |
 | Exit criterion | every sample in `core`, `shapes` and `textures` is either ported with a build marker and two identical captures, or marked `dropped` with a reason; the tier table matches the device runs |
 
@@ -338,7 +338,8 @@ the exit-key path is ever worth testing.
 - [P13-S6 — Shapes sweep B and testbeds](../../sprints/029-phase13-shapes-sweep-b.md) —
   placeholder; gate `G1`; 16 samples + 5 testbeds
 - [P13-S7 — Texture budget](../../sprints/030-phase13-texture-budget.md) —
-  **written**; gate `G2`; 7 samples + 45° `image_rotate`; T2 (`image_channel`) dropped to S8
+  **in progress**; gate `G2`; 7 samples + 45° `image_rotate` captured, two identical each; T1b `batch_check`
+  gate blocked by a shared `libraylib.a` rebuild; T2 (`image_channel`) dropped to S8
 - [P13-S8 — Oversize assets](../../sprints/031-phase13-oversize-assets.md) —
   placeholder; gate `G3`; 4 samples + asset prep
 - [P13-S9 — Render targets: core and shapes](../../sprints/032-phase13-render-targets-core-shapes.md) —
