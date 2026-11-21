@@ -92,6 +92,7 @@ nav:
           - psp/sprints/015-phase6-npot-and-vram.md
           - psp/sprints/016-phase6-residency-eviction.md
           - psp/sprints/017-phase6-format-matrix-and-gated-features.md
+          - psp/sprints/018-phase7-corpus-and-budget.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

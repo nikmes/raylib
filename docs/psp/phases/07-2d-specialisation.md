@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started — its draw-rejection work can start without phases 5/6, but needs a benchmark that is not bunnymark |
+| State | **ready** — sprint 018 (corpus, counters, boot budget) written and implementation-ready; 019–023 planned |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
@@ -175,7 +175,20 @@ copy, and do not invalidate the whole D-cache in a steady frame.
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+The phase is sized as six sprints. 018 is written; 019–023 are planned and are written only when the previous
+sprint's numbers are in hand (the fast paths depend on what the corpus measures).
+
+| sprint | scope | state |
+|---|---|---|
+| [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | written |
+| 019 — Text runs and layout cache | consecutive glyphs of one atlas per run; cached layout; paragraph parity | planned |
+| 020 — Tile maps and 512-pixel windowing | per-atlas-run tiles, scrolled traversal, window slicing with full-stride `tbw`, seam screenshots | planned |
+| 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
+| 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |
+| 023 — Cache strips, regression, close | 16/32/64/128 px strip A/B on the repeated-draw case; full sample comparison; phase exit table | planned |
+
+Sprint 023 collapses into 022 if the strip experiment is a null result, which R2 predicts it may be; the phase
+then closes after five sprints.
 
 R1–R5 above are **candidate** recipes. A sprint that exercises one on the PSP-1000 should record the device
 numbers here and then promote the verified technique to `docs/psp/recipes/`; until then they stay hypotheses.
