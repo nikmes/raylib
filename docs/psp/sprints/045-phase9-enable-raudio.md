@@ -154,6 +154,7 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 - 2026-11-21 — T3/T4 `done`: silent backend; 128 KiB worker stack; device init/start succeed
 - 2026-11-21 — T5 `done`: link order fixed; app links with no stub warnings
 - 2026-11-21 — T6/T7 `done`: two 600-frame runs; `batch_check` gate identical; sizes recorded
+- 2026-11-21 — committed `f838c333`; clean-worktree library/app/docs build verified
 
 ## 6. Budgets
 
@@ -177,6 +178,7 @@ marker.
 | silent thread 1 | `audio b1` | same run | callbacks, callbacks/s, `runClocks` | 418, 41, 315,216 | near idle, 10.03 s |
 | silent run 2 | `audio b1` | same, after reset | `DONE`, callbacks/s, `runClocks` | 600, 41, 315,047 | repeat within 0.05 % |
 | control again | `audio b1` | `batch_check_s1.raw` | gate hash | `cf43ce6d…` | identical to control |
+| final check | `audio b1` | clean rebuild, 600 frames | `DONE`, callbacks/s, `runClocks` | 600, 418, 41, 315,577 | clean worktree build |
 
 ## 8. Exit criteria
 
@@ -206,6 +208,8 @@ Two build facts were measured rather than assumed:
 
 `raudio.o` is 621,608 B (422,129 B text); the app ELF is 1,245,592 B text. `batch_check` is byte-identical to
 the current gate (`cf43ce6d…`). No `sceAudio*` call and no channel reservation exists yet; that is P9-S2.
+
+Committed as `f838c333`; the clean worktree at that commit rebuilds the library and app and passes strict docs.
 
 ## 10. Follow-ups
 
