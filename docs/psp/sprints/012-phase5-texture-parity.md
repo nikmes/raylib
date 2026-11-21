@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
-| Tasks | 3/5 done |
+| Tasks | 4/6 done, **parity reached** |
 
 ## 0. Handover
 
@@ -131,6 +131,8 @@ for the pattern.
 | T4 | **alpha and blend** | `done` | in-sprite pixels match; transparent areas show through | **One line: `sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA)`.** Without it GU takes the fragment alpha from the *vertex* colour, which the batcher always sends as 255, so every texel was opaque. Pattern test after: transparent quadrant → `(32,32,32)` background, `(255,0,0,128)` → `(144,16,16)` = exactly 50 % red over the background, quadrants still red/green/blue. Found by reading PSPRuntime `gpumanager.cpp:126` and PGE `pgeGfx.c:170`, which both set this pair right after `sceGuTexMode` |
 | T5 | **dither** | `done` | background matches pspGL's pattern | `sceGuEnable(GU_DITHER)` at init. pspGL's background alternates `(240,240,240)` / `(248,248,248)` pixel by pixel — a 5650 buffer being dithered — while ours was flat, and that alone accounted for half the frame. **Differing pixels: 81,470 (62.4 %) → 42,544 (32.6 %).** daedalus' memory map (`AI_MEMORY_MAP` §12.4, "Fast clear + dither") is the reference |
 
+| T6 | **source-format decode** (found by this sprint, not planned): `upload8888` branched on *byte count* (`bytes == 2`) to decide whether a source was packed RGB565 or grey+alpha, so every LUMINANCE_ALPHA texture — the sprite sheet and the font atlas, i.e. everything in our tests — was decoded as RGB565 | `done` | sprite pixels match pspGL exactly | branch on the GL **type** (`isPacked16(type)`) instead of the byte count. This one bug was the last 32.6 % |
+
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
@@ -187,7 +189,26 @@ background and nothing else, the other two deltas are separate bugs in the alpha
 - 4-bit glyph atlases (`GU_PSM_T4` + palette, as PGE and PSPRuntime do) — phase 6 memory work.
 - Texture residency and eviction: the arena is bump-only, so `glDeleteTextures` leaks by design (phase 6).
 
-## 9a. Where the remaining 32.6 % is
+## 9a. Result: parity
+
+`batch_check` rendered by pspgu is **byte-identical** to the same binary rendered by pspGL: `cmp -l` reports
+**0 differing bytes**, both captures contain **613 distinct colours**, and the frame that was 62.4 % wrong at the
+start of the sprint is 0 % wrong.
+
+The four changes that got there, in the order they were found and measured:
+
+| fix | what it moved | how it was found |
+|---|---|---|
+| `sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA)` | alpha: transparent texels show through, 50 %-alpha blends | reading PSPRuntime `gpumanager.cpp:126` / PGE `pgeGfx.c:170` |
+| `sceGuEnable(GU_DITHER)` | background pattern matches | daedalus `AI_MEMORY_MAP` §12.4 + a capture showing pspGL alternating two values |
+| **decode LUMINANCE_ALPHA as LA, not as RGB565** | 32.6 % → **0 %** | the pattern test, then pspGL's `copy_expand_LA` proving the expansion matched — so the difference had to be upstream of the expansion |
+| the pattern test itself | turned three deltas into one sentence per run | written before any driver change, as the sprint required |
+
+The 62.4 % → 32.6 % → 0 % progression is the whole argument for the pattern test: two fixes came from reading
+references, and the last one came from noticing that pspGL's expansion was *identical to ours*, which left only the
+decode before it.
+
+## 9b. Old analysis, kept because it names the wrong suspect
 
 After T4 and T5, the background pattern matches and sprite alpha is right. What still differs is
 **colour modulation of the grey+alpha textures**: the same sprite pixel reads `(8,32,184)` on pspgu and

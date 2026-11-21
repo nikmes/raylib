@@ -68,6 +68,17 @@ static unsigned int pack8888(const unsigned char *p, GLenum format)
     }
 }
 
+// A 2-byte source is EITHER a packed 16-bit colour (RGB565/RGBA5551/RGBA4444) OR two
+// 8-bit channels (LUMINANCE_ALPHA). Confusing the two decodes grey+alpha as RGB565, which
+// is what turned our sprite sheet and font atlas into nonsense colours - the last 32.6 %
+// of the frame. Branch on the type, never on the byte count.
+static int isPacked16(GLenum type)
+{
+    return (type == GL_UNSIGNED_SHORT_5_6_5) ||
+           (type == GL_UNSIGNED_SHORT_5_5_5_1) ||
+           (type == GL_UNSIGNED_SHORT_4_4_4_4);
+}
+
 static int sourceBytesPerPixel(GLenum format, GLenum type)
 {
     if (type == GL_UNSIGNED_SHORT_5_6_5)    return 2;
@@ -96,7 +107,7 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
         {
             unsigned int texel;
 
-            if (bytes == 2)
+            if (isPacked16(type))
             {
                 // Already a 16-bit GE format: widen it so one path serves every source
                 unsigned short v = ((const unsigned short *)pixels)[y*t->width + x];
@@ -283,7 +294,7 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
         {
             unsigned int texel;
 
-            if (bytes == 2)
+            if (isPacked16(type))
             {
                 unsigned short v = ((const unsigned short *)pixels)[y*width + x];
                 texel = 0xFF000000u | (((unsigned int)((v >> 11) & 0x1F) << 19) |
