@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     SetTargetFPS(0);
 
     Camera cam = { 0 };
-    cam.position = (Vector3){ 0.0f, 0.0f, 2.0f };
+    cam.position = (Vector3){ 0.0f, 1.0f, 4.0f };
     cam.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     cam.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     cam.fovy = 45.0f;
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
         EndDrawing();
     }
 
-    TraceLog(LOG_INFO, "DONE frames 2  predicted=(158,218) (322,218) (240,54)");
+    TraceLog(LOG_INFO, "DONE frames 2  predicted=(201,174) (279,174) (240,96)  bbox 201..279 96..174");
     sceKernelSleepThread();
 
     return 0;

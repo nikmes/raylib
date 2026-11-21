@@ -271,3 +271,32 @@ rejected at the wrong layer (ingest and upload), leaving the multiply order as t
 
 Status: the triangle probe is committed with its prediction in the log line, so the next run is a one-line edit and
 an immediate comparison.
+
+### The rotated camera matches as well — so the hypothesis has to change
+
+Same probe, camera moved to **(0,1,4)** looking at the origin, i.e. a real view rotation:
+
+| | x | y |
+|---|---|---|
+| predicted | 201..279 | 96..174 |
+| **pspgu capture** | **202..277** | **97..172** |
+
+Within 1–2 px again. **The entire 3D matrix path is therefore correct**: frustum, rotated view matrix, matrix upload,
+viewport/offset, perspective divide — every layer that four earlier hypotheses blamed. That is worth more than the
+scene it was meant to explain, because it means no further searching is needed in `gl_matrix.c`.
+
+**What is left is the *composition*, not the math.** The probe draws 3D only; the mesh scene draws 2D → 3D → 2D. And
+there is one measured clue that fits a specific failure: our 3D contribution starts at **x = 0**, whereas the cube's
+world x range is −1.7..−0.7 and the frustum predicts screen x 81..191. Those world coordinates, drawn with the **2D
+ortho** projection (which maps x 0..480 to the screen 1:1), would land at **x ≈ −1..0** — the left edge, which is
+exactly what the capture shows.
+
+**So the hypothesis is now: in the mesh scene the 3D pass is drawn with the 2D ortho projection still active**,
+even though `BeginMode3D` switches matrices. The probe cannot see it because it never draws 2D first. The next probe
+is therefore one more line: draw a 2D rectangle before `BeginMode3D` in `triangle_probe` and check whether the
+triangle moves to the left edge. If it does, the bug is that our projection upload is skipped when the *values*
+coincide wrongly — or that `rlPushMatrix`/`rlLoadIdentity` on the projection stack does not reach the GE because the
+cached `sentProjection` still compares equal after the pop.
+
+That last sentence is a concrete, checkable defect in `upload()`'s memcmp cache, and it would explain why 2D-only and
+3D-only frames are both correct while a frame containing both is not.
