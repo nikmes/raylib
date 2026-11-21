@@ -81,6 +81,12 @@ static void pspguInitGu(void)
     sceGuScissor(0, 0, PSP_GU_WIDTH, PSP_GU_HEIGHT);
     sceGuEnable(GU_SCISSOR_TEST);
 
+    // Dithering: pspGL's captures show the background alternating (240,240,240) and
+    // (248,248,248) pixel by pixel, i.e. a 5650 buffer being dithered to hide banding.
+    // Ours was flat, which is 50 % of the frame's pixels differing for no visible reason.
+    // daedalus' memory map (AI_MEMORY_MAP §12.4, "Fast clear + dither") is the reference.
+    sceGuEnable(GU_DITHER);
+
 #if PSP_GU_DEPTH
     sceGuDepthBuffer(pspgu.depthOffset, pspgu.stride);
     sceGuDepthRange(65535, 0);

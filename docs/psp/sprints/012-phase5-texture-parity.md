@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
-| Tasks | 1/5 done |
+| Tasks | 3/5 done |
 
 ## 0. Handover
 
@@ -128,8 +128,8 @@ for the pattern.
 | T1 | **the pattern test**: `psp-tests/texture_pattern` builds a 4×4 image in code (red/green/blue/transparent quadrants) drawn 16×, a 32×32 half-alpha texture drawn 1:1, and (behind `PATTERN_NPOT`) a 33×17 checkerboard | `done` | the four quadrants are the four colours, in the right corners | **Texels are correct; alpha is not applied.** Measured at 1:1: TL `(248,0,0)` red, TR `(0,252,0)` green, BL `(0,0,248)` blue, transparent quadrant `(0,0,0)` (should be the `(32,32,32)` background), half-alpha half `(248,0,0)` **at full opacity** instead of blending 50 % over the background |
 | T2 | **layout and stride**: `tbw` = padded power of two, rows written at that stride, the redundant second `nextPow2` removed, and a non-power-of-two texture (e.g. 33×17) drawn to prove the padding path | `todo` | the 33×17 texture samples correctly; `tbw` and the buffer stride agree by construction, asserted in code | — |
 | T3 | **swizzle**: adopt the references' recipe — swizzle the texels on upload (`SwizzleFast` equivalent) and pass `swizzle = 1` to `sceGuTexMode`. Keep the unswizzled path behind a switch so the two can be A/B'd | `todo` | swizzled vs unswizzled captures are **identical to each other** (same texels) — if they are not, one of the two layouts is wrong, which is the point | — |
-| T4 | **alpha and blend**: confirm the LA expansion puts the alpha in the right byte and that `GU_TFX_MODULATE` × `GU_SRC_ALPHA/ONE_MINUS_SRC_ALPHA` gives pspGL's result. The `(0,32,192)`-vs-`(0,0,0)` delta is the test | `todo` | inside a sprite, pspgu matches pspGL pixel for pixel; transparent texture areas show the background | — |
-| T5 | **dither**: make the background match pspGL's pattern (`GU_DITHER` / `GU_FAST_CLEAR_BIT`), or measure that pspGL's pattern comes from something else and record it | `todo` | the background region matches pspGL exactly, or the difference is explained with a capture of both | — |
+| T4 | **alpha and blend** | `done` | in-sprite pixels match; transparent areas show through | **One line: `sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA)`.** Without it GU takes the fragment alpha from the *vertex* colour, which the batcher always sends as 255, so every texel was opaque. Pattern test after: transparent quadrant → `(32,32,32)` background, `(255,0,0,128)` → `(144,16,16)` = exactly 50 % red over the background, quadrants still red/green/blue. Found by reading PSPRuntime `gpumanager.cpp:126` and PGE `pgeGfx.c:170`, which both set this pair right after `sceGuTexMode` |
+| T5 | **dither** | `done` | background matches pspGL's pattern | `sceGuEnable(GU_DITHER)` at init. pspGL's background alternates `(240,240,240)` / `(248,248,248)` pixel by pixel — a 5650 buffer being dithered — while ours was flat, and that alone accounted for half the frame. **Differing pixels: 81,470 (62.4 %) → 42,544 (32.6 %).** daedalus' memory map (`AI_MEMORY_MAP` §12.4, "Fast clear + dither") is the reference |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
@@ -186,3 +186,16 @@ background and nothing else, the other two deltas are separate bugs in the alpha
 - Mipmaps and filtering policy if a sample needs them (raylib asks for `GL_LINEAR` mostly).
 - 4-bit glyph atlases (`GU_PSM_T4` + palette, as PGE and PSPRuntime do) — phase 6 memory work.
 - Texture residency and eviction: the arena is bump-only, so `glDeleteTextures` leaks by design (phase 6).
+
+## 9a. Where the remaining 32.6 % is
+
+After T4 and T5, the background pattern matches and sprite alpha is right. What still differs is
+**colour modulation of the grey+alpha textures**: the same sprite pixel reads `(8,32,184)` on pspgu and
+`(8,16,104)` on pspGL — same hue, roughly 1.8× brighter. Our expansion puts the luminance in R=G=B and
+multiplies by the tint with `GU_TFX_MODULATE`; pspGL's `copy_expand_LA` evidently arrives at a darker
+result, so either its RGB expansion or its modulation differs from ours.
+
+That is one question with three candidates (expansion values, pre-multiplication, or the texture
+environment), and the pattern test can answer it: a **grey+alpha** pattern texture (luminance 255 and
+128, alpha 255 and 128) drawn 1:1, which severs "what does LA expand to" from "what does modulate do".
+That is the first task of the next session; T2 (stride/padding) and T3 (swizzle) remain as hygiene.

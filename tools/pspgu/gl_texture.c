@@ -126,6 +126,12 @@ static void applyTexture(PspGuTexture *t)
     sceGuTexMode(t->guFormat, 0, 0, GU_FALSE);
     sceGuTexImage(0, t->width, t->height, t->tbw,
                   (void *)((unsigned char *)sceGeEdramGetAddr() + t->offset));
+    // GU_TCC_RGBA: take the ALPHA from the texture, not from the vertex colour. Without
+    // it every texel is opaque (the fragment alpha becomes the vertex alpha, which the
+    // batcher always sends as 255) - which is exactly how a 50 %-alpha texel rendered as
+    // full opacity and a transparent one as opaque black. Every reference sets this pair;
+    // PSPRuntime gpumanager.cpp:126, PGE pgeGfx.c:170.
+    sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(t->filter, t->filter);
     sceGuTexWrap(t->wrap, t->wrap);
     // GU's texture coordinate transform is not identity by default, and every reference
