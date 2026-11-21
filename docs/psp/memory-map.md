@@ -846,6 +846,10 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
 - Per-draw vertex allocations are **64-byte aligned** because the GE reads them after a D-cache writeback. With
   16-byte starts a draw could share a dirty cache line with its neighbour; `basic_shapes` then differed from
   pspGL by 26–71 edge pixels. The alignment made it byte-identical (sprint 014 T7).
+- **Non-power-of-two textures are padded to powers of two in both dimensions** (height at least 8 rows for the
+  8-row swizzle), the padding is zeroed and swizzled, and `sceGuTexScale(realW/padW, realH/padH)` restores the
+  logical size. The padding is allocated and counted: 33×17 becomes 64×32, **8,192 B** against 2,244 B of
+  logical texels (sprint 015 T1).
 
 ### Samples worth reading
 

@@ -102,6 +102,9 @@ int main(int argc, char **argv)
     Texture2D halfAlpha = makeHalfAlphaTexture();
 
     TraceLog(LOG_INFO, "PATTERN textures: quadrant=%u checker=%u half=%u", quadrants.id, checker.id, halfAlpha.id);
+#ifdef PATTERN_NPOT
+    TraceLog(LOG_INFO, "PATTERN NPOT=1: 33x17 checkerboard IS in the scene");
+#endif
 
     for (int frame = 0; frame < FRAMES; frame++)
     {

@@ -6,6 +6,12 @@ OBJS = main.o
 
 CFLAGS = -Wall
 
+# The 33x17 checkerboard is off by default (pspGL hangs on it); enable it for the NPOT
+# test. Without this line "make PATTERN_NPOT=1" silently built the default scene.
+ifdef PATTERN_NPOT
+    CFLAGS += -DPATTERN_NPOT
+endif
+
 # -lpspgu: the pspgu driver reaches the GE through GU (pspGL used libpspge directly)
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 

@@ -14,14 +14,20 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## What has to be true before starting
 
-- [ ] Phase 5 backend uploads textures and passes the samples
-- [ ] Boot-time VRAM accounting exists (free bytes, largest block)
-- [ ] Upload/eviction counters exist
+- [x] Phase 5 backend uploads textures and passes the samples — pspgu, 2D corpus byte-identical
+- [x] Boot-time VRAM accounting exists **for the free tail** — sprint 014 reports used/free/peak from the
+      allocation counter. The **largest block** does not exist yet: the allocator is a bump arena. It arrives
+      with T3 of sprint 015, and until then no “largest free block” may be quoted
+- [ ] Upload/eviction counters exist — upload bytes are counted (`texAllocated`); there is no eviction to count,
+      because nothing is ever freed. T3 adds free/coalesce counters
 
 ## Tasks
 
 - [ ] Swizzle **directly into the destination** — no memcpy to VRAM, no `sceGuCopyImage`
-- [ ] POT padding on load; document the padding cost rather than hiding it
+- [x] POT padding on load; document the padding cost rather than hiding it — **sprint 015 T1**: both dimensions
+      pad to powers of two, the padding is zeroed and swizzled, and `sceGuTexScale` restores the logical size.
+      33×17 → 64×32 = 8,192 B (logical 2,244 B); the 33×17 checkerboard went from 281/561 wrong cells to 0/561,
+      and the parity scenes stayed byte-identical
 - [ ] CLUT path for glyph atlases (T4/T8) only if measured to pay
 - [ ] Best-fit allocator over 512-byte blocks, coalescing on free, free bytes and largest block tracked
       separately — one allocator for framebuffers *and* textures
@@ -50,12 +56,11 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
-
-## Sprints and features
-
 - [Sprint 010 — What fill actually costs, and 16-bit textures](../sprints/010-phase6-fill-and-texture-format.md)
   — **done, negative result.** Fill is rasterisation-rate-bound (~221 Mtexel/s): 16-bit textures changed the frame
   by 0.0 %, blending off by −0.2 %, 4× the area by +199.5 %. The budget is **~1.6–2.0 M drawn texels per 60 fps
   frame**, not a sprite count. 16-bit textures survive as a **memory** lever (2 B/texel in a 2 MiB budget), with
-  `4444` for sprites and `5650` for opaque — the speed case for them is dead
+  `4444` for sprites and `5650` for opaque — the speed case for them is dead.
+- [Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../sprints/015-phase6-npot-and-vram.md)
+  — **in progress.** T1 is the known 33×17 padding plus `sceGuTexScale`; T2 halves texture bytes; T3 replaces the
+  bump arena with a best-fit allocator that can report a real largest block; T4 swizzles directly into VRAM.

@@ -264,7 +264,7 @@ history stays readable.
 | 5 | vertex arrays: fast interleaved path, converting path, `glDrawElements`, modes 10/4/1 | `done` | sprites draw; the fast path engages (`fast=1` in the trace) |
 | 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `done` | **byte-identical to pspGL** (613 colours, 0 differing pixels) after the four fixes in sprint 012 |
 | 6b | texture parity: pattern test, swizzle recipe, alpha, dither | `done` | [sprint 012](../sprints/012-phase5-texture-parity.md) — the pattern test cut three deltas to one, and the last was our own LA-decode bug. **0 differing pixels** |
-| 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `todo` | 012 T2 diagnosed it: the swizzle needs a power-of-two width and `height % 8 == 0`, so NPOT textures currently fall back to linear and still sample wrong. Corrects the earlier "TexScale is identity" claim, which holds only for pow2 |
+| 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `done` | closed in phase 6, [sprint 015](../sprints/015-phase6-npot-and-vram.md) T1: both dimensions pad to powers of two, the padding is zeroed and swizzled, and TexScale is set per texture. 33×17 checkerboard **281/561 → 0/561** wrong cells; `batch_check` and `basic_shapes` unchanged. This also retires the "TexScale is identity" claim, which holds only for power-of-two textures |
 | 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `done` | stopped-frame PNG vs `scrshot`: max diff **7**, 0 pixels >8, two captures identical. The framebuffer is RGB565 and `scrshot` writes BGR, so the comparison swaps its channels |
 | 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `done` | **2,375 sprites**, queued submission, three framebuffers, per-list 128 KiB arenas; list high-water 1,456 B; targeted waits 18–26 µs; no full GE wait |
 | 9 | cache discipline before the GE reads vertices or texels | `done` | it was **blocking**, not an optimisation: without it the GE read stale vertices and drew nothing |
@@ -274,8 +274,8 @@ history stays readable.
 | 13 | **remove the stubs** — new: once 6b/7/12 land, `gl_stub.c` should hold nothing; any remaining call logs once and asserts in a debug build instead of silently doing nothing | `done` | `gl_stub.c` deleted; `gl_query.c` holds the real symbols; 52/52 required symbols are supplied |
 
 **Dropped:** nothing. Every original task survived the review; the list grew by five (3b, 6b, 6c, 12, 13) because
-doing the work found work. All are done except **6c** (non-power-of-two textures), which is diagnosed and carried
-into phase 6: the swizzle needs a power-of-two width and `height % 8 == 0`, and the fix is a padded height plus
+doing the work found work. All are done. The last one, **6c** (non-power-of-two textures), was closed in phase 6
+by sprint 015 T1: pad both dimensions to powers of two, zero and swizzle the padding, and set
 `sceGuTexScale(realW/padW, realH/padH)`.
 
 

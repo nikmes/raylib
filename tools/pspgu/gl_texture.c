@@ -26,8 +26,10 @@
 typedef struct {
     int used;
     unsigned int offset;        // EDRAM offset of the texels
-    int width, height;
+    int width, height;          // logical size the application asked for
     int tbw;                    // texture buffer width: power of two >= width, as GU wants
+    int padW, padH;             // allocated size: powers of two >= width/height
+    float scaleU, scaleV;       // logical/allocated, for sceGuTexScale
     int swizzled;               // 1 when the texels are in the swizzled layout
     int warnedNonSwizzle;       // the dimensions were complained about once
     unsigned int guFormat;      // GU_PSM_*
@@ -150,7 +152,10 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
 {
     unsigned char *base = (unsigned char *)sceGeEdramGetAddr() + t->offset;
     unsigned int rowBytes = (unsigned int)t->tbw*4;
-    unsigned int total = rowBytes*(unsigned int)t->height;
+    // The padded rows are part of the texture the GE samples; they are zeroed (calloc)
+    // and included in the swizzle. Allocating only height rows and telling GU a padded
+    // height reads past the texture.
+    unsigned int total = rowBytes*(unsigned int)t->padH;
     unsigned int *scratch = (unsigned int *)calloc(1, total);      // zeroed: padding is real
     int bytes = sourceBytesPerPixel(format, type);
 
@@ -177,24 +182,17 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
         }
     }
 
-    // The swizzle is an 8-row block operation: it needs a power-of-two width and a height
-    // that is a multiple of 8. A non-power-of-two texture (33x17) has neither, so it stays
-    // linear. T2's real fix is to pad BOTH dimensions and correct with TexScale - see the
-    // sprint log; until then, linear is safe and swizzled would read out of bounds.
-    t->swizzled = (PSPGU_SWIZZLE && (t->tbw == t->width) && ((t->height % 8) == 0))? 1 : 0;
+    // Both allocated dimensions are now powers of two (padW = tbw, padH >= height), so
+    // the 8-row swizzle always applies. A non-power-of-two texture is sampled through
+    // sceGuTexScale(realW/padW, realH/padH), set in applyTexture.
+    t->swizzled = (PSPGU_SWIZZLE && (t->padH % 8 == 0))? 1 : 0;
 
-    if (t->swizzled) swizzleFast(base, (const unsigned char *)scratch, rowBytes, (unsigned int)t->height);
+    if (t->swizzled) swizzleFast(base, (const unsigned char *)scratch, rowBytes, (unsigned int)t->padH);
     else memcpy(base, scratch, total);
 
-    // A texture that cannot be swizzled still renders - but it samples wrong until phase-5
-    // task 6c pads the height and corrects with sceGuTexScale. Say so once, in the log,
-    // because the alternative is discovering it in a pixel comparison: that is exactly how
-    // the LA-decode bug cost 32 % of a frame before anyone knew where to look.
     if (!t->swizzled && !t->warnedNonSwizzle)
     {
-        pspguLog("texture %ux%u: not swizzle-compatible (needs pow2 width, height %% 8 == 0),"
-                 " using linear - sampling is wrong until task 6c",
-                 t->width, t->height);
+        pspguLog("texture %ux%u: swizzle disabled by build (PSP_GU_NO_SWIZZLE)", t->width, t->height);
         t->warnedNonSwizzle = 1;
     }
 
@@ -208,7 +206,8 @@ static void applyTexture(PspGuTexture *t)
     pspguBeginFrame();
 
     sceGuTexMode(t->guFormat, 0, 0, t->swizzled? GU_TRUE : GU_FALSE);
-    sceGuTexImage(0, t->width, t->height, t->tbw,
+    // GU samples the allocated (padded) image. The logical size is restored by TexScale.
+    sceGuTexImage(0, t->padW, t->padH, t->tbw,
                   (void *)((unsigned char *)sceGeEdramGetAddr() + t->offset));
     // GU_TCC_RGBA: take the ALPHA from the texture, not from the vertex colour. Without
     // it every texel is opaque (the fragment alpha becomes the vertex alpha, which the
@@ -222,7 +221,10 @@ static void applyTexture(PspGuTexture *t)
     // engine sets it explicitly right here (PSPRuntime gpumanager.cpp:128, PGE pgeGfx.c:174).
     // Leaving it unset makes every sample come from one texel - "wrong texel" with the
     // right texture bound.
-    sceGuTexScale(1.0f, 1.0f);
+    // Sprint 012's open item: TexScale is identity only for a power-of-two texture. A
+    // padded one needs the logical/allocated ratio, or every sample is compressed into
+    // the top-left of the padded image.
+    sceGuTexScale(t->scaleU, t->scaleV);
     sceGuTexOffset(0.0f, 0.0f);
     sceGuTexFlush();
 }
@@ -249,6 +251,8 @@ void pspguInitTextures(void)
             textures[1].offset = offset;
             textures[1].width = textures[1].height = 1;
             textures[1].tbw = 1;
+            textures[1].padW = textures[1].padH = 1;
+            textures[1].scaleU = textures[1].scaleV = 1.0f;
             textures[1].guFormat = GU_PSM_8888;
             textures[1].filter = GU_NEAREST;
             textures[1].wrap = GU_CLAMP;
@@ -300,7 +304,9 @@ void glBindTexture(GLenum target, GLuint id)
     }
 
     pspgu.boundTexture = (id == 0)? defaultTexture : id;
-    if (t != NULL) applyTexture(t);
+    // glGenTextures reserves an id and raylib binds it before glTexImage2D; there is no
+    // image to describe yet, and guarding here avoids a 0x0 sceGuTexImage.
+    if ((t != NULL) && (t->offset != 0) && (t->padW > 0) && (t->padH > 0)) applyTexture(t);
 }
 
 void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height,
@@ -320,14 +326,19 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t->guFormat = GU_PSM_8888;
     t->width = width;
     t->height = height;
-    // GU wants a power-of-two row stride. Rows are written at that stride, and the padding
-    // columns are part of the texture (the swizzle moves them around), so they are zeroed
-    // rather than left as whatever VRAM held before.
+    // GU wants power-of-two dimensions and row stride. The padding columns and rows are
+    // part of the image the GE samples (the swizzle moves them around), so they are
+    // allocated and zeroed; the logical size is restored with sceGuTexScale.
     t->tbw = nextPow2(width);
+    t->padW = t->tbw;
+    t->padH = nextPow2(height);
+    if (t->padH < 8) t->padH = 8;       // the swizzle is an 8-row block operation
+    t->scaleU = (float)width / (float)t->padW;
+    t->scaleV = (float)height / (float)t->padH;
 
     if (t->offset == 0)
     {
-        unsigned int bytes = (unsigned int)(t->tbw * t->height * 4);
+        unsigned int bytes = (unsigned int)(t->padW * t->padH * 4);
 
         t->offset = pspguVramAlloc(bytes);
         if (t->offset == 0)
@@ -386,7 +397,7 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
         }
     }
 
-    pspguWriteback(dst, (unsigned int)(t->tbw * t->height * 4));
+    pspguWriteback(dst, (unsigned int)(t->tbw * t->padH * 4));
     pspguBeginFrame();
     sceGuTexFlush();
 }
@@ -414,5 +425,5 @@ void glTexParameteri(GLenum target, GLenum pname, GLint param)
         default: return;
     }
 
-    applyTexture(t);
+    if ((t->offset != 0) && (t->padW > 0) && (t->padH > 0)) applyTexture(t);
 }
