@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — P13-S1 done (9 samples, two identical captures each); P13-S2 drafted; P13-S3–S11 placeholders |
+| State | **in progress** — P13-S1/S2 done (21 samples, two identical captures each); Tier A complete; P13-S3–S11 placeholders |
 | Depends on | nothing for wave 0; later waves consume Phase 6 (texture budget), Phase 7 (oversize assets), Phase 8 (input), Phase 9 (audio), Phase 10 (render targets) |
 | Exit criterion | every sample in `core`, `shapes` and `textures` is either ported with a build marker and two identical captures, or marked `dropped` with a reason; the tier table matches the device runs |
 
@@ -40,6 +40,10 @@ No sample was built or run for this audit; wave 0 exists to validate the classif
 
 **Already ported (4):** `shapes_basic_shapes`, `shapes_collision_area`, `shapes_logo_raylib_anim`,
 `textures_bunnymark`. Plus `models/cubicmap`, outside this scope.
+
+**Ported since the audit (1):** `core_input_gamepad` at 480×272 in
+`psp-tests/samples/core/input_gamepad/`, with a primitive layout. It moves from Tier B to ported (Tier B 60,
+ported 5) without changing the audit's total.
 
 | tier | core | shapes | textures | total |
 |---|---|---|---|---|
@@ -86,7 +90,7 @@ logged allocation failure (`tools/pspgu/gl_texture.c:429`), not a crash.
 | `patterns.png` | 256×256 | 256×256 | 262,144 | fits |
 | screen buffer at 480×272 (`SCALE_FACTOR=2`) | 240×136 | 256×256 | 262,144 | fits |
 | `scarfy.png` (sprite sheet / srcrec) | 768×128 | 1024×128 | 524,288 | **fits** — two 512 windows |
-| `scarfy_run.gif` (6 frames stacked) | 128×768 | 128×1024 | 524,288 | **fits** — two 512 windows |
+| `scarfy_run.gif` (6 frames) | 128×128 texture; frame data stacked | 128×128 | 65,536 | fits; `UpdateTexture` per frame |
 | `cat.png` | 384×512 | 512×512 | 1,048,576 | **over budget** |
 | `parrots.png` | 512×384 | 512×512 | 1,048,576 | **over budget** |
 | `fudesumi.png` | 384×512 | 512×512 | 1,048,576 | **over budget** |
@@ -139,10 +143,10 @@ assets staged under `host0:`.
 - [x] `shapes_outlines_thickness` — outline paths
 - [x] `shapes_circle_sector_drawing` — arcs and sectors
 - [x] `shapes_rectangle_advanced` — direct `rlBegin`/`rlVertex` path
-- [ ] `textures_image_loading` — load image, upload a 256×256 texture
-- [ ] `textures_logo_raylib` — texture draw
-- [ ] `textures_screen_buffer` — procedural buffer and `UpdateTexture`
-- [ ] `textures_srcrec_dstrec` — 768×128 sheet through two windows; no input
+- [x] `textures_image_loading` — load image, upload a 256×256 texture
+- [x] `textures_logo_raylib` — texture draw
+- [x] `textures_screen_buffer` — procedural buffer and `UpdateTexture`
+- [x] `textures_srcrec_dstrec` — 768×128 sheet through two windows; no input
 
 ## Tier B — renders now, interaction needs a remap (61)
 
@@ -156,9 +160,9 @@ The frame is valid; only the interaction is dead. `G1` is the Phase 8 mapping of
 `core_scissor_test`, `core_screen_recording`, `core_storage_values`, `core_text_file_loading`,
 `core_world_screen`.
 
-`core_input_gamepad` is the natural input test, but needs `GetGamepadName()` populated and its 800×450 pad art
-downscaled first (1024×512 = 2 MiB does not fit). `core_screen_recording` uses `LoadImageFromScreen()` and writes
-a GIF; the readback exists, the output path needs a writable location.
+`core_input_gamepad` is the natural input test. It is ported at 480×272 with a primitive layout;
+`GetGamepadName()` is populated by P8-S1 and the 800×450 pad art is not used. `core_screen_recording` uses
+`LoadImageFromScreen()` and writes a GIF; the readback exists, the output path needs a writable location.
 
 **shapes (33):** `shapes_ball_physics`, `shapes_bouncing_ball`, `shapes_clock_of_clocks`,
 `shapes_colors_palette`, `shapes_dashed_line`, `shapes_digital_clock`, `shapes_drag_puzzle`,
@@ -174,7 +178,7 @@ a GIF; the readback exists, the output path needs a writable location.
 `textures_image_rotate`, `textures_npatch_drawing`, `textures_particles_blending`,
 `textures_sprite_animation`, `textures_textured_curve`, `textures_tiled_drawing`.
 
-These eight can be ported with the Tier A batch; only their interaction waits for `G1`.
+These eight were ported in P13-S2; only their interaction waits for `G1`.
 
 ## Tier C — blocked or not meaningful (49)
 
@@ -277,7 +281,13 @@ the exit-key path is ever worth testing.
 - **A single remap unlocks most of Tier B.** The memory map's Phase 8 already asks whether to feed
   `CORE.Input.Keyboard` from the pad; the audit makes the payoff explicit: 58 samples.
 - **The 512-pixel window split exists.** Sprint 020 raised the buffer to 1024 and implemented the per-draw window
-  split. A 768-wide sheet (scarfy) and a 768-tall stacked GIF now fit and sample correctly; >1024 is rejected.
+  split. A 768-wide sheet (scarfy) now fits and samples correctly through two windows (P13-S2, no seam); >1024
+  is rejected. A GIF is a frame-sized image with stacked data, not a stacked texture.
+- **`LoadImageAnim` returns one frame.** The six GIF frames live in the image data; the texture is 128×128 and
+  `UpdateTexture` advances it. The audit's 128×768 texture expectation was wrong. `[measured: P13-S2]`
+- **Three texture samples are CPU-bound.** `screen_buffer` 16 fps, `cellular_automata` 43 fps and
+  `particles_blending` 43 fps; the other nine hold 60 fps. These are sample costs, not renderer regressions.
+  `[measured: PSP-1000, P13-S2]`
 - **Direct-rlgl samples need the GL entry points, not the `rl*` wrappers.** The installed `libraylib.a` exports the
   high-level `rl*` API but not the GL11 vertex-level `rlBegin`/`rlVertex2f`/`rlColor4ub`. A sample that includes
   `rlgl.h` must build with `-DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11` and call `glBegin`/`glVertex2f`/`glColor4ub`
@@ -303,8 +313,8 @@ the exit-key path is ever worth testing.
 - Downscaling an asset changes the picture. Every downscale needs a before/after pixel count, as sprint 015 did
   for NPOT padding; do not hide it in the capture.
 - The window split is new. `textures_srcrec_dstrec` and `textures_sprite_animation` are the first independent
-  checks of a 768-wide sheet, and `textures_gif_player` of a 768-tall one. If a seam or a wrong window appears,
-  the failure belongs to Phase 7, not to the sample.
+  checks of a 768-wide sheet, and P13-S2 found no seam. If a seam or a wrong window appears later, the failure
+  belongs to Phase 7, not to the sample.
 - Direct-rlgl samples: the library does not export the GL11 vertex-level `rl*` wrappers; the P13-S1 port calls the
   `gl*` entry points they map to. Any future rlgl sample must do the same or the link fails.
 - The corpus grows with raylib. New samples must be appended to the tables, never renumbered or silently dropped.
@@ -315,8 +325,8 @@ the exit-key path is ever worth testing.
 
 - [P13-S1 — Harness and Tier A core/shapes](../../sprints/024-phase13-harness-and-tier-a.md) — **done**;
   gate `G0`; 9 samples; evidence `/home/psp/evidence/sprint024/`; next is P13-S2
-- [P13-S2 — Tier A textures and texture paths](../../sprints/025-phase13-texture-paths.md) — **drafted**;
-  gate `G0`; 12 samples
+- [P13-S2 — Tier A textures and texture paths](../../sprints/025-phase13-texture-paths.md) — **done**;
+  gate `G0`; 12 samples; evidence `/home/psp/evidence/sprint025/`; Tier A complete; next is P13-S3
 - [P13-S3 — Input remap and core input slice](../../sprints/026-phase13-input-remap-and-core-slice.md) —
   placeholder; gate `G1`; 10 samples
 - [P13-S4 — Core cameras and UI](../../sprints/027-phase13-core-cameras-and-ui.md) —

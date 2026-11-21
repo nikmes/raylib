@@ -19,8 +19,8 @@ platform layer fills the input structs.
 
 10 core samples:
 
-- `core_input_gamepad` — also needs `GetGamepadName()` populated and the 800×450 pad art downscaled
-  (1024×512 = 2 MiB does not fit; a 480×270 or 512×256 overlay does)
+- `core_input_gamepad` — ported at 480×272 with a primitive layout (P8-S1 populates `GetGamepadName()`); the
+  800×450 art is not used, so no asset downscale is needed
 - `core_input_actions`
 - `core_basic_screen_manager`
 - `core_compute_hash`

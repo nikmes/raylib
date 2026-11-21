@@ -27,8 +27,8 @@ Asset prep for later sprints:
 
 - `explosion.png` 1024×1024 = 4 MiB for `textures_sprite_explosion` (P13-S11) — downscale to 512×512 or smaller
   and record the visual delta
-- the pad art (`ps3.png`, `xbox.png`, 800×450 → 1024×512 = 2 MiB) for `core_input_gamepad` (P13-S3) — downscale
-  to a 480×270 or 512×256 overlay
+- the pad art (`ps3.png`, `xbox.png`, 800×450 → 1024×512 = 2 MiB) for `core_input_gamepad` — not needed: the
+  port draws a primitive layout; the art remains unported
 
 ## Why now
 

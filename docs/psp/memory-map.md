@@ -348,22 +348,31 @@ Exit: text submissions scale with atlas runs, not glyph count; tile maps with at
 
 ### Phase 8 — Input
 Goal: every control on the device reachable through raylib's normal API, with a nub that behaves.
-The 5.5 port already polls `sceCtrlReadBufferPositive()` once per frame in `PollInputEvents()` and maps
-buttons to `GAMEPAD_BUTTON_*` with a 0.2 deadzone — start from that, then close its gaps.
+The imported platform file already polls `sceCtrlReadBufferPositive()` once per frame in `PollInputEvents()` and
+maps buttons to `GAMEPAD_BUTTON_*` with a 0.2 deadzone — start from that, then close its gaps.
 - Verify the mapping button by button: CROSS/CIRCLE/SQUARE/TRIANGLE, D-pad, L/R shoulders,
-  SELECT/START. Decide and document what HOME, HOLD and NOTE do (system-owned vs delivered).
-- `GetGamepadButtonPressed()` never fires in the 5.5 port: it resets `lastButtonPressed` without ever
-  setting it. Fix the edge detection.
-- Calibrate the nub instead of assuming 128 is centre: sample raw min/max/centre per unit, provide a
-  calibration path, and keep the deadzone configurable. PSP nubs are not symmetric.
-- Decide whether to also feed `CORE.Input.Keyboard` from the pad. It makes upstream examples run
-  unmodified (`IsKeyDown(KEY_RIGHT)`) and costs nothing at runtime — but it changes what `IsKeyDown`
-  means on this platform, so record the choice.
+  SELECT/START. Decide and document what HOME, HOLD, NOTE and the other PSPSDK-only bits do.
+- Edge detection already works: `lastButtonPressed` is reset at the top of each poll and set on a new press
+  (`rcore_psp.c:426,497`), so `GetGamepadButtonPressed()` reports a press for one frame. What is still wrong:
+  a press shorter than the sampling period is lost, and interception/HOLD can produce a spurious press when
+  input resumes.
+- Stop exposing a fabricated right stick: `Rx`/`Ry` are outside the PSP-1000 contract and the read is
+  unchecked. Clearing `axisCount` is not enough — `GetGamepadAxisMovement()` ignores it.
+- `ReadBufferPositive(&pad, 1)` consumes at most one sample per call: a fast frame blocks until the next
+  VBLANK, a slow frame falls behind. Decide between `Peek` and reading several samples and merging.
+- Calibrate the nub instead of assuming 128 is centre: sample raw min/max/centre per unit, derive a radial
+  deadzone and a magnitude clamp, provide a calibration path, and keep the deadzone configurable. PSP nubs
+  are not symmetric.
+- Decide whether to also feed `CORE.Input.Keyboard` and the mouse from the pad/nub. It makes upstream
+  examples and Phase 13's tier-B samples run unmodified (`IsKeyDown(KEY_RIGHT)`) and costs nothing at runtime —
+  but it changes what `IsKeyDown` and the mouse mean on this platform, so record the choice.
 - Sampling: `sceCtrlSetSamplingCycle()` / mode, and whether to read once per frame or on a fixed rate.
 - `SetGamepadVibration()` must stay a documented no-op — the PSP has no rumble.
+Sprints 041–044 (P8-S1–P8-S4): 041 implemented (library and portable sample build; device run pending);
+042–044 written.
 Exit: a sample that draws every button's live state plus raw and normalised axis values; each control
-pressed and confirmed; measured nub range recorded per console; `GetGamepadButtonPressed` returns the
-pressed button exactly once.
+pressed and confirmed; measured nub range recorded on this console; `GetGamepadButtonPressed` returns the
+pressed button for exactly the frame whose poll saw it.
 
 ### Phase 9 — Audio
 Goal: `InitAudioDevice()` works and sounds play without stealing frame time. This is the phase with
@@ -400,8 +409,13 @@ feature surface, soft-float `double`, heap allocation and fragmentation, Memory 
 `-O2` is the first measured example (33.367 → 16.683 ms at N=1,000, sprint 008); `-O3`/`-Os`, LTO, fast-math and
 the `SUPPORT_*` flags in `config.h` are still open. Not in scope: `rlgl`, batching, draw paths, VRAM allocation,
 input mapping, the audio backend. Exit: a real frame and a real load with every CPU, I/O, allocation and
-GE-wait cost accounted for; no `double`, allocation, file open or log write in a steady frame; flags and config
-chosen by A/B, with `.text` size recorded.
+GE-wait cost accounted for; no `double` site, allocation, file open or log write in Phase 11-owned code in a
+steady frame; flags and config chosen by interleaved A/B at a measurable resolution, with `.text` size recorded.
+DaedalusX64's PSP playbook
+(`/home/psp/ref/daedalus/AI_MEMORY_MAP.md` §12), checked against its source, supplies code-checked values for the
+same levers: `PSP_HEAP_SIZE_KB(-256)`, 333 MHz, VFPU sin/cos/pow but not sqrt/fabs, 64-byte VFPU memcpy, 8 KB
+ROM chunks, and partition-5 volatile memory. Its first-fit heap does not coalesce — a counter-example, not a
+model. `[external: DaedalusX64]`
 
 ### Phase 12 — Release gate
 Four configurations on the same console, same workload, same clocks, and the same Phase 11 build flags:
@@ -414,10 +428,11 @@ appear in the frame profile.
 The upstream `core`, `shapes` and `textures` corpus is the regression suite. A 2026-11-21 audit of all 127
 samples found **13 drop-in**, **61 that render but need input remapped**, **49 blocked** (16 render targets,
 11 texture size/VRAM, 9 input hardware, 8 desktop-only, 2 audio, 2 clipboard, 1 texture readback), and 4 already
-ported. Sprint 020's 1024-buffer/512-window split moved a 768-wide sheet and a 768-tall stacked GIF into the
-fits column. The phase is capability-gated and runs alongside phases 6–11; it never blocks them. Wave 0 needs no
-new capability. Sprints 024–034: S1 done (9 samples, two identical captures each), S2 drafted, S3–S11
-placeholders. Full tier lists, gates and the porting recipe: [Phase 13](phases/13-samples-porting/index.md).
+ported. A 768-wide sheet (scarfy) fits through two 512 windows; a GIF is a frame-sized image with stacked data,
+not a stacked texture. The phase is capability-gated and runs alongside phases 6–11; it never blocks them.
+Wave 0 needs no new capability. Sprints 024–034: S1 done (9) and S2 done (12), each with two identical captures;
+S3–S11 placeholders. Full tier lists, gates and the porting recipe:
+[Phase 13](phases/13-samples-porting/index.md).
 
 ---
 
@@ -469,10 +484,13 @@ Lives in `/home/psp/ref`. Nothing from here is pasted into this zlib tree.
 | `PGE` (own) | GPL-3.0 | frame lists, VRAM, swizzle, RTT — ideas |
 | `openTRI` (own) | GPL-2.0 | best-fit VRAM, residency, vertex rings — ideas |
 | `PSPRuntime` (own, private) | none in repo; `vram.c` is Raphael 2007 "free to use with credit" | working GU renderer with raylib's API: batching structure, viewport idiom, best-fit allocator, bunnymark baseline |
+| `daedalus` | GPL-2.0-or-later | PSP performance playbook (`AI_MEMORY_MAP.md` §12), VFPU math/copy, heap and ROM-cache patterns — ideas only |
 
 **Take, with attribution rules in mind:** 1024-sprites-per-call batching structure; the pixel-exact 2D
 viewport idiom; direct-swizzle upload; the 512-byte-block best-fit allocator; its bunnymark as a
-direct-GU baseline once fixed.
+direct-GU baseline once fixed. From Daedalus, take the non-renderer levers as ideas — heap sizing, clock and
+FP-exception setup, VFPU sin/cos/pow versus FPU sqrt/fabs, 64-byte VFPU copies, chunked ROM/asset cache and
+partition-5 volatile memory; do not copy its GPL code.
 
 **Do not take:** per-frame `sceGuFinish` + `sceGuSync(FINISH,DONE)` then a vblank wait; a single
 unrotated list with silent overflow; a depth buffer on a 2D renderer; two allocators over the same
@@ -633,6 +651,7 @@ written down.
 | `/home/psp/ref/pspgl-legacy` | BSD-3 | historical only |
 | `/home/psp/ref/PGE` | GPL-3.0 | frame-list and VRAM ideas (own code, ideas only unless dual-licensed) |
 | `/home/psp/ref/openTRI` | GPL-2.0 | allocator, residency, particle rings (same constraint) |
+| `/home/psp/ref/daedalus` | GPL-2.0-or-later | `AI_MEMORY_MAP.md` §12 PSP performance map; `SysPSP/main.cpp`, `Math/Math.h`, `Utility/FastMemcpyPSP.cpp`, `Utility/MemoryHeap.cpp`, `RomFile/` — ideas only |
 | `/home/psp/ref/3D-PSP-Tutorials` | **none** | clean-room benchmark designs; never copy |
 
 ### 11.4 SDK, toolchain, skill
