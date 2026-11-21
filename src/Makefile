@@ -561,12 +561,11 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     ifdef PSP_DISABLE_VSYNC
         CUSTOM_CFLAGS += -DPSP_DISABLE_VSYNC
     endif
-    # PSP_BATCH=1 turns the GL11 immediate-mode path into a static vertex batch
-    # (sprint 007). Without this pass-through the flag would be silently ignored
-    # and both measurement arms would build identically.
-    ifdef PSP_BATCH
-        CUSTOM_CFLAGS += -DPSP_BATCH=$(PSP_BATCH)
-    endif
+    # The GL11 immediate-mode path is batched by default since sprint 009: one static
+    # vertex buffer, one draw per texture run, 2-vertex sprites for axis-aligned quads.
+    # PSP_BATCH=0 builds the reference immediate-mode library.
+    PSP_BATCH ?= 1
+    CUSTOM_CFLAGS += -DPSP_BATCH=$(PSP_BATCH)
     # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
     # the only way to see what the batch actually submitted when a frame looks wrong.
     ifdef PSP_BATCH_TRACE

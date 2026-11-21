@@ -66,6 +66,30 @@ int main(int argc, char **argv)
             DrawTexturePro(tex, src, (Rectangle){ 430.0f, 20.0f, 32.0f, 32.0f },
                            (Vector2){ 16.0f, 16.0f }, 30.0f, WHITE);
 
+#ifdef MESH_SCENE
+            // 3D between two 2D passes (sprint 009 T4/T4b). DrawMesh does not go through
+            // rlBegin/rlVertex: it calls rlDrawVertexArray, which the batcher has to flush
+            // before. DrawCube is the immediate path, which the batcher does intercept.
+            {
+                Camera cam = { 0 };
+                cam.position = (Vector3){ 0.0f, 1.0f, 4.0f };
+                cam.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+                cam.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+                cam.fovy = 45.0f;
+                cam.projection = CAMERA_PERSPECTIVE;
+
+                BeginMode3D(cam);
+                    DrawCube((Vector3){ -1.2f, 0.0f, 0.0f }, 1.0f, 1.0f, 1.0f, RED);
+
+                    Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
+                    Material mat = LoadMaterialDefault();
+                    Matrix id = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                  0.0f, 0.0f, 1.0f, 0.0f, 1.2f, 0.0f, 0.0f, 1.0f };
+                    DrawMesh(cube, mat, id);
+                EndMode3D();
+            }
+#endif
+
             // Texture-less quad and font atlas: two more textures in the frame
             DrawRectangle(16, 16, 400, 24, BLACK);
             DrawText("batch check", 24, 20, 14, GREEN);

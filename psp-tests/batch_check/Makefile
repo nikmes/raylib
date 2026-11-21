@@ -27,6 +27,11 @@ ifdef TRACE_DRAWS
     CFLAGS += -DTRACE_DRAWS
 endif
 
+# 2D -> 3D (DrawCube + DrawMesh) -> 2D: the ordering test for the array-draw paths
+ifdef MESH_SCENE
+    CFLAGS += -DMESH_SCENE
+endif
+
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP

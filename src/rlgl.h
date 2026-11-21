@@ -619,8 +619,250 @@ RLAPI float rlGetCullDistanceNear(void);                // Get cull plane distan
 RLAPI float rlGetCullDistanceFar(void);                 // Get cull plane distance far
 
 //------------------------------------------------------------------------------------
+// PSP vertex batch - declaration side (sprint 009)
+//------------------------------------------------------------------------------------
+// A 2D sprite costs a dozen calls to the vertex-level functions below: rlSetTexture,
+// rlBegin, four rlTexCoord2f, four rlVertex2f, rlEnd. Until sprint 009 every one of
+// them was a call from rtextures.c into rcore.o and then another into rcore_psp.c,
+// with six float arguments on the stack under the o32 ABI. Under PSP_BATCH they are
+// compiled here, in the caller's translation unit, and write straight into the batch.
+//
+// The state is declared here and defined exactly once, in platforms/rcore_psp.c:
+// rlgl.h is included by six translation units, so a static buffer in the header would
+// be six buffers and the flush would see an empty one (sprint 007 measured that the
+// hard way: rcore.o bss 19,996 -> 118,324 B was the proof there is one).
+#if defined(GRAPHICS_API_OPENGL_11) && defined(PLATFORM_PSP) && defined(PSP_BATCH) && (PSP_BATCH == 1)
+
+#ifndef RLPSP_BATCH_CAP
+    #define RLPSP_BATCH_CAP 4096        // Vertices per batch (2,048 sprites), 24 bytes each
+#endif
+#ifndef RLPSP_ALTERNATION_BUDGET
+    #define RLPSP_ALTERNATION_BUDGET 8  // Primitive-class changes per frame before sprites are dropped
+#endif
+
+// The GL enums the batcher stores, spelled out: this section of rlgl.h runs before the
+// GL headers are included (they come with the implementation, far below). The values are
+// fixed by the GL spec and by pspGL's geprim_tab, and platforms/rcore_psp.c asserts at
+// compile time that they still match <GL/gl.h>.
+#define RLPSP_GL_LINES      0x0001
+#define RLPSP_GL_TRIANGLES  0x0004
+#define RLPSP_GL_SPRITES    0x000A      // GL_SPRITES_PSP == GL_POLYGON + 1
+
+// Interleaved vertex, 24 B - texcoord 2f, colour 8888, position 3f. That order is what
+// the three pointers in rlPspBatchFlush() expect, and it is pspGL's native GE layout.
+typedef struct {
+    float u, v;                     // Texture coordinates
+    unsigned char r, g, b, a;       // Vertex color
+    float x, y, z;                  // Position
+} RLPspVertex;
+
+typedef struct {
+    RLPspVertex verts[RLPSP_BATCH_CAP];
+    RLPspVertex quad[4];            // Corners of the quad being assembled
+    int count;                      // Vertices buffered
+    int mode;                       // GL primitive of the buffered run
+    int quads;                      // Current run is RL_QUADS
+    int quadN;                      // Corners of the quad being assembled
+    int alternations;               // Primitive-class changes in this frame
+    unsigned int tex;               // Texture the buffered vertices belong to
+    unsigned int pendTex;           // Texture the following vertices will use
+    unsigned int boundTex;          // Texture currently bound by the batch (0xFFFFFFFF = unknown)
+    float u, v;                     // Current texture coordinate
+    unsigned char r, g, b, a;       // Current vertex color
+} RLPspBatch;
+
+extern RLPspBatch rlpsp;            // Defined in platforms/rcore_psp.c
+void rlPspBatchFlush(void);         // Emit buffered vertices as one draw call
+void rlPspBatchFrameEnd(void);      // Emit, then reset the per-frame alternation budget
+
+#define RLPSP_BATCH_ENABLED
+
+// Claim n contiguous slots: settle the pending texture and the capacity first
+static inline RLPspVertex *rlPspReserve(int n)
+{
+    RLPspVertex *v;
+
+    if (rlpsp.pendTex != rlpsp.tex)
+    {
+        rlPspBatchFlush();
+        rlpsp.tex = rlpsp.pendTex;
+    }
+    if ((rlpsp.count + n) > RLPSP_BATCH_CAP) rlPspBatchFlush();
+
+    v = &rlpsp.verts[rlpsp.count];
+    rlpsp.count += n;
+
+    return v;
+}
+
+// Select the primitive of the run being buffered, flushing first if it changes
+static inline void rlPspSetMode(int mode)
+{
+    if ((rlpsp.count > 0) && (mode != rlpsp.mode))
+    {
+        rlPspBatchFlush();
+        rlpsp.alternations++;
+    }
+
+    rlpsp.mode = mode;
+}
+
+// Is this quad a rectangle that is axis-aligned and untransformed, i.e. one GE sprite?
+// raylib emits quads as TL, BL, BR, TR, so a sprite is legal when the corners are
+// axis-aligned, the texture coordinates follow the same corners in the same direction
+// (no mirroring), and all four corners share colour and depth - GE sprites interpolate
+// one colour and one depth between the two corners.
+static inline int rlPspIsSpriteQuad(const RLPspVertex *q)
+{
+#ifdef RLPSP_NO_SPRITES
+    // Measurement switch: force the two-triangle path at any optimisation level
+    (void)q;
+    return 0;
+#else
+    if ((q[0].x != q[1].x) || (q[2].x != q[3].x)) return 0;     // left and right edges vertical
+    if ((q[0].y != q[3].y) || (q[1].y != q[2].y)) return 0;     // top and bottom edges horizontal
+    if ((q[0].x == q[2].x) || (q[0].y == q[2].y)) return 0;     // degenerate
+
+    if (q[1].u != q[0].u) return 0;                             // UVs follow the corners
+    if (q[3].u != q[2].u) return 0;
+    if (q[3].v != q[0].v) return 0;
+    if (q[1].v != q[2].v) return 0;
+    if ((q[0].u > q[2].u) || (q[0].v > q[2].v)) return 0;       // no mirrored sprites
+
+    if ((q[0].r != q[1].r) || (q[0].r != q[2].r) || (q[0].r != q[3].r)) return 0;
+    if ((q[0].g != q[1].g) || (q[0].g != q[2].g) || (q[0].g != q[3].g)) return 0;
+    if ((q[0].b != q[1].b) || (q[0].b != q[2].b) || (q[0].b != q[3].b)) return 0;
+    if ((q[0].a != q[1].a) || (q[0].a != q[2].a) || (q[0].a != q[3].a)) return 0;
+    if ((q[0].z != q[1].z) || (q[0].z != q[2].z) || (q[0].z != q[3].z)) return 0;
+
+    return 1;
+#endif
+}
+
+// Batched vertex-level entry points: attributes are collected, primitives are emitted
+// by the next flush. Warm path, therefore static inline.
+static inline void rlBegin(int mode)
+{
+    int glMode = 0;
+
+    switch (mode)
+    {
+        case RL_LINES: glMode = RLPSP_GL_LINES; break;
+        case RL_TRIANGLES: glMode = RLPSP_GL_TRIANGLES; break;
+        default: break;
+    }
+
+    rlpsp.quads = (mode == RL_QUADS)? 1 : 0;
+    if (rlpsp.quads == 1) { rlpsp.quadN = 0; return; }      // The primitive is chosen per quad
+
+    if (glMode != 0) rlPspSetMode(glMode);
+}
+
+static inline void rlEnd(void)
+{
+}
+
+static inline void rlTexCoord2f(float x, float y)
+{
+    rlpsp.u = x;
+    rlpsp.v = y;
+}
+
+static inline void rlNormal3f(float x, float y, float z)
+{
+    (void)x; (void)y; (void)z;      // NOTE: lighting is not batched (2D only)
+}
+
+static inline void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    rlpsp.r = r;
+    rlpsp.g = g;
+    rlpsp.b = b;
+    rlpsp.a = a;
+}
+
+static inline void rlColor3f(float x, float y, float z)
+{
+    rlpsp.r = (unsigned char)(x*255.0f + 0.5f);
+    rlpsp.g = (unsigned char)(y*255.0f + 0.5f);
+    rlpsp.b = (unsigned char)(z*255.0f + 0.5f);
+    rlpsp.a = 255;
+}
+
+static inline void rlColor4f(float x, float y, float z, float w)
+{
+    rlpsp.r = (unsigned char)(x*255.0f + 0.5f);
+    rlpsp.g = (unsigned char)(y*255.0f + 0.5f);
+    rlpsp.b = (unsigned char)(z*255.0f + 0.5f);
+    rlpsp.a = (unsigned char)(w*255.0f + 0.5f);
+}
+
+// Deferred on purpose: every raylib draw call is rlSetTexture(T), quad, rlSetTexture(0),
+// so binding on the change would emit twice per draw call and batching would measure zero
+static inline void rlSetTexture(unsigned int id)
+{
+    rlpsp.pendTex = id;
+}
+
+// Append one vertex, assembling quads and choosing their primitive on the fourth corner
+static inline void rlPspPushVertex(float x, float y, float z)
+{
+    RLPspVertex *q;
+    RLPspVertex *v;
+
+    if (rlpsp.quads == 0)
+    {
+        v = rlPspReserve(1);
+        v->u = rlpsp.u;   v->v = rlpsp.v;
+        v->r = rlpsp.r;   v->g = rlpsp.g;   v->b = rlpsp.b;   v->a = rlpsp.a;
+        v->x = x;         v->y = y;         v->z = z;
+        return;
+    }
+
+    q = &rlpsp.quad[rlpsp.quadN++];
+    q->u = rlpsp.u;   q->v = rlpsp.v;
+    q->r = rlpsp.r;   q->g = rlpsp.g;   q->b = rlpsp.b;   q->a = rlpsp.a;
+    q->x = x;         q->y = y;         q->z = z;
+
+    if (rlpsp.quadN == 4)
+    {
+        rlpsp.quadN = 0;
+
+        // One GE sprite if the quad qualifies and this frame has not spent its
+        // alternation budget; two triangles otherwise. The budget is what stops a
+        // scene that mixes rotated and unrotated sprites from issuing one draw per
+        // sprite: 2D order cannot be reordered, so the only lever is to stop paying.
+        if ((rlPspIsSpriteQuad(rlpsp.quad) == 1) && (rlpsp.alternations < RLPSP_ALTERNATION_BUDGET))
+        {
+            rlPspSetMode(RLPSP_GL_SPRITES);
+            v = rlPspReserve(2);
+            v[0] = rlpsp.quad[0];       // top-left
+            v[1] = rlpsp.quad[2];       // bottom-right
+        }
+        else
+        {
+            rlPspSetMode(RLPSP_GL_TRIANGLES);
+            v = rlPspReserve(6);
+            v[0] = rlpsp.quad[0];
+            v[1] = rlpsp.quad[1];
+            v[2] = rlpsp.quad[2];
+            v[3] = rlpsp.quad[0];
+            v[4] = rlpsp.quad[2];
+            v[5] = rlpsp.quad[3];
+        }
+    }
+}
+
+static inline void rlVertex3f(float x, float y, float z) { rlPspPushVertex(x, y, z); }
+static inline void rlVertex2f(float x, float y) { rlPspPushVertex(x, y, 0.0f); }
+static inline void rlVertex2i(int x, int y) { rlPspPushVertex((float)x, (float)y, 0.0f); }
+
+#endif
+
+//------------------------------------------------------------------------------------
 // Functions Declaration - Vertex level operations
 //------------------------------------------------------------------------------------
+#if !defined(RLPSP_BATCH_ENABLED)
 RLAPI void rlBegin(int mode);                           // Initialize drawing mode (how to organize vertex)
 RLAPI void rlEnd(void);                                 // Finish vertex providing
 RLAPI void rlVertex2i(int x, int y);                    // Define one vertex (position) - 2 int
@@ -631,6 +873,7 @@ RLAPI void rlNormal3f(float x, float y, float z);       // Define one vertex (no
 RLAPI void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a); // Define one vertex (color) - 4 byte
 RLAPI void rlColor3f(float x, float y, float z);        // Define one vertex (color) - 3 float
 RLAPI void rlColor4f(float x, float y, float z, float w); // Define one vertex (color) - 4 float
+#endif
 
 //------------------------------------------------------------------------------------
 // Functions Declaration - OpenGL style functions (common to 1.1, 3.3+, ES2)
@@ -734,7 +977,9 @@ RLAPI void rlSetRenderBatchActive(rlRenderBatch *batch); // Set the active rende
 RLAPI void rlDrawRenderBatchActive(void);               // Update and draw internal render batch
 RLAPI bool rlCheckRenderBatchLimit(int vCount);         // Check internal buffer overflow for a given number of vertex
 
+#if !defined(RLPSP_BATCH_ENABLED)
 RLAPI void rlSetTexture(unsigned int id);               // Set current texture for render batch and check buffers limits
+#endif
 
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -1030,6 +1275,12 @@ RLAPI void rlLoadDrawQuad(void);     // Load and draw a quad
 typedef void *(*rlglLoadProc)(const char *name);   // OpenGL extension functions loader signature (same as GLADloadproc)
 
 typedef struct rlglData {
+    RLPSP_FLUSH();      // A mesh draws straight through GL: emit what is buffered first
+
+    RLPSP_FLUSH();      // A mesh draws straight through GL: emit what is buffered first
+
+    RLPSP_FLUSH();      // A mesh draws straight through GL: emit what is buffered first
+
     rlRenderBatch *currentBatch;            // Current render batch
     rlRenderBatch defaultBatch;             // Default internal render batch
 
@@ -1156,21 +1407,14 @@ static Matrix rlMatrixTranspose(Matrix mat);                // Transposes provid
 static Matrix rlMatrixInvert(Matrix mat);                   // Invert provided matrix
 #endif
 
-#if defined(GRAPHICS_API_OPENGL_11) && defined(PLATFORM_PSP) && defined(PSP_BATCH) && (PSP_BATCH == 1)
-//----------------------------------------------------------------------------------
-// PSP vertex batch (sprint 007) - Implementation in platforms/rcore_psp.c
-//----------------------------------------------------------------------------------
-void rlPspBatchFlush(void);                                     // Emit buffered vertices as one draw call
-void rlPspBatchSetTexture(unsigned int id);                     // Defer texture switch to the next vertex
-void rlPspBatchBegin(int mode);                                 // Start a run of primitives
-void rlPspBatchEnd(void);                                       // End a run of primitives
-void rlPspBatchVertex(float x, float y, float z);               // Append one vertex
-void rlPspBatchTexCoord(float u, float v);                      // Set current texture coordinate
-void rlPspBatchColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a); // Set current color
-#define RLPSP_BATCH_ENABLED
+// Sprite and triangle runs cannot share one draw call, and 2D draw order cannot be
+// reordered, so every state change flushes. See the declaration block above.
+#if defined(RLPSP_BATCH_ENABLED)
 #define RLPSP_FLUSH() rlPspBatchFlush()
+#define RLPSP_FRAME_END() rlPspBatchFrameEnd()
 #else
 #define RLPSP_FLUSH()
+#define RLPSP_FRAME_END()
 #endif
 
 //----------------------------------------------------------------------------------
@@ -1473,18 +1717,8 @@ void rlNormal3f(float x, float y, float z) { glNormal3f(x, y, z); }
 void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a) { glColor4ub(r, g, b, a); }
 void rlColor3f(float x, float y, float z) { glColor3f(x, y, z); }
 void rlColor4f(float x, float y, float z, float w) { glColor4f(x, y, z, w); }
-#else
-// Batched: attributes are collected, primitives are emitted by the next flush
-void rlBegin(int mode) { rlPspBatchBegin(mode); }
-void rlEnd(void) { rlPspBatchEnd(); }
-void rlVertex2i(int x, int y) { rlPspBatchVertex((float)x, (float)y, 0.0f); }
-void rlVertex2f(float x, float y) { rlPspBatchVertex(x, y, 0.0f); }
-void rlVertex3f(float x, float y, float z) { rlPspBatchVertex(x, y, z); }
-void rlTexCoord2f(float x, float y) { rlPspBatchTexCoord(x, y); }
-void rlNormal3f(float x, float y, float z) { (void)x; (void)y; (void)z; }   // NOTE: lighting is not batched
-void rlColor4ub(unsigned char r, unsigned char g, unsigned char b, unsigned char a) { rlPspBatchColor(r, g, b, a); }
-void rlColor3f(float x, float y, float z) { rlPspBatchColor((unsigned char)(x*255.0f + 0.5f), (unsigned char)(y*255.0f + 0.5f), (unsigned char)(z*255.0f + 0.5f), 255); }
-void rlColor4f(float x, float y, float z, float w) { rlPspBatchColor((unsigned char)(x*255.0f + 0.5f), (unsigned char)(y*255.0f + 0.5f), (unsigned char)(z*255.0f + 0.5f), (unsigned char)(w*255.0f + 0.5f)); }
+// NOTE: under PSP_BATCH these are static inline in the declaration section above, so
+// there is nothing to define here - the batched callers compile the push in place.
 #endif
 #endif
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
@@ -1675,13 +1909,9 @@ void rlColor3f(float x, float y, float z)
 //--------------------------------------------------------------------------------------
 
 // Set current texture to use
+#if !defined(RLPSP_BATCH_ENABLED)
 void rlSetTexture(unsigned int id)
 {
-#if defined(RLPSP_BATCH_ENABLED)
-    // Batched: only record the switch, it is applied when the next vertex is pushed
-    rlPspBatchSetTexture(id);
-    return;
-#endif
     if (id == 0)
     {
 #if defined(GRAPHICS_API_OPENGL_11)
@@ -1734,6 +1964,7 @@ void rlSetTexture(unsigned int id)
 #endif
     }
 }
+#endif // !RLPSP_BATCH_ENABLED
 
 // Select and active a texture slot
 void rlActiveTextureSlot(int slot)
@@ -1747,9 +1978,12 @@ void rlActiveTextureSlot(int slot)
 void rlEnableTexture(unsigned int id)
 {
 #if defined(RLPSP_BATCH_ENABLED)
-    // Raw door into the texture state: settle what is buffered under the old texture first
+    // Raw door into the texture state: settle what is buffered under the old texture
+    // first, then defer the switch and record what is now bound (the flush skips
+    // redundant binds, so it has to know when someone else bound for it)
     rlPspBatchFlush();
-    rlPspBatchSetTexture(id);
+    rlpsp.pendTex = id;
+    rlpsp.boundTex = id;
 #endif
 #if defined(GRAPHICS_API_OPENGL_11)
     glEnable(GL_TEXTURE_2D);
@@ -1762,7 +1996,8 @@ void rlDisableTexture(void)
 {
 #if defined(RLPSP_BATCH_ENABLED)
     rlPspBatchFlush();
-    rlPspBatchSetTexture(0);
+    rlpsp.pendTex = 0;
+    rlpsp.boundTex = 0;
 #endif
 #if defined(GRAPHICS_API_OPENGL_11)
     glDisable(GL_TEXTURE_2D);
@@ -3269,7 +3504,7 @@ void rlSetRenderBatchActive(rlRenderBatch *batch)
 // Update and draw internal render batch
 void rlDrawRenderBatchActive(void)
 {
-    RLPSP_FLUSH();
+    RLPSP_FRAME_END();
 
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
     rlDrawRenderBatch(RLGL.currentBatch);    // NOTE: Stereo rendering is checked inside
@@ -4156,6 +4391,8 @@ void rlDisableVertexAttribute(unsigned int index)
 // Draw vertex array
 void rlDrawVertexArray(int offset, int count)
 {
+    RLPSP_FLUSH();      // A mesh draws straight through GL: emit what is buffered first
+
     glDrawArrays(GL_TRIANGLES, offset, count);
 }
 
