@@ -49,6 +49,13 @@ with six float arguments each on the stack under the o32 ABI. Nothing inlines. A
   around 4–5 M texels. That is why this sprint targets ~2,400 and not 5,000: past ~3,000 the next wall is fill, and
   fill is phase 6's texture formats, not this sprint's code.
 
+**Design settled at review — do not re-litigate, but do know why.** An earlier draft of T3 proposed two batch
+buffers (one per primitive) to stop the mixed-scene ping-pong. That cannot work: with alpha blending, **submission
+order is the picture**, so a scene whose sprite and rotated primitive alternate per sprite forces one draw per
+alternation however many buffers exist. The fix that preserves order is to bound the damage — an **alternation
+budget** per frame — and that is what T3 now specifies. The same constraint applies to `PSPRuntime`: its
+`FlushBuffer()` switches primitive the same way, and its bunnymark only ever runs in one mode at a time.
+
 **Read before acting:**
 
 1. `src/platforms/rcore_psp.c`, the `RLPSP_BATCH` block — `rlPspBatchVertex`, `rlPspReserve`, `rlPspBatchFlush`,
@@ -92,14 +99,15 @@ cd ../psp-tests/bunnymark
 **Do not touch.** `rlgl.h`'s flush hooks (proven in 007), the `-O2` default, `tools/pspgl-build.sh`, the adopted
 pspGL build, `psp-tests/basic_shapes`, and anything under `docs/` outside this sprint's record.
 
-**Done means** §8: `work` ≤4.5 µs per sprite, the ceiling bisected at ≥2,400, the mixed case under 20 ms, samples
-verified, and the flag on by default with the same pixels.
+**Done means** §8: `work` ≤4.5 µs per sprite, the ceiling bisected at ≥2,400, the mixed case bounded by the
+alternation budget, samples verified, and the flag on by default with the same pixels.
 
 ## 1. Objective
 
 A frame of botched sprites costs **≤4.5 µs per sprite of CPU work** instead of 7.08, which moves the measured 60 fps
-ceiling from 1,500 to **≥2,400 sprites**; a scene that mixes rotated and unrotated sprites costs **≤20 ms** instead
-of 83.417 ms; `batch_check` stays byte-identical; and `PSP_BATCH` is the default for every PSP build.
+ceiling from 1,500 to **≥2,400 sprites**; a scene that mixes rotated and unrotated sprites issues **≤12 draws per
+frame and ≤40 ms** instead of 1,001 draws and 83.417 ms; `batch_check` stays byte-identical; and `PSP_BATCH` is the
+default for every PSP build.
 
 ## 2. Why now
 
@@ -139,9 +147,9 @@ second batch buffer so sprite and triangle runs coexist; bunnymark's harness; `b
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **the inline vertex path**: move the batch state into one `RLPspBatch` struct defined in `platforms/rcore_psp.c`, exported as a pointer, and make the GL11 vertex/texcoord/colour entry points in `rlgl.h` write into it directly, with the sprite-quad staging and eligibility test inlined in the caller's translation unit. Only `rlPspBatchFlush()` stays an out-of-line call, because it is the rare path | `todo` | `work` at N=1,000 ≤ **4.5 ms** (from 8.06) → expected 7.08 → ≤4.5 µs/sprite; `nm` shows no `rlPspBatchVertex`/`rlPspBatchTexCoord`/`rlPspBatchColor` symbols left, and `rtextures.o`/`rshapes.o`/`rtext.o` grow (the code moved in) | — |
+| T1 | **the inline vertex path.** Define `RLPspVertex` and one `RLPspBatch` struct in `rlgl.h` behind the `PSP_BATCH` guard; the struct holds the vertex array itself plus `count`/`cap`/`mode`/`quads`/`quadN`/`tex`/`pendTex`/current `u,v`/`rgba`. Declare it `extern` in `rlgl.h` and define it **once** in `platforms/rcore_psp.c`. Turn `rlBegin`/`rlEnd`/`rlVertex*`/`rlTexCoord2f`/`rlColor*` into `static inline` writers over that struct — including the quad staging and the eligibility test — so the caller's translation unit compiles them in place. Only `rlPspBatchFlush()` stays out of line: it is the rare path and it keeps code size sane | `todo` | `work` at N=1,000 ≤ **4.5 ms** (from 8.06) → 7.08 → ≤4.5 µs/sprite; **`psp-nm rtextures.o rshapes.o rtext.o \| grep rlPspBatch` is empty** (nothing left to call across units) while `rcore.o` still defines the flush; the three callers grow and `rcore.o` shrinks. If the slope stops above 5 µs, record what is left (remaining calls, the 96-byte staging copy, or argument spills) instead of declaring failure | — |
 | T2 | **bind cache**: remember the texture actually bound to the GL and skip `glBindTexture` when the run needs the same one. `rlPspBatchFlush` currently binds on every flush, and the mixed case flushes ~1,000 times a frame | `todo` | `binds`/frame drops from 2 to ≤2 with no change to `unbinds` in the normal case, and by ~1,000/frame in the mixed case; `ROTATE_ODD` improves measurably before T3 lands | — |
-| T3 | **two batch buffers**: one for `GL_SPRITES_PSP` runs and one for `GL_TRIANGLES`, flushed at `rlDrawRenderBatchActive` in submission order. A mixed scene must not ping-pong; order is preserved by flushing the other buffer whenever the primitive class changes only when it contains older geometry | `todo` | `ROTATE_ODD=1` N=1,000 ≤ **20 ms** and `draws`/frame ≤ ~50 (from 83.417 ms and 1,001) → if `draws` stays at 1,001, the design is wrong, not the code | — |
+| T3 | **alternation budget, not two buffers.** Two buffers cannot preserve 2D draw order: with alpha blending, submission order is the picture, so a sprite/draw order that alternates per sprite forces one draw per alternation no matter how many buffers exist. Instead: count primitive-class changes inside one frame and, after **K = 8**, stop offering the sprite path until the next `rlDrawRenderBatchActive`. Pure sprite frames are untouched; a frame that mixes rotation pays at most 8 flushes and then runs as a stable triangle stream | `todo` | `ROTATE_ODD=1` N=1,000: `draws`/frame **≤12** (from 1,001) and the frame **≤40 ms** (from 83.417) — the honest bound is the all-triangle arm (33.367 ms) plus ≤8 flushes, not a number that assumes order can be reordered | — |
 | T4 | **sample sweep under `PSP_BATCH=1`**: `basic_shapes`, `cubicmap`, `models` on the device, with `basic_shapes`/`cubicmap` frozen-scene captures compared against the unbatched arm. This is the first time the batch sees 3D content, which the flag drops normals for | `todo` | all three render and reach `DONE`; captures identical or the differing pixels counted and explained; the 3D verdict written down either way | — |
 | T5 | **flip the default**: `PSP_BATCH=1` for `PLATFORM_PSP` unless T4 says otherwise, `PSP_BATCH=0` still building and still the documented escape hatch | `todo` | a clean build with **no** `PSP_BATCH` on the command line produces a batched library, and re-running the N=1,000 row reproduces the sprint's number | — |
 | T6 | **re-measure the model**: `work` at N = 100 / 1,000 / 1,500 / 2,000 / 2,500 / 4,000, the ceiling bisected, and `work` per sprite re-fitted. The sprint's headline is the slope, not one frame time | `todo` | a new `work = a + b·N` fit with `b ≤ 4.5 µs`, and the measured ceiling bracket ≥ 2,400 sprites | — |
@@ -158,7 +166,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 |---|---|---|---|
 | `work` per sprite at N=1,000 | ≤ 4.5 µs (from 7.08) | | |
 | 60 fps ceiling, measured | ≥ 2,400 sprites (from 1,500) | | |
-| mixed sprite/triangle, N=1,000 | ≤ 20 ms (from 83.417) | | |
+| mixed sprite/triangle, N=1,000 | ≤ 40 ms and ≤ 12 draws/frame (from 83.417 and 1,001) | | |
 | `glDrawArrays` per frame, N=1,000 | ≤ 3 | | |
 | pixel difference vs `c4eb44e7…` | 0 bytes | | |
 | per-frame allocation | 0 | | |
@@ -184,7 +192,8 @@ Ceiling: bisect between the last N that holds 16.683 and the first that does not
 
 - [ ] `work` ≤4.5 µs/sprite at N=1,000, two runs, and a re-fitted slope over at least four N values
 - [ ] 60 fps ceiling measured at ≥2,400 sprites, by bisection not extrapolation
-- [ ] `ROTATE_ODD` ≤20 ms, with `draws`/frame in the log proving the ping-pong is gone rather than hidden
+- [ ] `ROTATE_ODD` ≤40 ms and ≤12 draws/frame, with the counter in the log showing the alternation budget
+      engaging rather than the ping-pong being hidden
 - [ ] `batch_check` byte-identical to `c4eb44e7…` at every arm
 - [ ] `basic_shapes`, `cubicmap`, `models` verified under `PSP_BATCH=1`, with the 3D verdict in §9
 - [ ] `PSP_BATCH` is the default and a plain `make PLATFORM=PLATFORM_PSP` produces it

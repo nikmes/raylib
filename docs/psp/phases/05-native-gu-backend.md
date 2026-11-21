@@ -14,6 +14,31 @@ supports this shape of work: `GRAPHICS_API_OPENGL_SOFTWARE` is nothing but `#def
 which is raylib's own admission that "rlgl speaks GL 1.1, and whatever library supplies those symbols is the
 backend". A `GRAPHICS_API_PSP_GU` backend replaces the supplier.
 
+## What it is worth, measured (re-priced after sprint 008)
+
+The honest case for replacing pspGL, priced with numbers rather than with "the GE could be told directly":
+
+| gain | measured basis | size |
+|---|---|---|
+| per-draw interpretation | 1,025 `glEnd` = 48.8 ms of work at N=1,000, ~45 µs each | large, but **batching already removed it** (2–3 draws/frame) |
+| per-vertex conversion copy | 6,150 → 2,050 vertices moved 18 % of frame work | ~0.44 µs per vertex |
+| `GU_TRANSFORM_2D`, `GU_SPRITES`, 16 B vertices | unreachable from GL11 at any price | the remaining vertex work |
+| no GL state machine, no texobj interpretation, own dlist | not yet quantified | — |
+
+And what it does **not** buy: the current ceiling is **7.08 µs per sprite in raylib's own 2D path**
+(`work = 0.98 ms + 7.08 µs × sprites`, sprint 008). A backend replaces the layer *underneath* that code, so it
+cannot move a cost that is charged before the backend is reached. Sprint 009 attacks that number directly, for a
+tenth of the work a backend costs.
+
+Consequence for sequencing: this phase should be justified by **what GL11 cannot express** — `GU_TRANSFORM_2D`,
+2-vertex sprites without a pspGL round trip, 16-byte vertices, dlist control — not by frame time it may not be able
+to move, and not before the cheaper levers (sprint 009's inline path, phase 6's `5551` texture format, which halves
+the bytes per texel) have been measured. **Re-price this table when sprint 009's slope lands.**
+
+Note on GUM specifically: 2D needs **one** ortho matrix per frame, not a matrix stack per draw, so `sceGumOrtho`
+enters as a handful of calls per frame and `sceGuDrawArray` does the work. GUM's VFPU stack earns its place on the
+3D path, which is phase 10.
+
 ## What has to be true before starting
 
 - [ ] Phase 4 batcher works and is measured
@@ -46,7 +71,8 @@ backend". A `GRAPHICS_API_PSP_GU` backend replaces the supplier.
 ## Exit criteria
 
 - [ ] output matches phase 4 within an explained margin
-- [ ] frame time ≤ best pspGL result at every bunny count
+- [ ] frame time ≤ best pspGL result at every bunny count — **already true after sprint 008** (16.683 ms at
+      N=1,000), so this alone cannot justify the phase: see the re-pricing above
 - [ ] no full GE wait in a steady-state frame (counters, not feel)
 - [ ] VRAM high-water documented against the budget
 
