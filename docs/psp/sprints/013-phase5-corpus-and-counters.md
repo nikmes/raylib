@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | — / — |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
-| Tasks | 2/5 done |
+| Tasks | 2/6 done |
 
 ## 0. Handover
 
@@ -34,6 +34,21 @@ sprint 014's ceiling measurement.
 - `batch_check` has a `MESH_SCENE=1` build that draws 2D → `DrawCube` + `DrawMesh(GenMeshCube)` → 2D. That is the
   only 3D in the corpus, and it exercises `glDrawElements` and the converting vertex path.
 - pspGL's capture of the mesh scene exists (`/tmp/s3/mesh_b10.raw` in an earlier session; regenerate if absent).
+
+**Third review (after T3/T4 landed) — T1 has a prerequisite bug, and it is not in the driver's array path
+as written.** `gl_draw.c`'s converting path sets `out->color = 0xFFFFFFFF` when `GL_COLOR_ARRAY` is disabled
+(`gl_draw.c:109`), but GL11 says the vertex colour then comes from the **last `glColor*` call** — and that is exactly
+what `DrawMesh` relies on: it calls `rlColor4ub(material colour)` and then draws with no colour array. Our array path
+knows nothing about the immediate colour (it lives as a private static in `gl_immediate.c`), so a mesh would render
+white where pspGL renders the material colour.
+
+That makes **T0** below a prerequisite for T1, not a detail: without it the mesh scene differs for a reason that has
+nothing to do with `glDrawElements`.
+
+**Second risk for T1, named so it is looked for:** the mesh scene runs inside `BeginMode3D`, which enables
+`GL_DEPTH_TEST` and leaves `GL_CULL_FACE` on from `rlglInit`. GU culls by winding, and a wrong winding makes the cube
+**invisible**, not distorted — the same failure mode as the sprite path in sprint 011. If the mesh capture is empty
+rather than wrong, check winding before anything else.
 
 **Design settled at review — T3 has three answers the draft left open.**
 
@@ -137,6 +152,7 @@ they are link-time wrappers that do not exist yet.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
+| T0 | **current colour when the colour array is off**: the array path must use the last `glColor*` value (GL11 semantics) instead of hardcoded white, which means the current colour moves from a static in `gl_immediate.c` into `PspGuContext` so both paths share it | `todo` | `DrawMesh`'s cube renders in the material's colour, not white; `batch_check` 2D stays byte-identical (the batcher always sets a colour array, so it cannot regress) | `gl_draw.c:109` hardcodes `0xFFFFFFFF` |
 | T1 | **the mesh scene**: `batch_check MESH_SCENE=1` (2D → `DrawCube` + `DrawMesh` → 2D) on both drivers, captured this session | `todo` | identical, or the differing pixels counted and localised; this is the first test of `glDrawElements` and the converting path under 3D | — |
 | T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
 | T3 | **immediate-mode symbols** (task 12) | `done` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts` | `tools/pspgu/gl_immediate.c`: buffers into the array layout, emits through the `glDrawArrays` path, expands `GL_QUADS` to two triangles, 1,024-vertex buffer with emit-on-overflow. `bunnymark` now **links and runs with `WRAP=1`** — the first time since phase 5 began |
@@ -160,6 +176,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | `basic_shapes` colours | ≥ 284 | | |
 | `bunnymark` N=1,000 with `WRAP=1` | logs `COUNT` and `SPLIT` | | |
 | `src/` changes | 0 — the driver and the tests only | | |
+| `DrawMesh` colour | the material colour, not white | | |
 | immediate-mode buffer | 1,024 vertices (24 KiB), overflow emits mid-run | | |
 
 ## 7. Measurements
@@ -167,6 +184,8 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | run | driver | build | scene | result |
 |---|---|---|---|---|
 | gate | pspgu | `WRAP=0` | `batch_check` 2D | 0 differing pixels (from sprint 012) |
+| counted | pspgu | `PSP_BATCH=1`, `WRAP=1` | `bunnymark` N=1,000 | `begins=0 verts=0`, `arrays=400 arrayVerts=409,998`, work **6.565 ms** |
+| counted | pspgu | `PSP_BATCH=0`, `WRAP=1` | `bunnymark` N=1,000 | `begins=ends=204,999 verts=819,996`, `arrays=0`, work **25.980 ms** (pspGL: 48.8 ms) |
 | test | pspgu | `MESH_SCENE=1` | 2D → 3D → 2D | |
 | test | pspgu | `basic_shapes` | shapes + text | |
 | test | pspgu | `WRAP=1` | `bunnymark` N=1,000 | |
