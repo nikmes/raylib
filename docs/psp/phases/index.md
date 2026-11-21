@@ -15,13 +15,14 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | [3 — pspGL upgrade A/B](03-pspgl-upgrade.md) | eleven ready-made commits, measured | **done** — fork `ae9a668` @ 8192 words |
 | [4 — rlgl batcher](04-rlgl-batcher.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
 | [5 — Native GU backend](05-native-gu-backend.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
-| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **in progress** — pspgu owns VRAM; sprint 015 (NPOT, per-texture PSM, best-fit allocator) |
+| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct upload); sprint 016 residency/eviction |
 | [7 — 2D specialisation](07-2d-specialisation.md) | text, tile maps, shapes, particles | not started — its draw-rejection half does not need 5 or 6 |
 | [8 — Input](08-input.md) | pad mapping, nub calibration, edge detection | not started |
 | [9 — Audio](09-audio.md) | `sceAudio` output without costing frame time | not started |
 | [10 — 3D and advanced](10-3d-advanced.md) | models, RTT, culling, ME options | not started |
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started |
 | [12 — Release gate](12-release-gate.md) | four configurations, one report | not started |
+| [13 — Samples porting](13-samples-porting.md) | the upstream core/shapes/textures corpus as a gated regression suite | proposed — wave 0 needs no new capability |
 
 Notes on ordering that are easy to get wrong:
 
@@ -40,3 +41,5 @@ Notes on ordering that are easy to get wrong:
   measurements, and starting them early would mix two kinds of risk in one debug session.
 - **Phase 11 sits after the renderer phases on purpose.** It profiles the frame and load path those phases
   produce; running it earlier would tune a workload that is about to change.
+- **Phase 13 is continuous, not a successor to 12.** It consumes the capabilities of phases 5–11 as they land
+  and never blocks them; wave 0 (12 drop-in samples) needs no new capability.

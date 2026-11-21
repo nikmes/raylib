@@ -19,6 +19,7 @@
 
 #include <pspkernel.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "raylib.h"
 
@@ -92,10 +93,43 @@ static Texture2D makeHalfAlphaTexture(void)
     return t;
 }
 
+#ifdef UPLOAD_PROBE
+// Sprint 015 T4: time a 256x256 RGBA upload with the image pre-built, so the timed
+// region is LoadTextureFromImage (driver glTexImage2D) + UnloadTexture, not PNG decode.
+static int cmpDouble(const void *a, const void *b)
+{
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+static void runUploadProbe(void)
+{
+    Image img = GenImageColor(256, 256, (Color){ 90, 140, 200, 255 });
+    double t[30];
+
+    for (int i = 0; i < 30; i++)
+    {
+        double a = GetTime();
+        Texture2D tx = LoadTextureFromImage(img);
+        UnloadTexture(tx);
+        t[i] = GetTime() - a;
+    }
+
+    qsort(t, 30, sizeof(double), cmpDouble);
+    TraceLog(LOG_WARNING, "UPLOAD 256x256 RGBA min=%.3f median=%.3f max=%.3f ms",
+             (float)(t[0]*1000.0), (float)(t[15]*1000.0), (float)(t[29]*1000.0));
+    UnloadImage(img);
+}
+#endif
+
 int main(int argc, char **argv)
 {
     InitWindow(480, 272, "texture_pattern");
     SetTargetFPS(0);
+
+#ifdef UPLOAD_PROBE
+    runUploadProbe();
+#endif
 
     Texture2D quadrants = makeQuadrantTexture();
     Texture2D checker = makeCheckerTexture();

@@ -863,6 +863,11 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   entirely 0/255, otherwise 8888. A 32×32 `GL_RGB` texture is 2,048 B instead of 4,096; the 128×128 LA font is
   32,768 instead of 65,536 (its alpha is binary). The measured `auto` delta is 7,843 px in `batch_check` and 0 in
   `basic_shapes`; the default build does not move (sprint 015 T2).
+- **Full texture uploads use an 8-row band**, not a full-image scratch: the band is ≤16 KiB at 512×8888, the
+  source reads stay sequential, and the swizzled blocks are written to a cached EDRAM base followed by one exact
+  range writeback. A 256×256 8888 upload measured **21.088 → 19.849 ms** with the heap allocation removed. A
+  literal 128-byte block path through the uncached alias measured 26.2 ms and was rejected. Textures wider than
+  512 are rejected until phase 7 windows them.
 
 ### Samples worth reading
 

@@ -17,6 +17,11 @@ ifdef TEXFMT_PROBE
     CFLAGS += -DTEXFMT_PROBE
 endif
 
+# 256x256 upload timing for the direct-swizzle measurement (sprint 015 T4)
+ifdef UPLOAD_PROBE
+    CFLAGS += -DUPLOAD_PROBE
+endif
+
 # -lpspgu: the pspgu driver reaches the GE through GU (pspGL used libpspge directly)
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 

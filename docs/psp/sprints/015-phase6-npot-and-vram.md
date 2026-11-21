@@ -4,35 +4,33 @@
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
 | Branch / base commit | `master` @ `c31afe31` (T1 landed in `719b037e`) |
-| Started / closed | 2026-11-21 / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b16` baseline, `b17` T1, `b19` T3, `b20` T2, `b21` T4 |
-| Tasks | 3/4 done |
+| Tasks | 4/4 done |
 
 ## 0. Handover
 
-**Situation.** Phase 5 closed with pspgu owning the upload path and the 2D corpus byte-identical to pspGL; the
-ceiling is 2,375 sprites at 60 fps. **T1 is done on `b17`**: both texture dimensions pad to powers of two, the
-padding is zeroed and swizzled, and `sceGuTexScale` restores the logical size (33×17 went from 281/561 wrong cells
-to 0/561, with both parity scenes unchanged). The rest of the sprint is the memory work: T2 per-texture formats,
-T3 a real allocator, T4 direct swizzle. The allocator is still a **bump arena with no free**, so it cannot
-reclaim a deleted texture and cannot report a largest block.
+**Situation (closed).** Phase 5 closed with pspgu owning the upload path and the 2D corpus byte-identical to
+pspGL; the ceiling is 2,375 sprites at 60 fps. This sprint closed all four texture/VRAM tasks: NPOT padding
+(`b17`), a 512-byte block allocator with free and a real largest block (`b19`), per-texture PSM behind
+`PSP_GU_TEXFMT` (`b20`), and a direct 8-row-band upload with no full-image heap scratch (`b21`). The default
+build remains 8888 and all parity scenes are byte-identical.
 
 **Read before acting**, in this order:
 
 1. `../memory-map.md` §3 and §“VRAM: 2 MB is the whole budget” — the three-buffer map, the host-RAM lists/arenas,
-   the 64-byte writeback rule and the NPOT padding note.
-2. `../phases/06-textures-vram.md` — the phase tasks and exit criteria this sprint serves.
-3. `tools/pspgu/gl_texture.c` — `upload8888`, `applyTexture`, `glTexImage2D`, `glTexSubImage2D`; and
-   `tools/pspgu/egl.c` — `pspguVramAlloc`, `pspguVramReport`, the three-buffer map.
+   the 64-byte writeback rule, the NPOT padding note and the allocator/PSM facts.
+2. `../phases/06-textures-vram.md` — the phase tasks this sprint served; residency/eviction is sprint 016.
+3. `tools/pspgu/gl_texture.c` — `uploadTexels`, `chooseFormat`, `applyTexture`, `glTexSubImage2D`; and
+   `tools/pspgu/egl.c` — the block allocator and `pspguVramReport`.
 4. `../sprints/012-phase5-texture-parity.md` T2 and `../sprints/014-phase5-ceiling-vram-readback.md` §9 — the
-   NPOT diagnosis and the measured VRAM map this allocator replaces.
+   NPOT diagnosis and the measured VRAM map the allocator replaced.
 
-**First action.** Implement **T3** in `tools/pspgu/egl.c`: replace `pspguVramAlloc` with the 512-byte block
-allocator described below, keeping the three framebuffers and depth as fixed reservations. T2 and T4 use its
-allocation and free API, so this comes first.
+**First action.** None: the sprint is closed. The next sprint is **016, residency and priority-aware eviction**,
+which uses T3's free/largest accounting and the churn probe.
 
-**Implementation order.** T1 done → **T3** → **T2** → **T4**. T2 can be written against the old API, but its
-memory claims are only evidence after T3 exists. T4 depends on T3's block (and on T1's `padW/padH`).
+**Implementation order (as executed).** T1 → **T3** → **T2** → **T4**. T3 defined the allocation API the other
+two use; T4 depends on T3's block and T1's `padW/padH`.
 
 **Hard rules.**
 
@@ -141,7 +139,7 @@ with coalescing, free and largest-block counters; a churn probe; direct swizzle 
 | T1 | **NPOT textures (phase task 6c)**: pad **both** dimensions to powers of two (height at least 8 rows for the swizzle), zero the padding, swizzle the padded buffer, and correct with `sceGuTexScale(realW/padW, realH/padH)`; keep the logical size for GL | `done` | 33×17 checkerboard at (160,30), 3×: every cell single-colour and matching `(x+y)&1`; no shear; `texture_pattern` non-NPOT and the 2D gate unchanged | **281/561 cells wrong → 0/561**, two colours, no shear. 33×17 pads to 64×32 = **8,192 B** (logical 2,244 B; old linear 4,352 B). `batch_check` **0 differing pixels**; `basic_shapes` **284 colours, 0**. `b17`, commit `719b037e`; captures in `/home/psp/evidence/sprint015/` |
 | T2 | **Per-texture PSM** behind `PSP_GU_TEXFMT` (`8888` default, `auto` measured): opaque `GL_RGB` → `5650`; `GL_RGBA`/`GL_LUMINANCE_ALPHA` → `4444` only when every alpha is 0/255 (binary), else `8888`; one decision and one log line per texture. Also fix the packed-16 source decode (4444 was decoded as 565) | `done` | 32×32 **GL_RGB** texture **4,096 → 2,048 B**; `auto`'s pixel delta vs `8888` counted by scene; default `batch_check`/`basic_shapes` still 0; the half-alpha RGBA texture (alpha 128) stays `8888` and is checked unchanged | **Default 8888: both parity scenes byte-identical.** `auto`: 32×32 GL_RGB → **5650, 2,048 B**; drawn probe reads (200,36,80), not swapped; 128×128 LA font 65,536→32,768 B and 32×32 LA wabbit 4,096→2,048 B (both binary alpha); half-alpha RGBA (alpha 128) stays **8888, 4,096 B**. Texture VRAM: `batch_check` 69,636→**34,820 B**, `basic_shapes` 65,540→**32,772 B**. Delta vs 8888: `batch_check` **7,843 px / 13,067 bytes** (4-bit quantisation, same channel order), `basic_shapes` **0 px**. 4444 NPOT checker **0/561** wrong. `b20` |
 | T3 | **Best-fit allocator** over 512-byte blocks with coalescing; free bytes and largest block tracked separately; one allocator for framebuffers, depth and textures; `pspguVramFree` + stats | `done` | 100 load/unload cycles: free and largest return within 512 B, no failure; boot line reports used/free/largest/allocs/frees; a texture unload returns its blocks; 2D gate 0 | **PASS twice.** 100 cycles × 16 textures: `free 916,992 → 916,992`, `largest 916,992 → 916,992`, `internal 508` (the 4-byte white texel's block), `allocs 1,606 / frees 1,600 / failures 0`. Boot line `reserved=1,114,112 requested=4 used=1,114,624 free=982,528 largest=982,528 internal=508`; assets `requested=69,636 used=1,184,256 free=912,896`. 2D gate **byte-identical**. `b19`; probe `psp-tests/texture_churn`, verdict in `churn_done.txt` |
-| T4 | **Direct swizzle into VRAM**: expand one **4×8-texel swizzle block** into a 128-byte stack tile and write it to the destination through the uncached alias; remove the full-texture `calloc` + memcpy | `todo` | 256×256 RGBA upload: scratch allocation gone (262,144 B → 0 heap; 128 B stack), elapsed time before/after, pixels unchanged; no whole-cache invalidate | — |
+| T4 | **Direct swizzle into VRAM**: no full-image `calloc`; fill one **8-row band** (≤16 KiB, cache-resident) linearly and write the swizzled blocks; cached base + one range writeback | `done` | 256×256 RGBA upload: heap scratch gone (262,144 B → 0), elapsed time before/after, pixels unchanged; no whole-cache invalidate | **21.088 → 19.849 ms** median (min 19.780, max 20.046, 30 runs; −5.9 %). Default 8888 `batch_check` and `basic_shapes` byte-identical; `auto` `batch_check` identical to b20; 5650 square (200,36,80); 4444 NPOT **0/561**. No heap: an 8-row band (≤16 KiB stack) and one `pspguWriteback`. The 128-B block + uncached alias measured **26.2 ms** and was rejected. `b21` |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -211,18 +209,26 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### T4 design (implementation-ready)
 
-- Replace the full-texture `calloc(total)` + `swizzleFast` with a per-block path: one swizzle block is
-  **16 bytes × 8 rows = 128 B** (4 texels wide at 8888, 8 at 16-bit). Expand the source texels for one block into
-  a 128-byte stack tile, then write those 128 bytes to the block's swizzled destination address
-  (`block = (y/8)*(tbw*bpp/16) + x/(16/bpp); dst = base + block*128`).
-- Use the uncached EDRAM alias for the destination (`0x40000000 | offset`, the form the reference engines use) so
-  no cache writeback is needed; if the alias is not proven, write back exactly the 128-byte block. Do not add a
-  whole-cache invalidate.
-- Verification: the 33×17 NPOT capture and the two parity scenes are unchanged; a 256×256 RGBA upload's elapsed
-  time is logged before/after; the upload's heap peak drops from 262,144 B to 0 (128 B stack). Build the `Image`
-  once and exclude PNG/file decode from the timed region: time `LoadTextureFromImage` (which calls the driver's
-  `glTexImage2D`) and `UnloadTexture` in the `UPLOAD` mode, take the median of 30 runs. The source format
-  conversion (LA/RGBA to 8888, or the T2 16-bit pack) happens inside the tile loop.
+- Replace the full-padded-image `calloc(total)` + `swizzleFast` with a per-band path. **Measured twice:** a
+  literal 128-byte block tile with an uncached destination measured **26.2 ms** for 256×256 RGBA, because the
+  block loop reads the source in a strided order and uncached writes are slow. The shipped path is:
+  - fill one **8-row band** linearly (`8 × tbw × bpp`, ≤16 KiB at 512×8888), source rows read sequentially and the
+    band is cache-resident;
+  - write the swizzled blocks from the band (`block = (by/8)*(tbw*bpp/16) + bx/(16/bpp)`, 16 bytes per row);
+  - zero the band first, so padding columns and rows are written as zero;
+  - write through the **cached** EDRAM base and do one `pspguWriteback(base, tbw*padH*bpp)` at the end.
+- This uses no full-image heap allocation and measured **19.849 ms** against the old **21.088 ms**. The
+  `PSP_GU_NO_SWIZZLE` diagnostic keeps a linear per-texel path, including zeroed padding. The sub-image path is
+  unchanged. A `tbw > 512` texture is rejected with a log; 512-pixel windowing is phase 7.
+- The **sub-image** path (`glTexSubImage2D`) keeps its per-texel swizzled offset; T4 only changes full uploads.
+- Verification: the 33×17 NPOT capture and the two parity scenes are unchanged. A 256×256 RGBA upload's elapsed
+  time is measured **before** (b20, full scratch) and **after** (b21) with the same pre-built image. Build the
+  `Image` once and exclude PNG/file decode: time `LoadTextureFromImage` + `UnloadTexture` in a new
+  `UPLOAD_PROBE` mode, 30 runs, report min/median/max.
+- **Heap evidence:** the upload path no longer calls `calloc`; the tile is a 128-byte stack array. The app cannot
+  query the allocation peak, so the evidence is the removed 262,144-byte allocation for 256×256 RGBA plus the
+  measured time, not a fabricated heap number. The source conversion (LA/RGBA to 8888, or the T2 16-bit pack)
+  happens inside the tile loop.
 
 ### Task log (append-only)
 
@@ -244,6 +250,10 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 - 2026-11-21 — T2 `done`: default 8888 byte-identical on both parity scenes. `auto`: GL_RGB→5650 2,048 B; the
   LA font and wabbit are binary-alpha → 4444 (65,536→32,768 and 4,096→2,048); alpha-128 stays 8888. Delta:
   `batch_check` 7,843 px (4-bit), `basic_shapes` 0. 5650 square (200,36,80) not swapped.
+- 2026-11-21 — T4 `doing`: 128-B block + uncached alias measured **26.2 ms**, rejected; 8-row band with cached
+  base + one writeback measured **19.849 ms** vs 21.088 baseline.
+- 2026-11-21 — T4 `done`: no full-image heap scratch; default and `auto` pixel gates identical; 5650/4444 still
+  correct. **Sprint 015 closed 4/4.**
 
 ## 6. Budgets
 
@@ -261,9 +271,9 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | largest free block | real, not a free-tail alias | **982,528 B** at boot; **912,896 B** after assets; **916,992 B** at churn | `[measured: b19]` |
 | churn: free/largest return | within 512 B after 100 cycles | **exact**: 916,992 → 916,992 both | `[measured: b19, two runs]` |
 | allocator metadata | main RAM, cache-resident if possible | **32 KiB** (4,096 × 8 B) | `[measured]` |
-| upload 256×256 RGBA, heap | 0 (128 B stack) vs 262,144 B today | not started (T4) | — |
-| upload 256×256 RGBA, time | measured before/after | not started (T4) | — |
-| whole-cache invalidate in a steady frame | 0 | 0 today; keep 0 | `[measured]` |
+| upload 256×256 RGBA, heap | 0 full-image heap (band is stack) vs 262,144 B | **0 heap**; 8-row band (≤16 KiB stack) | `[measured: b21]` |
+| upload 256×256 RGBA, time | measured before/after | **21.088 → 19.849 ms** (−5.9 %) | `[measured: b20/b21]` |
+| whole-cache invalidate in a steady frame | 0 | 0; one exact-range `pspguWriteback` per upload | `[measured]` |
 
 ## 7. Measurements
 
@@ -288,8 +298,12 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 | change | b20 | `texture_pattern TEXFMT_PROBE` `auto` | 32×32 GL_RGB | **PSM 5650, 2,048 B**; drawn (200,36,80) | 5650 bit order correct |
 | change | b20 | `texture_pattern PATTERN_NPOT` `auto` | 33×17 checker in 4444 | **0/561** cells wrong | 4444 bit order correct |
 | control | b20 | half-alpha RGBA alpha 128 | PSM / bytes | **8888 / 4,096 B** | anti-aliased alpha stays 8888 |
-| baseline | b20 | 256×256 upload | heap / ms | 262,144 B / | T4 |
-| change | b21 | 256×256 upload | heap / ms | 0 / | T4 |
+| baseline | b20 | 256×256 RGBA upload | heap / median | **262,144 B / 21.088 ms** | full-image `calloc` + swizzle, 30 runs |
+| change | b21 | same | heap / median | **0 heap / 19.849 ms** | 8-row band (≤16 KiB stack); min 19.780, max 20.046 |
+| rejected | b21 | 128-B block, uncached alias | median | **26.202 ms** | strided source reads + uncached writes; reverted |
+| control | b21 | `batch_check` 8888 / `auto` | pixels | **byte-identical** to b20/default | direct upload changed no pixel |
+| control | b21 | `basic_shapes` 8888 | pixels | **byte-identical** to pspGL | |
+| control | b21 | `texture_pattern` `auto` | 5650 / 4444 | **(200,36,80)**; **0/561** NPOT cells | bit orders still correct |
 
 ## 8. Exit criteria
 
@@ -300,29 +314,30 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
       (7,843 px `batch_check`, 0 `basic_shapes`); the default build is still 0 differing pixels
 - [x] T3: 100-cycle churn returns free and largest within 512 B, no allocation failure; the boot line reports
       used/free/largest/allocs/frees; a texture unload returns its blocks — **exact return**, two runs
-- [ ] T4: 256×256 upload uses no full-texture scratch (0 heap, 128 B stack); time measured; pixels unchanged;
-      no whole-cache invalidate added
-- [ ] phase-6 facts written back into the phase page and `memory-map.md`
-- [ ] T2/T3/T4 either done with evidence or explicitly carried to sprint 016 with the reason
+- [x] T4: 256×256 upload uses no full-texture scratch (0 heap, 8-row band); time measured **21.088 → 19.849 ms**;
+      pixels unchanged; no whole-cache invalidate added
+- [x] phase-6 facts written back into the phase page and `memory-map.md`
+- [x] T2/T3/T4 either done with evidence or explicitly carried to sprint 016 with the reason — all four done
 
-## 9. Result so far
+## 9. Result
 
-T1 and T3 are closed. T3 replaced the bump arena with a 512-byte block best-fit allocator: the three framebuffers
-and depth are fixed 8 KiB-aligned reservations, textures allocate/free with coalescing, and the boot line reports
-`reserved/requested/used/free/largest/internal/allocs/frees/failures` from the table. The churn probe passed twice:
-**free and largest returned exactly** (916,992 → 916,992 B), 1,600 frees, **0 failures**, with 32 KiB of metadata
-in main RAM. The 2D gate did not move.
+**Sprint 015 closed 4/4 on `b21`.** Every task changed a measurable number, and the default build never moved a
+parity pixel.
 
-The probe also found a driver-level hazard worth carrying: a workload that uploads textures **without ever ending a
-frame** fills the 240 KiB display list and hangs (it stopped at cycle ~50 with the allocator still perfect). GU has
-no list-capacity check. The probe now ends a frame per cycle; the driver needs a high-water guard (follow-up).
+| task | result |
+|---|---|
+| T1 NPOT | 33×17 checkerboard **281/561 → 0/561** wrong cells; 64×32 padding reported (8,192 B); parity scenes byte-identical |
+| T3 allocator | 512-byte blocks, free/coalesce, real largest block; churn 100 × 16 textures returned **916,992 → 916,992 B** free and largest, 1,600 frees, **0 failures**; 32 KiB metadata |
+| T2 per-texture PSM | default 8888 unchanged; `auto`: 32×32 GL_RGB **4,096 → 2,048 B**, font 65,536 → 32,768; texture VRAM **69,636 → 34,820 B**; delta 7,843 px in `batch_check`, **0** in `basic_shapes`; 5650/4444 verified by drawn colour |
+| T4 direct upload | full-image heap scratch **262,144 B → 0**; upload **21.088 → 19.849 ms** (−5.9 %); default and `auto` gates byte-identical |
 
-T2 is closed too. The default 8888 build did not move; `auto` halves the font and sprite textures (the corpus'
-LA sources have binary alpha) and cuts texture VRAM from 69,636 to 34,820 B in `batch_check` and from 65,540 to
-32,772 B in `basic_shapes`. The trade is measured: 7,843 pixels of 4-bit quantisation in `batch_check`, none in
-`basic_shapes`; 5650 and 4444 bit orders are verified by drawn colour. The default stays 8888.
+The 128-byte-block + uncached-alias version of T4 was measured at **26.2 ms** and rejected; the shipped path is an
+8-row band (≤16 KiB stack) with a cached base and one range writeback. T2's default remains 8888 because the
+`auto` delta is a measured trade, not an accepted default.
 
-T4 remains: the direct swizzle-block upload (no full-texture scratch).
+What remains in phase 6 is residency/eviction (sprint 016); CLUT atlases and mipmaps are still measurement-gated.
+The churn probe also found a driver-level hazard: texture uploads with no `EndDrawing` fill the 240 KiB list; the
+probe ends a frame per cycle and the driver guard is a follow-up.
 
 ## 10. Follow-ups
 

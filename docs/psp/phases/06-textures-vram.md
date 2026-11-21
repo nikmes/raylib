@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprint 010 (probe) proved texture format is not a speed lever; the rest needs phase 5 to own VRAM |
+| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); sprint 016 is residency/eviction |
 | Depends on | Phase 5 (a backend that owns the upload path) |
 | Exit criterion | no eviction when the working set fits in VRAM, upload benchmarks by format, fragmentation bounded under load/unload churn |
 
@@ -23,7 +23,9 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## Tasks
 
-- [ ] Swizzle **directly into the destination** — no memcpy to VRAM, no `sceGuCopyImage`
+- [x] Swizzle **directly into the destination** — no memcpy to VRAM, no `sceGuCopyImage` — **sprint 015 T4**:
+      8-row band (≤16 KiB stack) filled linearly, swizzled blocks written to the destination; no full-image heap
+      scratch. 256×256 upload 21.088 → 19.849 ms; 128-B block/uncached alias rejected at 26.2 ms
 - [x] POT padding on load; document the padding cost rather than hiding it — **sprint 015 T1**: both dimensions
       pad to powers of two, the padding is zeroed and swizzled, and `sceGuTexScale` restores the logical size.
       33×17 → 64×32 = 8,192 B (logical 2,244 B); the 33×17 checkerboard went from 281/561 wrong cells to 0/561,
@@ -35,7 +37,8 @@ re-uploaded mid-frame costs more than the draw it feeds.
       Churn 100 × 16 textures: free and largest return exactly (916,992 → 916,992 B), 1,600 frees, 0 failures
 - [ ] Residency: priority-aware eviction where application priority is a strong weight; usage that ages per
       frame, never accumulating forever
-- [ ] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame
+- [x] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame — one
+      `pspguWriteback(base, tbw*padH*bpp)` per upload; no invalidate
 - [ ] No mipmaps unless a measurement says they pay
 - [x] Per-texture PSM, not a global swizzle mode — **sprint 015 T2**: default 8888 for parity; `PSP_GU_TEXFMT=auto`
       chooses 5650 for `GL_RGB` and 4444 for `GL_RGBA`/`GL_LUMINANCE_ALPHA` with binary alpha, else 8888. 32×32
@@ -67,5 +70,6 @@ re-uploaded mid-frame costs more than the draw it feeds.
   frame**, not a sprite count. 16-bit textures survive as a **memory** lever (2 B/texel in a 2 MiB budget), with
   `4444` for sprites and `5650` for opaque — the speed case for them is dead.
 - [Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../sprints/015-phase6-npot-and-vram.md)
-  — **in progress.** T1 is the known 33×17 padding plus `sceGuTexScale`; T2 halves texture bytes; T3 replaces the
-  bump arena with a best-fit allocator that can report a real largest block; T4 swizzles directly into VRAM.
+  — **done 4/4.** NPOT padding; 512-byte block allocator with free/coalesce and a real largest block; per-texture
+  PSM (default 8888, `auto` 5650/4444); direct 8-row-band upload with no full-image scratch. Residency/eviction
+  remains sprint 016.
