@@ -36,7 +36,11 @@ build() {
 }
 
 install_lib() {
-    if [ -f "$LIB" ] && ! grep -q "pspgu" <(psp-nm "$LIB" 2>/dev/null | grep -c pspguBeginFrame) 2>/dev/null; then
+    # Back up the previous archive only if it is NOT already pspgu. The old test
+    # piped `grep -c` into `grep -q pspgu`, whose output ("1") never contains the
+    # word, so every pspgu install overwrote the pspGL backup with pspgu. That cost
+    # one session's A/B; test the archive's symbols directly now.
+    if [ -f "$LIB" ] && ! psp-nm "$LIB" 2>/dev/null | grep -q pspguBeginFrame; then
         cp "$LIB" "$BACKUP"
     fi
     cp "$SRC/libGL.a" "$LIB"
@@ -55,12 +59,14 @@ case "${1---install}" in
         fi
         ;;
     --restore)
-        if [ -f "$BACKUP" ]; then
+        # Only restore a real pspGL archive: an old bug could leave a pspgu build in
+        # the backup slot, and restoring that silently makes every A/B a pspgu run.
+        if [ -f "$BACKUP" ] && ! psp-nm "$BACKUP" 2>/dev/null | grep -q pspguBeginFrame; then
             cp "$BACKUP" "$LIB"; echo "restored the pspGL archive from $BACKUP"
-        elif [ -f "$PSPGL_SRC/libGL.a" ]; then
+        elif [ -f "$PSPGL_SRC/libGL.a" ] && ! psp-nm "$PSPGL_SRC/libGL.a" 2>/dev/null | grep -q pspguBeginFrame; then
             cp "$PSPGL_SRC/libGL.a" "$LIB"; echo "restored pspGL from $PSPGL_SRC"
         else
-            echo "no pspGL archive to restore; run tools/pspgl-build.sh"; exit 1
+            echo "no valid pspGL archive to restore; run tools/pspgl-build.sh"; exit 1
         fi
         ;;
     --verify-repeat)
