@@ -1,8 +1,9 @@
-# Sprint 016 — Texture residency and eviction
+# Sprint 016 (P6-S3) — Texture residency and eviction
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
+| Sprint | P6-S3 |
 | Branch / base commit | `master` @ `ae4b098c` (sprint 015 closed) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b22` (metadata, shadow, eviction; probes run on it) |
@@ -24,7 +25,7 @@ change.
 2. `../phases/06-textures-vram/index.md` — the residency task and the three exit criteria this sprint closes.
 3. `tools/pspgu/gl_texture.c` — `uploadTexels`, `chooseFormat`, `glBindTexture`, `glTexImage2D`,
    `glDeleteTextures`; `tools/pspgu/egl.c` — `vramAllocRaw`, `vramFreeRaw`, `pspguVramReport`.
-4. `../sprints/015-phase6-npot-and-vram.md` T3 — the churn probe and the exact-return evidence the new policy must
+4. `../sprints/015-phase6-npot-and-vram.md` (P6-S2) T3 — the churn probe and the exact-return evidence the new policy must
    not regress.
 
 **First action.** In `tools/pspgu/gl_texture.c`, add the per-texture residency fields (`resident`, `lastUsed`,

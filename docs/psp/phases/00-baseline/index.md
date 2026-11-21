@@ -42,5 +42,5 @@ the clone has full history, moving to 6.5.0-dev later is a merge, not a rebuild.
 
 ## Sprints
 
-- [Sprint 000 — Repository baseline](../../sprints/000-phase0-baseline.md) — **closed**, and doubles as the first
+- [P0-S1 — Sprint 000 — Repository baseline](../../sprints/000-phase0-baseline.md) — **closed**, and doubles as the first
   filled example of the [sprint template](../../templates/sprint.md)

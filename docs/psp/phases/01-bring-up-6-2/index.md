@@ -63,5 +63,5 @@ of that delta is in [§2](../../memory-map.md#2-memory-map-where-the-work-happen
 
 ## Sprints and features
 
-- [Sprint 001 — Import the platform layer, first build](../../sprints/001-phase1-import-platform.md)
-- [Sprint 002 — All five samples green, screenshots archived](../../sprints/002-phase1-samples-green.md)
+- [P1-S1 — Sprint 001 — Import the platform layer, first build](../../sprints/001-phase1-import-platform.md)
+- [P1-S2 — Sprint 002 — All five samples green, screenshots archived](../../sprints/002-phase1-samples-green.md)

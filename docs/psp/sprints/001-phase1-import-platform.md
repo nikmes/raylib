@@ -1,8 +1,9 @@
-# Sprint 001 — Import the platform layer, first build
+# Sprint 001 (P1-S1) — Import the platform layer, first build
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2/index.md) |
+| Sprint | P1-S1 |
 | Branch / base commit | `psp-6.2` @ `02566453` + docs commits |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `r1` … `r7` (final: release library + `basic_shapes.prx`) |

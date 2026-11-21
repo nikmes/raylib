@@ -1,8 +1,9 @@
-# Sprint 022 — Particles: one stream per texture run and the cap boundary
+# Sprint 022 (P7-S5) — Particles: one stream per texture run and the cap boundary
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
+| Sprint | P7-S5 |
 | Branch / base commit | `master` @ the sprint 021 close (this doc is written before 021 runs) |
 | Started / closed | — / — |
 | Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
@@ -19,8 +20,8 @@ cost to justify promoting it, and records the cap/tearing boundary.
 
 **Read before acting**, in this order:
 
-1. `../sprints/018-phase7-corpus-and-budget.md` §7 — the particle and mixed counters, the 2,000-particle point.
-2. `../sprints/019-phase7-text-work.md` §7 — the `api`/`direct` method and what it proved for a per-object loop.
+1. `../sprints/018-phase7-corpus-and-budget.md` (P7-S1) §7 — the particle and mixed counters, the 2,000-particle point.
+2. `../sprints/019-phase7-text-work.md` (P7-S2) §7 — the `api`/`direct` method and what it proved for a per-object loop.
 3. `psp-tests/scene_2d/main.c` — `MODE=particles`, `particlesUpdate`, the freeze frames.
 4. `src/rlgl.h:622-930` — the batcher: one bind per run, 2-vertex sprites, the 4,096 cap.
 5. `../phases/07-2d-specialisation/index.md` — the particle exit criterion.

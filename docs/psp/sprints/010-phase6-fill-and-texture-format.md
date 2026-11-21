@@ -1,8 +1,9 @@
-# Sprint 010 — What fill actually costs, and 16-bit textures
+# Sprint 010 (P6-S1) — What fill actually costs, and 16-bit textures
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
+| Sprint | P6-S1 |
 | Branch / base commit | `master` @ `628a4611` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b11` (sprint 009 default, `8d919899…`), `b12` (this sprint) |

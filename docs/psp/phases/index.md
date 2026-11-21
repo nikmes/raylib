@@ -7,6 +7,9 @@ criteria that end it.
 A phase is not started until the previous one's criteria are met **and recorded**. Work inside a phase happens
 in [sprints](../templates/sprint.md), and each sprint names the exit criterion it advances.
 
+Sprints carry two identifiers: `NNN` is the global file/traceability number, and `P<N>-S<n>` is the phase/S
+label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
+
 | phase | about | state |
 |---|---|---|
 | [0 — Baseline](00-baseline/index.md) | fork, branch at 6.2, remotes, docs site | **done** |
@@ -22,7 +25,7 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started |
 | [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
-| [13 — Samples porting](13-samples-porting.md) | the upstream core/shapes/textures corpus as a gated regression suite | proposed — wave 0 needs no new capability |
+| [13 — Samples porting](13-samples-porting/index.md) | the upstream core/shapes/textures corpus as a gated regression suite | in progress — P13-S1 done; P13-S2 drafted; S3–S11 placeholders |
 
 Notes on ordering that are easy to get wrong:
 

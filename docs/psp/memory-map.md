@@ -410,6 +410,15 @@ frame-time percentiles, submission counts, GE waits, VRAM high-water, screenshot
 whether anything still needs the direct-GU path. Input and audio are checked in the same run: neither may
 appear in the frame profile.
 
+### Phase 13 — Samples porting — **proposed, continuous**
+The upstream `core`, `shapes` and `textures` corpus is the regression suite. A 2026-11-21 audit of all 127
+samples found **13 drop-in**, **61 that render but need input remapped**, **49 blocked** (16 render targets,
+11 texture size/VRAM, 9 input hardware, 8 desktop-only, 2 audio, 2 clipboard, 1 texture readback), and 4 already
+ported. Sprint 020's 1024-buffer/512-window split moved a 768-wide sheet and a 768-tall stacked GIF into the
+fits column. The phase is capability-gated and runs alongside phases 6–11; it never blocks them. Wave 0 needs no
+new capability. Sprints 024–034: S1 done (9 samples, two identical captures each), S2 drafted, S3–S11
+placeholders. Full tier lists, gates and the porting recipe: [Phase 13](phases/13-samples-porting/index.md).
+
 ---
 
 ## 6. Measurement protocol
@@ -487,6 +496,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 | 2026-11-20 | Stage A on pspGL before any native backend | gives a working 6.2 to compare against, and the GL11 call list becomes the GU spec |
 | 2026-11-20 | Do not run `pspbuild.sh` | would rebuild older 5.5 sources over a matching pspdev library |
 | 2026-11-20 | Optimise raylib submission before optimising pspGL internals | per-sprite submits cost 512–1024x the necessary draw calls; fix the structural problem first |
+| 2026-11-21 | Track the upstream `core`/`shapes`/`textures` corpus as **Phase 13**, gated by capability | Static audit of 127 samples: 13 drop-in, 61 input-gated, 49 blocked, 4 ported. Each wave names the phase whose capability it consumes; wave 0 needs none. Findings, gates and sprints 024–034 in [Phase 13](phases/13-samples-porting/index.md) |
 
 ---
 
@@ -717,7 +727,7 @@ in sibling directories and render in this site.
 
 | type | answers | lives in | template |
 |---|---|---|---|
-| **Sprint** | what we do in one time box, and which number is supposed to move | `docs/psp/sprints/NNN-slug.md` | [sprint](templates/sprint.md) |
+| **Sprint** | what we do in one time box, and which number is supposed to move | `docs/psp/sprints/NNN-phaseN-slug.md`, labelled `P<N>-S<n>` | [sprint](templates/sprint.md) |
 | **Feature** | what behaviour a game gets: API surface, cost model, degradation | `docs/psp/features/slug.md` | [feature](templates/feature.md) |
 | **Recipe** | a technique that already worked on the console | `docs/psp/recipes/slug.md` | [recipe](templates/recipe.md) |
 

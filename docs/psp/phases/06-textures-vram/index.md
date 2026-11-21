@@ -71,18 +71,18 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## Sprints and features
 
-- [Sprint 010 — What fill actually costs, and 16-bit textures](../../sprints/010-phase6-fill-and-texture-format.md)
+- [P6-S1 — Sprint 010 — What fill actually costs, and 16-bit textures](../../sprints/010-phase6-fill-and-texture-format.md)
   — **done, negative result.** Fill is rasterisation-rate-bound (~221 Mtexel/s): 16-bit textures changed the frame
   by 0.0 %, blending off by −0.2 %, 4× the area by +199.5 %. The budget is **~1.6–2.0 M drawn texels per 60 fps
   frame**, not a sprite count. 16-bit textures survive as a **memory** lever (2 B/texel in a 2 MiB budget), with
   `4444` for sprites and `5650` for opaque — the speed case for them is dead.
-- [Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../../sprints/015-phase6-npot-and-vram.md)
+- [P6-S2 — Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../../sprints/015-phase6-npot-and-vram.md)
   — **done 4/4.** NPOT padding; 512-byte block allocator with free/coalesce and a real largest block; per-texture
   PSM (default 8888, `auto` 5650/4444); direct 8-row-band upload with no full-image scratch.
-- [Sprint 016 — Texture residency and eviction](../../sprints/016-phase6-residency-eviction.md) — **done 4/4.**
+- [P6-S3 — Sprint 016 — Texture residency and eviction](../../sprints/016-phase6-residency-eviction.md) — **done 4/4.**
   CPU shadow, `glPrioritizeTextures`, victim by priority then age, last-2-frames pinning, reload on bind,
   coalesce-by-eviction. Fit 0 evictions; over 3,363/3,348/0; priority A/B swaps; frag coalesces. Closes exits
   1, 3 and 4.
-- [Sprint 017 — Upload/swizzle matrix and the gated texture features](../../sprints/017-phase6-format-matrix-and-gated-features.md)
+- [P6-S4 — Sprint 017 — Upload/swizzle matrix and the gated texture features](../../sprints/017-phase6-format-matrix-and-gated-features.md)
   — **done 4/4.** Format/size matrix; CLUT T4 probe (8,256 vs 32,768 B) and mipmap probe (+33 % memory, identical
   at 4×). Both gated features **dropped with evidence**; 018 not needed. Phase 6 closes here.

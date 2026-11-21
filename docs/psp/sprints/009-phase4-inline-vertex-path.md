@@ -1,8 +1,9 @@
-# Sprint 009 — The per-sprite CPU budget, and shipping the batch
+# Sprint 009 (P4-S3) — The per-sprite CPU budget, and shipping the batch
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher/index.md) |
+| Sprint | P4-S3 |
 | Branch / base commit | `master` @ `ee3957a9` (closed at `030448f0`) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b9` (sprint 008 reference, `04584553…`), `b10` (this sprint) |

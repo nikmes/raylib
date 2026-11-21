@@ -1,8 +1,9 @@
-# Sprint 011 — GE up and the vertex path
+# Sprint 011 (P5-S1) — GE up and the vertex path
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
+| Sprint | P5-S1 |
 | Branch / base commit | `master` @ `ffabe753` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b11` (`tools/pspgu`, 36 KB archive) |

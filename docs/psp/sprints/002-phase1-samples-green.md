@@ -1,8 +1,9 @@
-# Sprint 002 — All five samples green, reference screenshots archived
+# Sprint 002 (P1-S2) — All five samples green, reference screenshots archived
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2/index.md) |
+| Sprint | P1-S2 |
 | Branch / base commit | `master` @ `975ec47e` (6.5-dev + port, device-validated) |
 | Started / closed | — / — |
 | Build number(s) | `s1` … `s4`, one per sample |

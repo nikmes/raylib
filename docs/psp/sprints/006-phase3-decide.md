@@ -1,8 +1,9 @@
-# Sprint 006 — Adopt the fork, reproducibly
+# Sprint 006 (P3-S2) — Adopt the fork, reproducibly
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade/index.md) |
+| Sprint | P3-S2 |
 | Branch / base commit | `master` @ `276ed105` |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g2` (adopted library) |

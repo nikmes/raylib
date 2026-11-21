@@ -1,8 +1,9 @@
-# Sprint 000 — Repository baseline
+# Sprint 000 (P0-S1) — Repository baseline
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 0 — Baseline](../phases/00-baseline/index.md) |
+| Sprint | P0-S1 |
 | Branch / base commit | `psp-6.2` @ `02566453` (tag `6.2`) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | none — no raylib build in this sprint |

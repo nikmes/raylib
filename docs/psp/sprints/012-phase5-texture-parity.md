@@ -1,8 +1,9 @@
-# Sprint 012 — Texture parity: right texels, right alpha, right dither
+# Sprint 012 (P5-S2) — Texture parity: right texels, right alpha, right dither
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
+| Sprint | P5-S2 |
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |

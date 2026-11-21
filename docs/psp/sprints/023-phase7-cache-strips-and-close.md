@@ -1,8 +1,9 @@
-# Sprint 023 — Texture-cache strips, full regression and phase 7 close
+# Sprint 023 (P7-S6) — Texture-cache strips, full regression and phase 7 close
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
+| Sprint | P7-S6 |
 | Branch / base commit | `master` @ the sprint 022 close (this doc is written before 021/022 run) |
 | Started / closed | — / — |
 | Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
@@ -20,8 +21,8 @@ whole phase's regression and fills the exit table.
 **Read before acting**, in this order:
 
 1. `../phases/07-2d-specialisation/index.md` — R2 (strips), the exit criteria, the boot-budget and 512 tasks.
-2. `../sprints/018-phase7-corpus-and-budget.md` §7 — the corpus and the boot budget.
-3. `../sprints/019`–`022` — the text, window, sprite/shape and particle results this close depends on.
+2. `../sprints/018-phase7-corpus-and-budget.md` (P7-S1) §7 — the corpus and the boot budget.
+3. `../sprints/019`–`022` (P7-S2–P7-S5) — the text, window, sprite/shape and particle results this close depends on.
 4. `../memory-map.md` §4 — the 8 KiB cache and the band arithmetic; §5 — the phase roadmap.
 5. `psp-tests/scene_2d/main.c` — the scene harness and marker format.
 

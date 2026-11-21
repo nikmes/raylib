@@ -1,8 +1,9 @@
-# Sprint 003 — Backend counters that mean something
+# Sprint 003 (P2-S1) — Backend counters that mean something
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation/index.md) |
+| Sprint | P2-S1 |
 | Branch / base commit | `master` @ `252acee7` → closed at the sprint commit |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `c1`, `c2` |

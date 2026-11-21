@@ -1,11 +1,12 @@
 # Sprint template
 
-> Copy this file to `docs/sprints/NNN-<slug>.md`. Fill every section; delete the guidance lines.
+> Copy this file to `docs/psp/sprints/NNN-<phaseN>-<slug>.md`. Fill every section; delete the guidance lines.
 > A sprint is a time-boxed slice of **one** roadmap phase. If it spans two phases, split it.
 
 | | |
 |---|---|
 | Roadmap phase | <e.g. Phase 4 — PSP rlgl batcher> |
+| Sprint | <e.g. P4-S1> |
 | Branch / base commit | `psp-6.2` @ `<sha>` |
 | Started / closed | YYYY-MM-DD / — |
 | Build number(s) | <e.g. b7, b8> |

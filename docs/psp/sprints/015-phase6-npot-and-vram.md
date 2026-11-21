@@ -1,8 +1,9 @@
-# Sprint 015 — NPOT textures, per-texture format and the VRAM allocator
+# Sprint 015 (P6-S2) — NPOT textures, per-texture format and the VRAM allocator
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
+| Sprint | P6-S2 |
 | Branch / base commit | `master` @ `c31afe31` (T1 landed in `719b037e`) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b16` baseline, `b17` T1, `b19` T3, `b20` T2, `b21` T4 |
@@ -23,7 +24,7 @@ build remains 8888 and all parity scenes are byte-identical.
 2. `../phases/06-textures-vram/index.md` — the phase tasks this sprint served; residency/eviction is sprint 016.
 3. `tools/pspgu/gl_texture.c` — `uploadTexels`, `chooseFormat`, `applyTexture`, `glTexSubImage2D`; and
    `tools/pspgu/egl.c` — the block allocator and `pspguVramReport`.
-4. `../sprints/012-phase5-texture-parity.md` T2 and `../sprints/014-phase5-ceiling-vram-readback.md` §9 — the
+4. `../sprints/012-phase5-texture-parity.md` (P5-S2) T2 and `../sprints/014-phase5-ceiling-vram-readback.md` (P5-S4) §9 — the
    NPOT diagnosis and the measured VRAM map the allocator replaced.
 
 **First action.** None: the sprint is closed. The next sprint is **016, residency and priority-aware eviction**,

@@ -1,8 +1,9 @@
-# Sprint 004 — Timing, fixed-count runs, repeatability floor
+# Sprint 004 (P2-S2) — Timing, fixed-count runs, repeatability floor
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation/index.md) |
+| Sprint | P2-S2 |
 | Branch / base commit | `master` @ `52ee5b1a` (counters closed, 6.5-dev validated) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `t1`, `t2` |

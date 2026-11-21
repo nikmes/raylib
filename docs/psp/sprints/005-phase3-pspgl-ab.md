@@ -1,8 +1,9 @@
-# Sprint 005 — pspGL from source, and an A/B that means something
+# Sprint 005 (P3-S1) — pspGL from source, and an A/B that means something
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade/index.md) |
+| Sprint | P3-S1 |
 | Branch / base commit | `master` @ `bb6da92c` (Phase 2 closed; baselines published) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g0` (control build), `g1` (fork build) |

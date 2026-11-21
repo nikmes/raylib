@@ -281,15 +281,15 @@ by sprint 015 T1: pad both dimensions to powers of two, zero and swizzle the pad
 
 ## Sprints
 
-Four sprints, in order. 011 and 012 are done and written up; 013 is written out in full because it is next;
-014 is scoped here and gets its page when it starts.
+Four sprints, in order. P5-S1 (011) and P5-S2 (012) are done and written up; P5-S3 (013) is written out in full
+because it is next; P5-S4 (014) is scoped here and gets its page when it starts.
 
 | sprint | goal | state | exit |
 |---|---|---|---|
-| [011 — GE up and the vertex path](../../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
-| [012 — Texture parity](../../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
-| [013 — Corpus parity and the counter harness](../../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
-| [014 — Ceiling, VRAM and readback](../../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **done** | **2,375 sprites** at 60 fps (pspGL 1,600); 2D gate 0; VRAM accounted in both depth configs; no full GE wait; no stubs; depth-correct cubes |
+| [P5-S1 — 011 — GE up and the vertex path](../../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
+| [P5-S2 — 012 — Texture parity](../../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
+| [P5-S3 — 013 — Corpus parity and the counter harness](../../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
+| [P5-S4 — 014 — Ceiling, VRAM and readback](../../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **done** | **2,375 sprites** at 60 fps (pspGL 1,600); 2D gate 0; VRAM accounted in both depth configs; no full GE wait; no stubs; depth-correct cubes |
 
 Where the phase stands in one paragraph: the driver is **byte-identical to pspGL on the 2D corpus** — `batch_check`
 and `basic_shapes` both to 0 differing pixels, textures, alpha, dither, swizzle and all — and it now **beats pspGL's

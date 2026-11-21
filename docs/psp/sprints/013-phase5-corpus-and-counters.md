@@ -1,8 +1,9 @@
-# Sprint 013 — Pixel parity across the corpus, and the counter harness back
+# Sprint 013 (P5-S3) — Pixel parity across the corpus, and the counter harness back
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
+| Sprint | P5-S3 |
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |

@@ -1,8 +1,9 @@
-# Sprint 018 — 2D workload corpus, counters and boot-time VRAM budget
+# Sprint 018 (P7-S1) — 2D workload corpus, counters and boot-time VRAM budget
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
+| Sprint | P7-S1 |
 | Branch / base commit | `master` @ `01325cf8` (sprint 017 closed; phase 6 done) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b23` (driver unchanged; the sprint is a harness) |
@@ -23,7 +24,7 @@ so.
    count; tile maps with atlas runs, not tile count"), the four workloads, and the 512-pixel rule.
 2. `../memory-map.md` §3 and §“VRAM: 2 MB is the whole budget” — the framebuffer/list/arena map and the allocator
    the budget line is read from.
-3. `../sprints/016-phase6-residency-eviction.md` T4 — the marker-file pattern and the `pspguVramReport` /
+3. `../sprints/016-phase6-residency-eviction.md` (P6-S3) T4 — the marker-file pattern and the `pspguVramReport` /
    `pspguResidencyStats` symbols this harness reuses.
 4. `psp-tests/bunnymark/main.c` and `psp-tests/bunnymark/psp_counters.{c,h}` — the `SPLIT work/swap` timing and
    the `--wrap` counters at the GL boundary.

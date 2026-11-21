@@ -1,8 +1,9 @@
-# Sprint 014 — Ceiling, VRAM and readback: closing phase 5
+# Sprint 014 (P5-S4) — Ceiling, VRAM and readback: closing phase 5
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
+| Sprint | P5-S4 |
 | Branch / base commit | `master` @ `de61e4cf` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b16` (pspgu: 3 buffers, 2 lists + arenas, readback, no stubs) |

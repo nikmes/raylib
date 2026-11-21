@@ -1,8 +1,9 @@
-# Sprint 007 — Batch skeleton, and the measurement that decides the phase
+# Sprint 007 (P4-S1) — Batch skeleton, and the measurement that decides the phase
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher/index.md) |
+| Sprint | P4-S1 |
 | Branch / base commit | `master` @ `3bd7830b` |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `b1` unbatched `libraylib.a` sha256 `0b0a7aeb…`, `b2` batched `2ee10d2a…` |

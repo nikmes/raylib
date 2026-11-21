@@ -201,15 +201,15 @@ percent; the ceiling is pixels. Which lever matters next depends on one measurem
 
 ## Sprints and features## Sprints and features
 
-- [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../../sprints/007-phase4-batch-skeleton.md)
+- [P4-S1 — Sprint 007 — Batch skeleton, and the measurement that decides the phase](../../sprints/007-phase4-batch-skeleton.md)
   — **done**. The smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms
   of one commit, and the pending-texture rule that makes batching work at all. 62.6 → 16.7 µs per sprite; the
   residual is linear in vertices and flat in pixels
-- [Sprint 008 — Two-vertex sprites: the last lever inside GL11](../../sprints/008-phase4-sprite-primitive.md)
+- [P4-S2 — Sprint 008 — Two-vertex sprites: the last lever inside GL11](../../sprints/008-phase4-sprite-primitive.md)
   — **done**. Axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, pixel-identical), and the discovery that the
   library had never been compiled with optimisation: `-O2` took 1,000 sprites from 33.37 to **16.68 ms**. The
   residual is now blended fill, not submission
-- [Sprint 009 — The per-sprite CPU budget, and shipping the batch](../../sprints/009-phase4-inline-vertex-path.md)
+- [P4-S3 — Sprint 009 — The per-sprite CPU budget, and shipping the batch](../../sprints/009-phase4-inline-vertex-path.md)
   — the last sprint of this phase. `work = 0.98 ms + 7.08 µs × sprites` is what puts the 60 fps ceiling at 1,500:
   inline the vertex push path (it is cross-translation-unit call overhead, not arithmetic), add a texture-bind
   cache, give sprite and triangle runs their own buffers so a mixed scene stops flushing per sprite (83.4 ms today),

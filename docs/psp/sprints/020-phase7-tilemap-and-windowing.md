@@ -1,8 +1,9 @@
-# Sprint 020 — Tile maps and 512-pixel windowing
+# Sprint 020 (P7-S3) — Tile maps and 512-pixel windowing
 
 | | |
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
+| Sprint | P7-S3 |
 | Branch / base commit | `master` @ `7e26613b` (sprint 019 closed) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | pspgu `b24` (upload + window split); probe and scene builds |
@@ -21,8 +22,8 @@ height to be powers of two **≤512**, and `tbw` (the row stride) may be **up to
 
 **Read before acting**, in this order:
 
-1. `../sprints/018-phase7-corpus-and-budget.md` §7 — the 512 audit table and the silent-upload finding.
-2. `../sprints/019-phase7-text-work.md` §9 — the font guard, so the general path does not regress it.
+1. `../sprints/018-phase7-corpus-and-budget.md` (P7-S1) §7 — the 512 audit table and the silent-upload finding.
+2. `../sprints/019-phase7-text-work.md` (P7-S2) §9 — the font guard, so the general path does not regress it.
 3. `../phases/07-2d-specialisation/index.md` — R1 (window slicing), the tile-map task and the phase exit criterion.
 4. `../memory-map.md` §4 — the VRAM map and the corrected width >512 wording.
 5. `tools/pspgu/gl_texture.c` — `uploadShadowToVram`, `applyTexture`, `residencyAlloc`, `swizzledOffset`;
