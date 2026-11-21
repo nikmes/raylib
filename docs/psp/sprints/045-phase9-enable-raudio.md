@@ -4,7 +4,7 @@
 |---|---|
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S1 |
-| Branch / base commit | `master` @ `e307fe05` (drafted 2026-11-21; pin to the open sha when started) |
+| Branch / base commit | `master` @ `02559f25` (docs commit; pin to the freeze sha before T2) |
 | Started / closed | — / — |
 | Build number(s) | `audio b1`; pspgu `b24` unchanged |
 | Tasks | 0/7 done |
@@ -62,6 +62,13 @@ command and the object size in §9. Then create `psp-tests/audio_smoke` from `ba
 - **Check the backend at runtime.** After `ma_context_init`, require
   `AUDIO.System.context.backend == ma_backend_custom` and log a failure; do not rely on `MA_ASSERT`, which may
   be compiled out.
+- **Set every callback you rely on, including `onContextInit`.** Custom backend selection copies
+  `ctxConfig.custom` by value, but `ma_context_init` still requires a non-NULL `onContextInit` or it returns
+  `MA_NO_BACKEND`. Set `onContextInit`, `onContextUninit`, `onDeviceInit`, `onDeviceStart`, `onDeviceStop`,
+  `onDeviceUninit` and `onDeviceWrite` explicitly.
+- **Have a fallback for thread creation.** If `ma_thread_priority_high`/realtime or the 32 KiB stack fails on
+  PSP pthreads, retry with the default priority/stack and log the result; do not turn a priority mismatch into
+  a silent audio-init failure.
 - **No channel reserve, no `sceAudio` call, no audible output in this sprint.** The silent backend consumes
   frames and returns `MA_SUCCESS`; the first real output is P9-S2.
 - **Keep the renderer byte-identical.** No rlgl, pspgu or platform-render change; `batch_check` and the
@@ -132,11 +139,11 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Contract check**: confirm the Phase 9 page has the corrected f32/s16 split, the `onDeviceWrite` requirement and the split regular/SRC block rules | `todo` | `git diff docs/psp/phases/09-audio/index.md` contains the corrections; no remaining "set `AUDIO_DEVICE_FORMAT` to s16" | — |
-| T2 | **Build integration**: remove `-DSUPPORT_MODULE_RAUDIO=0`; add `-DMA_NO_RUNTIME_LINKING -DMA_ENABLE_ONLY_SPECIFIC_BACKENDS -DMA_ENABLE_CUSTOM` to the PSP block; keep `RAYLIB_MODULE_AUDIO=TRUE` | `todo` | `make PLATFORM=PLATFORM_PSP -j8` builds with 0 errors; `ar t libraylib.a` contains a non-empty `raudio.o` | — |
-| T3 | **Silent backend**: add `src/platforms/raudio_psp.c` with `ma_backend_callbacks` for context/device init/start/stop/uninit and `onDeviceWrite` that consumes, reports and paces every block; descriptor s16, 2 ch, 44100, 1024 frames, 2 periods | `todo` | backend compiles; `onDeviceWrite` sets frames written and sleeps/waites for the block; callbacks/s logged; no `sceAudio*` call in the file | — |
-| T4 | **Wire `InitAudioDevice`**: under `PLATFORM_PSP`, set `ctxConfig.custom` and call `ma_context_init()` with `{ ma_backend_custom }`; set `AUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024`; set thread priority (start with `ma_thread_priority_high`, record whether realtime is accepted) and stack (start 32 KiB); runtime-check the backend | `todo` | boot log prints `Backend: miniaudio | Custom`; a deliberate NULL/NULL fallback does not report ready; priority/stack logged | — |
-| T5 | **Link line**: create `psp-tests/audio_smoke` from `basic_shapes` (bounded loop, `DONE` + sleep); add `-lpspaudio -lpthread -latomic` after `-lraylib`; build and link | `todo` | link succeeds; `psp-nm -u` **on the ELF** has no `__atomic_*`, `dlopen` or `dlsym`; `libraylib.a` objects may still reference `__atomic_*` (resolved by `-latomic`) | — |
+| T1 | **Contract check**: confirm the committed Phase 9 page has the corrected f32/s16 split, the `onDeviceWrite` requirement and the split regular/SRC block rules | `todo` | `git show HEAD:docs/psp/phases/09-audio/index.md` contains `f32, stereo, rate from the backend` and the `64 samples` regular-channel rule; no remaining instruction to set `AUDIO_DEVICE_FORMAT` to s16 | — |
+| T2 | **Build integration**: remove `-DSUPPORT_MODULE_RAUDIO=0`; add `-DMA_NO_RUNTIME_LINKING -DMA_ENABLE_ONLY_SPECIFIC_BACKENDS -DMA_ENABLE_CUSTOM` to the PSP block; keep `RAYLIB_MODULE_AUDIO=TRUE`; update the stale audio comment | `todo` | `make PLATFORM=PLATFORM_PSP -j8` builds with 0 errors; `ar p libraylib.a raudio.o \| wc -c` is non-zero; `psp-nm libraylib.a` shows `InitAudioDevice` | — |
+| T3 | **Silent backend**: add `src/platforms/raudio_psp.c` with non-NULL `ma_backend_callbacks` (including `onContextInit`/`onContextUninit`) and `onDeviceWrite` that consumes, reports and paces every block; include `pspthreadman.h` for the delay and `runClocks`; descriptor s16, 2 ch, 44100, 1024 frames, 2 periods | `todo` | backend compiles; `onContextInit` non-NULL; `onDeviceWrite` sets frames written and sleeps/waits for the block; callbacks/s logged; no `sceAudio*` call in the file | — |
+| T4 | **Wire `InitAudioDevice`**: under `PLATFORM_PSP`, set `ctxConfig.custom` and call `ma_context_init()` with `{ ma_backend_custom }`; set `AUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024` (PSP Makefile or guarded source); set thread priority (start with `ma_thread_priority_high`, record whether realtime is accepted) and stack (start 32 KiB), with a default fallback; runtime-check the backend | `todo` | boot log prints `Backend: miniaudio / Custom`; a local build that skips `ctxConfig.custom` logs a context failure and `IsAudioDeviceReady() == false`; priority/stack/fallback logged | — |
+| T5 | **Link line**: create `psp-tests/audio_smoke` from `basic_shapes` with `InitAudioDevice()` / `CloseAudioDevice()` and a ready check; add `-lpspaudio -lpthread -latomic` after `-lraylib`; build and link | `todo` | link succeeds; `psp-nm -u` **on the ELF** has no `__atomic_*`, `dlopen` or `dlsym`; the app logs ready or a clear failure; `libraylib.a` objects may still reference `__atomic_*` (resolved by `-latomic`) | — |
 | T6 | **Boot and regression**: run 600 frames of the silent smoke app; measure callbacks/s and audio-thread `runClocks`; run `batch_check` and the 018–021 gates | `todo` | `DONE frames 600`; `IsAudioDeviceReady() == true`; audio thread near idle; gates byte-identical to the control | — |
 | T7 | **Record the build facts**: `.text` growth, object size, link line, boot line, callback rate, audio-thread `runClocks`; write to §9 and the Phase 9 page | `todo` | numbers in §9; `git diff -- examples/` empty | — |
 
