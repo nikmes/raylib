@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
 | Branch / base commit | `master` @ `7e26613b` (sprint 019 closed) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | pspgu `b24` (upload + window split); probe and scene builds |
-| Tasks | 0/6 done |
+| Tasks | 6/6 done |
 
 ## 0. Handover
 
@@ -117,23 +117,23 @@ text path, cache-strip widths (023), and shape/sprite fast paths (021).
 
 ## 4. Preconditions
 
-- [ ] Sprint 019 closed at `7e26613b`; pspgu `b23` and the text guard are in the tree
-- [ ] `/home/psp/evidence/sprint018/` and `sprint019/` baselines are present
-- [ ] `par_pspgl.raw` (`b69830b8…`) is present in `/tmp/s3`
-- [ ] `psp_sdk_660` debug source confirms width/height ≤512 and `tbw` ≤1024
-- [ ] Device loop available: `usbhostfs_pc` at `/tmp/s3`, `pspsh`, `reset` between runs
-- [ ] pspGL restorable (`2ab7378e`)
+- [x] Sprint 019 closed at `7e26613b`; pspgu `b23` and the text guard are in the tree
+- [x] `/home/psp/evidence/sprint018/` and `sprint019/` baselines are present
+- [x] `par_pspgl.raw` (`b69830b8…`) is present in `/tmp/s3`
+- [x] `psp_sdk_660` debug source confirms width/height ≤512 and `tbw` ≤1024
+- [x] Device loop available: `usbhostfs_pc` at `/tmp/s3`, `pspsh`, `reset` between runs
+- [x] pspGL restorable (`2ab7378e`)
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Window probe** (`psp-tests/gu_window`): 1024×128 and 128×1024 sheets, linear and swizzled, windows 0/512 with full stride; sample edge pixels | `todo` | every window edge matches the source colour; marker states verdict per layout/orientation | |
-| T2 | **Upload to tbw 1024**: chunk the 8-row band at 512 px, support linear and swizzled; `tbw>1024` or `padW/padH>1024` fails loudly and the texture is not used | `todo` | a 1024×128 8888 uploads (no `exceeds` log), PSM/bytes correct; 2048-wide fails with one error | |
-| T3 | **Draw-time windows**: bind clamps width/height to 512; `glDrawArrays` splits sprites/quads and clips triangles into ≤512 windows with full-stride `tbw`, UV remap and per-window `sceGuTexImage`/`TexScale`; ≤512 path untouched | `todo` | oversized sprite/triangle captures equal the pre-sliced reference; no gap/duplicate at the seam; draw order preserved | |
-| T4 | **Oversize scene** (`MODE=oversize WIDE=1024 HIGH=128`, vertical and `ROTATE=20`): draw 1:1 with the boundary on screen and against a two-texture reference | `todo` | unrotated horizontal/vertical captures byte-identical to the reference; rotated has no seam gap and samples the expected colours | |
-| T5 | **Wide tile atlas** (`MODE=tiles ATLAS_WIDE=1`, `SCROLL=1`): 1024×128 atlas of 64×64 tiles, visible grid crossing x=512; draws/frame and work; compare with a two-texture atlas | `todo` | same pixels as the reference; draws scale with window/state runs, not the 28+ tiles; scrolled traversal recorded | |
-| T6 | **Regression**: 2D gate, 018 text/tile/particle, 019 text, mixed, VRAM/residency; a 512×512 texture still takes the old path | `todo` | gate `b69830b8…`; 018/019 hashes unchanged; 0 evictions in fitting scenes; no silent `exceeds` skip | |
+| T1 | **Window probe** (`psp-tests/gu_window`): 1024×128 and 128×1024 sheets, linear and swizzled, windows 0/512 with full stride; sample edge pixels | `done` | every window edge matches the source colour; marker states verdict per layout/orientation | `VERDICT control=1 linear_h=1 swizzled_h=1 linear_v=1 swizzled_v=1`: all 8 window cases and the tbw=512 control pass. Instrument fixes before the result was believed: EDRAM **destination** writeback (not just the source), a 2 ms settle after the CPU-to-EDRAM copy, and a vertex writeback. `/home/psp/evidence/sprint020/gu_window.txt` |
+| T2 | **Upload to tbw 1024**: chunk the 8-row band at 512 px, support linear and swizzled; `tbw>1024` or `padW/padH>1024` fails loudly and the texture is not used | `done` | a 1024×128 8888 uploads (no `exceeds` log), PSM/bytes correct; 2048-wide fails with one error | 1024×128 and 128×1024 upload as **524,288 B**, no `exceeds`, free falls to 392,704 B; 2048×128 logs one `exceeds the GE 1024-pixel buffer limit`, creates no texture and leaves free at 916,992 B. Band chunking keeps the stack at 16 KiB |
+| T3 | **Draw-time windows**: bind clamps width/height to 512; `glDrawArrays` splits sprites/quads and clips triangles into ≤512 windows with full-stride `tbw`, UV remap and per-window `sceGuTexImage`/`TexScale`; ≤512 path untouched | `done` | oversized sprite/triangle captures equal the pre-sliced reference; no gap/duplicate at the seam; draw order preserved | A 1024×128 sprite is **2 window draws/frame** (2 switches), a rotated sprite **4/frame** (two triangles × two windows), the wide tile atlas **8/frame**, all with 0 extra binds. The triangle clipper needed a two-buffer fix (out-array overflow) before the rotated case stopped crashing |
+| T4 | **Oversize scene** (`MODE=oversize WIDE=1024 HIGH=128`, vertical and `ROTATE=20`): draw 1:1 with the boundary on screen and against a two-texture reference | `done` | unrotated horizontal/vertical captures byte-identical to the reference; rotated has no seam gap and samples the expected colours | 1024×128: `39d6547a…` both windowed and two-texture reference; 128×1024: `ec18cdf7…` both. Rotated 20°: no crash, red/green seam pixels present, 4 window draws and 1,800 vertices/frame |
+| T5 | **Wide tile atlas** (`MODE=tiles ATLAS_WIDE=1`, `SCROLL=1`): 1024×128 atlas of 64×64 tiles, visible grid crossing x=512; draws/frame and work; compare with a two-texture atlas | `done` | same pixels as the reference; draws scale with window/state runs, not the 28+ tiles; scrolled traversal recorded | Static: **8 window draws, 8 switches, 0 extra binds, 0.876 ms**; reference **8 binds + 8 draws, 0.925 ms**, captures `c34c01ce…` both. `SCROLL=1`: **5.2 window draws/frame, 1 bind, 0.878 ms**; reference 1,439 binds / 1,560 draws, 0.887 ms; captures match |
+| T6 | **Regression**: 2D gate, 018 text/tile/particle, 019 text, mixed, VRAM/residency; a 512×512 texture still takes the old path | `done` | gate `b69830b8…`; 018/019 hashes unchanged; 0 evictions in fitting scenes; no silent `exceeds` skip | text8/24 `3.353/9.081 ms` and captures match 019; tiles `2.882`, particles 500 `2.830`, mixed `10.129` and captures match 018; 512×256 takes the old path (`windraws=0`); gate byte-identical; all runs 0 evictions/reloads/failures. 512×512 8888 (1 MiB) does not fit beside the font, so the boundary was tested at 512×256 |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -252,56 +252,109 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T6.
+All runs at 300 frames, two per point. Evidence: `/home/psp/evidence/sprint020/`
+(`gu_window.txt`, `s20_*_run{1,2}.txt|raw|log`, `gate_b23.raw`, `SHA256SUMS`). Build marker: pspgu
+`b24`; `[PSPGU] GU up` still reports the b-number in the probe runs.
 
-**Probe verdict:**
+**Probe verdict** (`gu_window`, 4 samples per window):
 
 | layout | orient | win | tbp offset | edge colour | verdict |
 |---|---|---|---:|---|---|
-| linear | h | 0/1 | | | |
-| swizzled | h | 0/1 | | | |
-| linear | v | 0/1 | | | |
-| swizzled | v | 0/1 | | | |
+| linear | h | 0 / 1 | 0 / 2048 | `0000 52aa ad55 ffff` | pass / pass |
+| swizzled | h | 0 / 1 | 0 / 16384 | `0000 52aa ad55 ffff` | pass / pass |
+| linear | v | 0 / 1 | 0 / 262144 | `0000 52aa ad55 ffff` | pass / pass |
+| swizzled | v | 0 / 1 | 0 / 262144 | `0000 52aa ad55 ffff` | pass / pass |
+| control | h | 0 | 0 (tbw 512) | `0000 52aa ad55 ffff` | pass |
+
+`VERDICT control=1 linear_h=1 swizzled_h=1 linear_v=1 swizzled_v=1`. Instrument notes: the first runs
+failed only on the draw that followed a fresh CPU-to-EDRAM copy; the fixes were a destination-range writeback
+(pspgu's own upload does this), a 2 ms settle after the copy, and a vertex writeback. With those in place every
+layout works, so the driver keeps the swizzled layout.
 
 **Upload:**
 
 | texture | bytes | tbw | log | free after | verdict |
 |---|---:|---:|---|---:|---|
-| 1024×128 8888 | 524,288 | 1024 | | | |
-| 128×1024 8888 | 524,288 | 128 | | | |
-| 2048×64 8888 | rejected | 2048 | | | |
+| 1024×128 8888 | 524,288 | 1024 | no `exceeds` | 392,704 | loaded |
+| 128×1024 8888 | 524,288 | 128 | no `exceeds` | 392,704 | loaded |
+| 2048×128 8888 | — | 2048 | one `exceeds the GE 1024-pixel buffer limit` | 916,992 | rejected, no texture |
 
-**Oversize parity:**
+**Oversize parity** (SHA-256 prefix):
 
-| scene | reference SHA-256 | windowed SHA-256 | identical |
+| scene | reference | windowed | identical | window draws/frame |
+|---|---|---|---|---|
+| 1024×128 1:1 | `39d6547abb8dfa97` | `39d6547abb8dfa97` | yes | 2 |
+| 128×1024 1:1 | `ec18cdf7988c2e88` | `ec18cdf7988c2e88` | yes | 2 |
+| 1024×128 rotated 20° | — | `s20_osrotb` | seam red/green present | 4 |
+| 512×256 (≤512 path) | — | `s20_os512b` | old path | **0** |
+
+The 1024 windows draw in 2 submissions with 2 switches and no extra bind; the rotated sprite is two triangles,
+each split into two windows (4 submissions, 1,800 vertices/frame). The two-texture reference costs 2 binds/frame
+and 0.992 ms work; the windowed path 0 binds and 0.947 ms.
+
+**Wide tile atlas** (`ATLAS_WIDE=1`, 28 tiles, columns 6–12, x=512 boundary):
+
+| scene | objects | window draws/frame | switches/frame | binds/frame | work ms | reference match |
+|---|---:|---:|---:|---:|---:|---|
+| static | 28 | **8** | 8 | 0 (1/run) | 0.876 | `c34c01ce5220839c` both |
+| static, two-texture reference | 28 | — | — | 8 | 0.925 | — |
+| `SCROLL=1` | 28 | **5.2** | 5.2 | 0 (1/run) | 0.878 | matches `s20_tileswsref` |
+| `SCROLL=1`, two-texture reference | 28 | — | — | 4.8 avg | 0.887 | — |
+
+The windowed path emits one GE draw per window run, not per tile: 8 runs for 28 tiles, and 5.2 on average while
+scrolling. The two-texture reference needs the same number of draws but one texture bind per run; windowing keeps
+one bind for the whole atlas.
+
+**Regression:**
+
+| scene | sprint 020 | baseline | capture |
 |---|---|---|---|
-| 1024×128 1:1 | | | |
-| 128×1024 1:1 | | | |
-| 1024×128 rotated 20° | — | | seam samples |
+| text LINES=8 | 3.353 ms | 3.350 (019) | identical |
+| text LINES=24 | 9.081 ms | 9.069 (019) | identical |
+| tiles (128² atlas) | 2.882 ms | 3.228 (018) | identical |
+| particles 500 | 2.830 ms | 3.285 (018) | identical |
+| mixed | 10.129 ms | 10.053 (018) | identical |
+| `batch_check` gate | `b69830b8…` | `b69830b8…` | identical |
 
-**Tile atlas:**
-
-| scene | objects | windows/row | draws/frame | work ms | reference match |
-|---|---:|---:|---:|---:|---|
-| 1024×128 atlas, cols 6–12 | 28 | 2 | | | |
-| same, `SCROLL=1` | 28 | 2 | | | |
-
-**Regression:** 018/019 capture hashes, `batch_check` `b69830b8…`, VRAM/residency.
+Every fitting run: 0 evictions, 0 reloads, 0 failed. No `tbw … exceeds` silent skip appears in any 1024-wide run;
+the only failure log is the deliberate 2048 rejection.
 
 ## 8. Exit criteria
 
-- [ ] the probe records a verdict for linear and swizzled windows, horizontal and vertical
-- [ ] a 1024×128 and a 128×1024 8888 texture upload with `tbw` 1024/128 and no `exceeds` log
-- [ ] a `tbw` or padded dimension above 1024 fails loudly and the texture is not marked used
-- [ ] oversized unrotated sprites render byte-identical to the two-texture reference, seam included
-- [ ] an oversized rotated sprite has no gap or duplicated column at the seam
-- [ ] the wide tile atlas matches the two-texture reference and its draws follow windows/runs, not tiles
-- [ ] the ≤512 path is unchanged: 018/019 captures and the gate are byte-identical
-- [ ] no `tbw … exceeds the 512-pixel band` silent skip remains in any run
+- [x] the probe records a verdict for linear and swizzled windows, horizontal and vertical
+- [x] a 1024×128 and a 128×1024 8888 texture upload with `tbw` 1024/128 and no `exceeds` log
+- [x] a `tbw` or padded dimension above 1024 fails loudly and the texture is not marked used
+- [x] oversized unrotated sprites render byte-identical to the two-texture reference, seam included
+- [x] an oversized rotated sprite has no gap or duplicated column at the seam
+- [x] the wide tile atlas matches the two-texture reference and its draws follow windows/runs, not tiles
+- [x] the ≤512 path is unchanged: 018/019 captures and the gate are byte-identical
+- [x] no `tbw … exceeds the 512-pixel band` silent skip remains in any run
 
 ## 9. Result
 
-Not run yet.
+Sprint 020 closed 6/6. The general >512 hole from sprint 018 is closed: wide textures now upload and render
+through 512-pixel windows, and anything above the GE's 1024-pixel buffer limit fails loudly instead of sampling
+uninitialised VRAM.
+
+- **Probe:** the raw-GU probe proves full-stride windows work in **linear and swizzled** layouts, horizontal and
+  vertical: 1024×128 at `tbw=1024` (window 1 `tbp` 2,048 linear / 16,384 swizzled) and 128×1024 at `tbw=128`
+  (window 1 `tbp` 262,144). The first runs were instrument failures — source-only writeback, no settle, no vertex
+  writeback — not layout failures.
+- **Upload:** the 8-row band is chunked at 512 px, so `tbw=1024` keeps the 16 KiB stack. 1024×128 and 128×1024
+  load as 524,288 B with no `exceeds`; 2048×128 logs one error, creates no texture and leaves VRAM untouched.
+- **Windows:** a 1024×128 sprite is 2 GE draws and 2 switches/frame, with 0 extra binds; a rotated sprite is 4
+  (two triangles × two windows). The draw splitter keeps sprites and clipped triangles, remaps UVs into the window,
+  sets `sceGuTexImage`/`TexScale(1,1)` per window, and batches contiguous same-window pieces.
+- **Parity:** unrotated horizontal and vertical windowed captures are **byte-identical** to the two-texture
+  references (`39d6547a…`, `ec18cdf7…`), seams included. The rotated capture has the red/green seam and no crash;
+  the triangle clipper needed two 10-vertex buffers before that result was trustworthy.
+- **Tile atlas:** 28 tiles crossing x=512 emit **8 window draws/frame with one bind** (0.876 ms); the two-texture
+  reference needs 8 binds + 8 draws (0.925 ms) for identical pixels. Scrolling averages 5.2 window runs/frame with
+  one bind, versus 1,439 binds over 300 frames for the reference.
+- **≤512 path:** a 512×256 texture reports `windraws=0` and takes the old `applyTexture`/`glDrawArrays` path. A
+  512×512 8888 texture is 1 MiB and does not fit beside the font, so the boundary was tested at 512×256.
+- **Regression:** text 8/24, tiles, particles and mixed captures match 018/019; `batch_check` is byte-identical to
+  pspGL (`b69830b8…`); every fitting run has 0 evictions/reloads/failures.
 
 ## 10. Follow-ups
 
@@ -309,5 +362,5 @@ Not run yet.
   vertices, 1 bind + 1 unbind per frame).
 - **Sprint 022 — particles**: one dynamic stream per texture run; the 018 baseline is 1 draw at 2,000.
 - **Sprint 023 — cache strips, regression, phase close**: the strip A/B, full sample comparison, exit table.
-- If the probe rejects swizzled windows, the driver uses the linear layout for oversized textures and records
-  the cost; that becomes a Phase 11 item, not a silent fallback.
+- A `tbw` above 1024 (or a padded dimension above 1024) is a hard limit and is now reported; assets above it must
+  be split at load. This is recorded for the asset-pipeline work, not deferred silently.

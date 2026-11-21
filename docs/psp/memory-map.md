@@ -896,6 +896,15 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   above 512 in either dimension is rejected in `LoadFontFromMemory` (one error, default font, no texture);
   KAISG 32 px = 512×256, KAISG 64 px = 1024×512 rejected. Two 512×256 8888 atlases do not fit the ~917 KiB tail
   (recorded: 3 evictions / 1 reload / 300 failed draws).
+- **512-pixel windows for wide textures (sprint 020, b24):** the raw-GU probe proves full-stride windows in
+  **linear and swizzled** layouts, horizontal and vertical (1024×128 at `tbw=1024`, 128×1024 at `tbw=128`). The
+  upload chunks the 8-row band at 512 px, so `tbw=1024` keeps a 16 KiB stack; `padW/padH>1024` logs one error and
+  creates no texture. `glDrawArrays` splits sprites and clipped triangles into ≤512 windows with UV remap and
+  per-window `sceGuTexImage`/`TexScale(1,1)`; contiguous same-window pieces batch. Measured: 1024×128 = **2 window
+  draws/frame**, rotated = 4, wide 1024×128 tile atlas (28 tiles) = **8 draws and 1 bind** vs 8 binds for the
+  two-texture reference; captures are byte-identical to the pre-sliced references (`39d6547a…`, `ec18cdf7…`,
+  `c34c01ce…`). The ≤512 path is unchanged (`windraws=0`), the gate is `b69830b8…`, and 512×512 8888 (1 MiB) does
+  not fit beside the font, so the boundary was tested at 512×256.
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

@@ -30,6 +30,14 @@ FONT_SIZE2 ?= 12
 FONT_GLYPHS ?= 95
 FONT_ORDER ?= default
 
+# Sprint 020: oversized texture and wide tile atlas.
+WIDE ?= 1024
+HIGH ?= 128
+ROTATE ?= 0
+REF ?= 0
+ATLAS_WIDE ?= 0
+ATLAS_REF ?= 0
+
 CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
          -DSCENE_LINES=$(LINES) -DBUDGET_FLOOR_KB=$(BUDGET_FLOOR_KB) \
          -DFONT_PATH="\"$(FONT_PATH)\"" -DFONT_SIZE=$(FONT_SIZE) -DFONT_SIZE2=$(FONT_SIZE2) -DFONT_GLYPHS=$(FONT_GLYPHS)
@@ -51,6 +59,17 @@ ifeq ($(FONT_ORDER),reverse)
     CFLAGS += -DFONT_ORDER_REVERSE
 endif
 
+ifeq ($(ATLAS_WIDE),1)
+    CFLAGS += -DATLAS_WIDE
+endif
+ifeq ($(ATLAS_REF),1)
+    CFLAGS += -DATLAS_REF
+endif
+ifeq ($(REF),1)
+    CFLAGS += -DOVERSIZE_REF
+endif
+CFLAGS += -DOVERSIZE_W=$(WIDE) -DOVERSIZE_H=$(HIGH) -DOVERSIZE_ROTATE=$(ROTATE)
+
 ifeq ($(MODE),text)
     CFLAGS += -DMODE_TEXT
 else ifeq ($(MODE),tiles)
@@ -63,8 +82,10 @@ else ifeq ($(MODE),mixed)
     CFLAGS += -DMODE_MIXED
 else ifeq ($(MODE),font)
     CFLAGS += -DMODE_FONT
+else ifeq ($(MODE),oversize)
+    CFLAGS += -DMODE_OVERSIZE
 else
-    $(error MODE must be text, tiles, particles, shapes, mixed or font)
+    $(error MODE must be text, tiles, particles, shapes, mixed, font or oversize)
 endif
 
 ifdef SCROLL

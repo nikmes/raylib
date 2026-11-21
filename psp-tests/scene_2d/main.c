@@ -55,6 +55,7 @@ typedef struct {
 void pspguVramStats(PspGuVramStats *out);
 void pspguVramReport(const char *when);
 void pspguResidencyStats(PspGuResidencyStats *out);
+void pspguWindowStats(unsigned int *draws, unsigned int *switches);
 
 PSP_MODULE_INFO("scene_2d", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
@@ -86,6 +87,15 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #ifndef FONT_GLYPHS
     #define FONT_GLYPHS 95
 #endif
+#ifndef OVERSIZE_W
+    #define OVERSIZE_W 1024
+#endif
+#ifndef OVERSIZE_H
+    #define OVERSIZE_H 128
+#endif
+#ifndef OVERSIZE_ROTATE
+    #define OVERSIZE_ROTATE 0
+#endif
 
 #define MAX_FRAMES     2000
 #define MAX_PARTICLES  4096
@@ -110,7 +120,12 @@ static int  tileOffsetX;
 static int  tileOffsetY;
 
 #if defined(MODE_TILES) || defined(MODE_MIXED)
+#if !defined(ATLAS_WIDE) || !defined(ATLAS_REF)
 static Texture2D tileTex;
+#endif
+#ifdef ATLAS_REF
+static Texture2D tileTexA, tileTexB;
+#endif
 #endif
 #if defined(MODE_PARTICLES) || defined(MODE_MIXED)
 static Texture2D particleTex;
@@ -334,6 +349,35 @@ static const Color tilePalette[8] = {
 
 static void tilesInit(void)
 {
+#ifdef ATLAS_WIDE
+    // 1024x128: 16 x 2 tiles of 64 px. The x=512 boundary falls inside a tile sheet, so
+    // a row that crosses it exercises the window split.
+    Image atlas = GenImageColor(1024, 128, BLANK);
+
+    for (int i = 0; i < 32; i++)
+    {
+        int x = (i%16)*64;
+        int y = (i/16)*64;
+        Color c = tilePalette[i%8];
+
+        ImageDrawRectangle(&atlas, x, y, 64, 64, c);
+        ImageDrawRectangle(&atlas, x + (i%3)*7 + 2, y + (i%4)*5 + 2, 8, 5, BLACK);
+    }
+
+#ifdef ATLAS_REF
+    {
+        Image a = ImageFromImage(atlas, (Rectangle){ 0, 0, 512, 128 });
+        Image b = ImageFromImage(atlas, (Rectangle){ 512, 0, 512, 128 });
+        tileTexA = LoadTextureFromImage(a);
+        tileTexB = LoadTextureFromImage(b);
+        UnloadImage(a); UnloadImage(b);
+    }
+#else
+    tileTex = LoadTextureFromImage(atlas);
+#endif
+
+    UnloadImage(atlas);
+#else
     Image atlas = GenImageColor(128, 128, BLANK);
 
     for (int i = 0; i < 64; i++)
@@ -349,10 +393,50 @@ static void tilesInit(void)
 
     tileTex = LoadTextureFromImage(atlas);
     UnloadImage(atlas);
+#endif
 }
 
 static void tilesDraw(void)
 {
+#ifdef ATLAS_WIDE
+    const int cols = 7;
+    const int rows = 4;
+    int col0 = 6;
+    int row0 = 0;
+
+#ifdef SCROLL
+    col0 += (gFrame/60) % (MAP_W - cols);
+    row0 += (gFrame/60) % (MAP_H - rows);
+#endif
+
+    for (int vy = 0; vy < rows; vy++)
+    {
+        for (int vx = 0; vx < cols; vx++)
+        {
+            int mx = col0 + vx;
+            int my = row0 + vy;
+            int idx = (mx%16) + (my%2)*16;      // adjacent visible columns stay adjacent in the atlas
+            int gx = (idx%16)*64;
+            int gy = (idx/16)*64;
+            Rectangle src = { (float)gx, (float)gy, 64.0f, 64.0f };
+            Rectangle dst = { (float)(vx*64), (float)(vy*64), 64.0f, 64.0f };
+
+#ifdef ATLAS_REF
+            if (gx < 512)
+            {
+                DrawTexturePro(tileTexA, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+            }
+            else
+            {
+                src.x = (float)(gx - 512);
+                DrawTexturePro(tileTexB, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+            }
+#else
+            DrawTexturePro(tileTex, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+#endif
+        }
+    }
+#else
     Rectangle src = { 0.0f, 0.0f, TILE, TILE };
 
     for (int vy = 0; vy < TILES_Y; vy++)
@@ -370,6 +454,7 @@ static void tilesDraw(void)
             DrawTexturePro(tileTex, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
         }
     }
+#endif
 }
 #endif
 
@@ -557,6 +642,120 @@ static void fontDraw(void)
 #endif
 
 // ---------------------------------------------------------------------------------
+// Oversized texture scene (sprint 020 T4)
+// ---------------------------------------------------------------------------------
+#if defined(MODE_OVERSIZE)
+#ifndef OVERSIZE_REF
+static Texture2D oversizeTex;
+#else
+static Texture2D oversizeRefA, oversizeRefB;
+#endif
+
+static const Color oversizeGray[4] = {
+    { 0, 0, 0, 255 }, { 85, 85, 85, 255 }, { 170, 170, 170, 255 }, { 255, 255, 255, 255 }
+};
+
+static Image makeOversizeImage(int w, int h)
+{
+    Image img = GenImageColor(w, h, BLACK);
+
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            ImageDrawPixel(&img, x, y, oversizeGray[((x/16) + (y/16))%4]);
+        }
+    }
+
+    if (w > 512)
+    {
+        for (int y = 0; y < h; y++)
+        {
+            ImageDrawPixel(&img, 511, y, RED);
+            ImageDrawPixel(&img, 512, y, GREEN);
+        }
+    }
+    if (h > 512)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            ImageDrawPixel(&img, x, 511, RED);
+            ImageDrawPixel(&img, x, 512, GREEN);
+        }
+    }
+
+    return img;
+}
+
+static void oversizeInit(void)
+{
+    Image img = makeOversizeImage(OVERSIZE_W, OVERSIZE_H);
+
+#ifdef OVERSIZE_REF
+    if (OVERSIZE_W > 512)
+    {
+        Image a = ImageFromImage(img, (Rectangle){ 0, 0, 512, (float)OVERSIZE_H });
+        Image b = ImageFromImage(img, (Rectangle){ 512, 0, (float)(OVERSIZE_W - 512), (float)OVERSIZE_H });
+        oversizeRefA = LoadTextureFromImage(a);
+        oversizeRefB = LoadTextureFromImage(b);
+        UnloadImage(a); UnloadImage(b);
+    }
+    else
+    {
+        Image a = ImageFromImage(img, (Rectangle){ 0, 0, (float)OVERSIZE_W, 512 });
+        Image b = ImageFromImage(img, (Rectangle){ 0, 512, (float)OVERSIZE_W, (float)(OVERSIZE_H - 512) });
+        oversizeRefA = LoadTextureFromImage(a);
+        oversizeRefB = LoadTextureFromImage(b);
+        UnloadImage(a); UnloadImage(b);
+    }
+#else
+    oversizeTex = LoadTextureFromImage(img);
+#endif
+
+    UnloadImage(img);
+}
+
+static void oversizeDraw(void)
+{
+    if (OVERSIZE_ROTATE != 0)
+    {
+#ifndef OVERSIZE_REF
+        Rectangle src = { 0.0f, 0.0f, (float)OVERSIZE_W, (float)OVERSIZE_H };
+        Rectangle dst = { 0.0f, 106.0f, 480.0f, 60.0f };
+        DrawTexturePro(oversizeTex, src, dst, (Vector2){ 240.0f, 30.0f }, (float)OVERSIZE_ROTATE, WHITE);
+#endif
+        return;
+    }
+
+    float x = (OVERSIZE_W > 512)? -272.0f : 0.0f;
+    float y = (OVERSIZE_H > 512)? -376.0f : 0.0f;
+
+#ifndef OVERSIZE_REF
+    Rectangle src = { 0.0f, 0.0f, (float)OVERSIZE_W, (float)OVERSIZE_H };
+    DrawTexturePro(oversizeTex, src, (Rectangle){ x, y, (float)OVERSIZE_W, (float)OVERSIZE_H },
+                   (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+#else
+    if (OVERSIZE_W > 512)
+    {
+        DrawTexturePro(oversizeRefA, (Rectangle){ 0, 0, 512, (float)OVERSIZE_H },
+                       (Rectangle){ x, y, 512, (float)OVERSIZE_H }, (Vector2){ 0, 0 }, 0.0f, WHITE);
+        DrawTexturePro(oversizeRefB, (Rectangle){ 0, 0, (float)(OVERSIZE_W - 512), (float)OVERSIZE_H },
+                       (Rectangle){ x + 512, y, (float)(OVERSIZE_W - 512), (float)OVERSIZE_H },
+                       (Vector2){ 0, 0 }, 0.0f, WHITE);
+    }
+    else
+    {
+        DrawTexturePro(oversizeRefA, (Rectangle){ 0, 0, (float)OVERSIZE_W, 512 },
+                       (Rectangle){ x, y, (float)OVERSIZE_W, 512 }, (Vector2){ 0, 0 }, 0.0f, WHITE);
+        DrawTexturePro(oversizeRefB, (Rectangle){ 0, 0, (float)OVERSIZE_W, (float)(OVERSIZE_H - 512) },
+                       (Rectangle){ x, y + 512, (float)OVERSIZE_W, (float)(OVERSIZE_H - 512) },
+                       (Vector2){ 0, 0 }, 0.0f, WHITE);
+    }
+#endif
+}
+#endif
+
+// ---------------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------------
 static int sceneObjects(void)
@@ -564,13 +763,19 @@ static int sceneObjects(void)
 #if defined(MODE_TEXT)
     return textGlyphs;
 #elif defined(MODE_TILES)
-    return TILES_X*TILES_Y;
+    #ifdef ATLAS_WIDE
+        return 28;
+    #else
+        return TILES_X*TILES_Y;
+    #endif
 #elif defined(MODE_PARTICLES)
     return particleCount;
 #elif defined(MODE_SHAPES)
     return SCENE_COUNT*3;
 #elif defined(MODE_FONT)
     return TextLength(FONT_SAMPLE);
+#elif defined(MODE_OVERSIZE)
+    return 1;
 #else
     return textGlyphs + TILES_X*TILES_Y + ((SCENE_COUNT < 500)? SCENE_COUNT : 500) + 200*3;
 #endif
@@ -579,7 +784,7 @@ static int sceneObjects(void)
 static int sceneRuns(void)
 {
 #if defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_PARTICLES) || \
-    defined(MODE_SHAPES) || defined(MODE_FONT)
+    defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE)
     return 1;
 #else
     return 4;
@@ -598,6 +803,8 @@ static void sceneInit(void)
     // No assets; the default white texture is the only texture.
 #elif defined(MODE_FONT)
     fontInit();
+#elif defined(MODE_OVERSIZE)
+    oversizeInit();
 #else
     textInit();
     tilesInit();
@@ -610,7 +817,7 @@ static void sceneUpdate(void)
 {
 #if defined(MODE_PARTICLES)
     particlesUpdate();
-#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT)
+#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE)
     // stationary
 #else
     particlesUpdate();
@@ -639,6 +846,8 @@ static void sceneDraw(void)
     shapesDraw();
 #elif defined(MODE_FONT)
     fontDraw();
+#elif defined(MODE_OVERSIZE)
+    oversizeDraw();
 #else
     tilesDraw();
     particlesDraw();
@@ -674,6 +883,8 @@ static const char *sceneName(void)
     return "shapes";
 #elif defined(MODE_FONT)
     return "font";
+#elif defined(MODE_OVERSIZE)
+    return "oversize";
 #else
     return "mixed";
 #endif
@@ -740,6 +951,8 @@ int main(void)
     unsigned int cBinds = pspCounters.binds;
     unsigned int cUnbinds = pspCounters.unbinds;
     unsigned int cVerts = pspCounters.arrayVertices;
+    unsigned int winDraws = 0, winSwitches = 0;
+    pspguWindowStats(&winDraws, &winSwitches);
 
     int residencyMoved = (resAfter.evictions != resBefore.evictions) ||
                          (resAfter.reloads != resBefore.reloads) ||
@@ -777,23 +990,40 @@ int main(void)
 
     const char *verdict = (budgetOk && !residencyMoved)? "PASS" : "FAIL";
 
-    char fontExtra[160] = "";
+    char sceneExtra[240] = "";
 #if defined(MODE_FONT)
-    snprintf(fontExtra, sizeof(fontExtra),
+    snprintf(sceneExtra, sizeof(sceneExtra),
              " fontsize=%d fontglyphs=%d tex=%dx%d fallback=%d mismatches=%d tex2=%dx%d mismatches2=%d",
              FONT_SIZE, probeFont.glyphCount, probeFont.texture.width, probeFont.texture.height,
              probeFallback, probeMismatches, probeFont2.texture.width, probeFont2.texture.height,
              probeMismatches2);
+#elif defined(MODE_OVERSIZE)
+    snprintf(sceneExtra, sizeof(sceneExtra), " oversize=%dx%d ref=%d rotate=%d",
+             OVERSIZE_W, OVERSIZE_H,
+#if defined(OVERSIZE_REF)
+             1,
+#else
+             0,
+#endif
+             OVERSIZE_ROTATE);
+#elif defined(MODE_TILES) && defined(ATLAS_WIDE)
+    snprintf(sceneExtra, sizeof(sceneExtra), " atlas=1024x128 ref=%d",
+#if defined(ATLAS_REF)
+             1);
+#else
+             0);
+#endif
 #endif
 
     SaveFileText("scene2d_done.txt",
-                 TextFormat("DONE mode=%s objects=%i runs=%i frames=%i begins=%u ends=%u draws=%u binds=%u unbinds=%u verts=%u work=%.3f swap=%.3f sim=%.3f median=%.3f p95=%.3f free=%u largest=%u evict=%u reload=%u failed=%u verdict=%s%s\n",
+                 TextFormat("DONE mode=%s objects=%i runs=%i frames=%i begins=%u ends=%u draws=%u binds=%u unbinds=%u verts=%u windraws=%u winswitch=%u work=%.3f swap=%.3f sim=%.3f median=%.3f p95=%.3f free=%u largest=%u evict=%u reload=%u failed=%u verdict=%s%s\n",
                             sceneName(), sceneObjects(), sceneRuns(), frames,
                             cBegins, cEnds, cDraws, cBinds, cUnbinds, cVerts,
+                            winDraws, winSwitches,
                             workAvg, swapAvg, simAvg, median*1000.0f, p95*1000.0f,
                             vram.free, vram.largest,
                             resAfter.evictions, resAfter.reloads, resAfter.failed,
-                            verdict, fontExtra));
+                            verdict, sceneExtra));
 
     TraceLog(LOG_INFO, "DONE scene=%s objects=%i runs=%i frames=%i %s", sceneName(),
              sceneObjects(), sceneRuns(), frames, verdict);

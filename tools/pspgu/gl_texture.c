@@ -209,7 +209,8 @@ static unsigned int texBytes(const PspGuTexture *t)
 
 // Write the packed linear shadow to VRAM. One 8-row band at a time keeps the source reads
 // sequential and cache-resident; the destination is the swizzled block layout, followed
-// by one exact range writeback. No full-image scratch and no whole-cache invalidate.
+// by one exact range writeback. A band is copied in 512-pixel chunks so a tbw up to 1024
+// needs no 32 KiB stack. No full-image scratch and no whole-cache invalidate.
 static void uploadShadowToVram(PspGuTexture *t)
 {
     int bpp = bytesPerTexel(t->guFormat);
@@ -228,26 +229,36 @@ static void uploadShadowToVram(PspGuTexture *t)
         return;
     }
 
-    if (t->tbw > 512)
+    if ((t->tbw > 1024) || (t->padH > 1024))
     {
-        pspguLog("texture %ux%u: tbw %d exceeds the 512-pixel band", t->width, t->height, t->tbw);
+        pspguLog("texture %ux%u: %d x %d buffer exceeds the GE 1024-pixel limit",
+                 t->width, t->height, t->tbw, t->padH);
         return;
     }
 
-    unsigned char band[8*512*4];
+    unsigned char band[8*512*4];       // 8 rows x 512 px x 8888 = 16 KiB
 
     for (unsigned int by = 0; by < (unsigned int)t->padH; by += 8)
     {
-        memcpy(band, t->shadow + (size_t)by*bandRow, bandRow*8);
-
-        for (unsigned int bx = 0; bx < (unsigned int)t->tbw; bx += texelsPerBlock)
+        for (unsigned int cx = 0; cx < (unsigned int)t->tbw; cx += 512)
         {
-            unsigned int block = (by/8)*(widthBytes/16) + bx/texelsPerBlock;
+            unsigned int chunk = (unsigned int)t->tbw - cx;
+            if (chunk > 512) chunk = 512;
+
+            unsigned int chunkRow = chunk*(unsigned int)bpp;
 
             for (unsigned int row = 0; row < 8; row++)
+                memcpy(band + row*chunkRow, t->shadow + (size_t)(by + row)*bandRow + cx*(unsigned int)bpp, chunkRow);
+
+            for (unsigned int bx = 0; bx < chunk; bx += texelsPerBlock)
             {
-                memcpy(base + (size_t)block*128 + row*16,
-                       band + row*bandRow + bx*bpp, 16);
+                unsigned int block = (by/8)*(widthBytes/16) + (cx + bx)/texelsPerBlock;
+
+                for (unsigned int row = 0; row < 8; row++)
+                {
+                    memcpy(base + (size_t)block*128 + row*16,
+                           band + row*chunkRow + bx*(unsigned int)bpp, 16);
+                }
             }
         }
     }
@@ -298,9 +309,16 @@ static void applyTexture(PspGuTexture *t)
 {
     pspguBeginFrame();
 
+    // sceGuTexImage width/height are capped at 512. For a larger texture this binds the
+    // first window; glDrawArrays replaces it with the correct window per draw.
+    int winW = (t->padW > 512)? 512 : t->padW;
+    int winH = (t->padH > 512)? 512 : t->padH;
+    float scaleU = ((t->padW > 512) || (t->padH > 512))? 1.0f : t->scaleU;
+    float scaleV = ((t->padW > 512) || (t->padH > 512))? 1.0f : t->scaleV;
+
     sceGuTexMode(t->guFormat, 0, 0, t->swizzled? GU_TRUE : GU_FALSE);
     // GU samples the allocated (padded) image. The logical size is restored by TexScale.
-    sceGuTexImage(0, t->padW, t->padH, t->tbw,
+    sceGuTexImage(0, winW, winH, t->tbw,
                   (void *)((unsigned char *)sceGeEdramGetAddr() + t->offset));
     // GU_TCC_RGBA: take the ALPHA from the texture, not from the vertex colour. Without
     // it every texel is opaque (the fragment alpha becomes the vertex alpha, which the
@@ -317,7 +335,7 @@ static void applyTexture(PspGuTexture *t)
     // Sprint 012's open item: TexScale is identity only for a power-of-two texture. A
     // padded one needs the logical/allocated ratio, or every sample is compressed into
     // the top-left of the padded image.
-    sceGuTexScale(t->scaleU, t->scaleV);
+    sceGuTexScale(scaleU, scaleV);
     sceGuTexOffset(0.0f, 0.0f);
     sceGuTexFlush();
 }
@@ -590,6 +608,24 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t->scaleU = (float)width / (float)t->padW;
     t->scaleV = (float)height / (float)t->padH;
 
+    // The GE buffer width/height is at most 1024 (width/height arguments to
+    // sceGuTexImage are still <=512 windows). A larger allocation cannot be sampled.
+    if ((t->padW > 1024) || (t->padH > 1024))
+    {
+        pspguLog("texture %u: %dx%d exceeds the GE 1024-pixel buffer limit (%d x %d)",
+                 currentTexture, width, height, t->padW, t->padH);
+        if (t->shadow != NULL)
+        {
+            if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+            else pspgu.shadowBytes = 0;
+            free(t->shadow);
+            t->shadow = NULL;
+            t->shadowBytes = 0;
+        }
+        t->used = 0;
+        return;
+    }
+
     unsigned int bytes = texBytes(t);
 
     if (textureLogEnabled)
@@ -825,6 +861,28 @@ void pspguResidencyStats(PspGuResidencyStats *out)
 void pspguSetTextureLog(int on)
 {
     textureLogEnabled = on? 1 : 0;
+}
+
+int pspguBoundTextureInfo(int *width, int *height, int *padW, int *padH, int *tbw,
+                          int *bpp, int *swizzled, unsigned int *offset)
+{
+    PspGuTexture *t = lookup(pspgu.boundTexture);
+
+    if ((t == NULL) || (t->padW <= 0) || (t->padH <= 0)) return 0;
+    if (t->padW > 512 || t->padH > 512)
+    {
+        if (width != NULL) *width = t->width;
+        if (height != NULL) *height = t->height;
+        if (padW != NULL) *padW = t->padW;
+        if (padH != NULL) *padH = t->padH;
+        if (tbw != NULL) *tbw = t->tbw;
+        if (bpp != NULL) *bpp = bytesPerTexel(t->guFormat);
+        if (swizzled != NULL) *swizzled = t->swizzled;
+        if (offset != NULL) *offset = t->offset;
+        return 1;
+    }
+
+    return 0;
 }
 
 void pspguTextureReport(const char *when)

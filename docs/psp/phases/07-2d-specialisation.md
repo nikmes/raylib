@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprints 018 and 019 done; 020–023 planned |
+| State | **in progress** — sprints 018–020 done; 021–023 planned |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
@@ -29,9 +29,10 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
       into separate compatible runs
 - [ ] **Particles**: one dynamic vertex stream per texture run, double or triple buffered; measure simulation
       cost separately from rendering
-- [ ] Cache glyph layout where raylib semantics allow it (no re-shaping per frame)
-- [ ] **Texture limit audit**: find every 2D path that can exceed 512×512 (large sprites, tile sheets, UI
-      backgrounds) and slice it into 512-pixel windows with `tbw` set to the full texture stride
+- [x] Cache glyph layout where raylib semantics allow it (no re-shaping per frame) — sprint 019 layout cache
+- [x] **Texture limit audit**: find every 2D path that can exceed 512×512 (large sprites, tile sheets, UI
+      backgrounds) and slice it into 512-pixel windows with `tbw` set to the full texture stride — audit in sprint
+      018, window probe/upload/split in sprint 020
 - [ ] **Texture-cache measurement**: per draw, record atlas footprint, atlas-run length and strip width
       (16/32/64/128 px); measure with a repeated draw as well as a single one, so reuse is visible
 - [ ] **Bind audit**: assert one texture bind per atlas run in the frame counters; a glyph or tile causing a
@@ -171,9 +172,11 @@ copy, and do not invalidate the whole D-cache in a steady frame.
 
 - [x] text: submissions proportional to atlas runs, measured on short labels and paragraphs — 018 baseline
       already 1 draw/run at 63/548/1,637 glyphs; 019 kept that and cut work 44–54 %
-- [ ] tile map: submissions proportional to atlas runs on a map large enough to matter
+- [x] tile map: submissions proportional to atlas runs on a map large enough to matter — 28 tiles over a
+      1024-wide atlas are **8 window draws**, not 28, with one bind; two-texture reference needs 8 binds
 - [ ] particles: one submission per compatible system, CPU simulation cost measured separately
-- [ ] every 2D path that can exceed 512×512 renders correctly through window slicing, seams included
+- [x] every 2D path that can exceed 512×512 renders correctly through window slicing, seams included — 1024×128
+      and 128×1024 are byte-identical to their pre-sliced references; rotated triangles clipped
 - [ ] texture-cache behaviour measured, not assumed: a strip width is adopted only if the repeated-draw case
       moves, and the working set per draw is recorded
 - [ ] no mid-frame texture upload or eviction in a representative UI, tile-map and particle scene
@@ -189,7 +192,7 @@ sprint's numbers are in hand (the fast paths depend on what the corpus measures)
 |---|---|---|
 | [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
 | [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
-| [020 — Tile maps and 512-pixel windowing](../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | written |
+| [020 — Tile maps and 512-pixel windowing](../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | **done** — swizzled windows proven, 1024 uploads, 2/4 window draws, byte-identical to the pre-sliced refs |
 | 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
 | 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |
 | 023 — Cache strips, regression, close | 16/32/64/128 px strip A/B on the repeated-draw case; full sample comparison; phase exit table | planned |
