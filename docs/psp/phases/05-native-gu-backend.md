@@ -174,6 +174,36 @@ Note on GUM specifically: 2D needs **one** ortho matrix per frame, not a matrix 
 enters as a handful of calls per frame and `sceGuDrawArray` does the work. GUM's VFPU stack earns its place on the
 3D path, which is phase 10.
 
+## Reference implementations to read before task 6 finishes (and before 8 and 11)
+
+Four engines in `/home/psp/ref` do on the GE what this phase is doing. Their memory maps are the
+index; the files below are what to actually read. Nothing from them is copied — three of the four
+are GPL and this tree is zlib — so read for *method*, then write it our own way.
+
+| reference | what it is | read these | answers |
+|---|---|---|---|
+| **PSPRuntime** (`/home/psp/ref/PSPRuntime/PSPBasicPlatformer`) | the C++ 2D/3D engine whose bunnymark we benchmark against | `src/texturemanager.cpp:35` (`LoadTexture`), `:175` (`SwizzleFast`), `getStaticVramTexture`; `src/gpumanager.cpp:124-129` (tex mode/filter/scale/offset), `:1793` (`sceGuTexImage(0, pWidth, pHeight, pWidth, data)`), `:1082`/`:1124` (8888 for glyphs) | **the upload recipe**: pad to power of two, row-copy with the padded stride, swizzle, `tbw = pWidth`, `swizzle = 1` in `sceGuTexMode`. This is the one to diff our `gl_texture.c` against |
+| **PGE** (`/home/psp/ref/PGE`) | Phoenix Game Engine, 2D+3D, PNG pipeline | `pgeTexture.c` (load → swizzle → VRAM placement, `pgeTexture.h:94`), `pgeFont.c:878-881` (4-bit `GU_PSM_T4` font atlas), `pgeGfx.c:174-175` | **texture memory and font atlases**: where VRAM placement happens, what a 4-bit glyph atlas looks like, and the tex-scale/offset pair every engine sets |
+| **daedalus** (`/home/psp/ref/daedalus`) | N64 emulator with a PSP GUI — the most battle-worn GU code here | `AI_MEMORY_MAP.md` §12.4 (GU submission, framebuffer formats, VRAM, swizzling), §`16-bit framebuffer` / `Fast clear + dither` rows, `Core/DMA.cpp` (`fast_memcpy_swizzle`), `NativeTexturePSP`, `CVideoMemoryManager` | **dithering and framebuffer choice**: it documents `GU_FAST_CLEAR_BIT` + dither matrices for a 5650 buffer, which is the leading explanation for our background being flat `(240,244,240)` where pspGL gives `(240,240,240)` |
+| **openTRI** (`/home/psp/ref/openTRI`) | software-rasteriser-flavoured 3D engine | `triImage.c:291-391` (swizzle + VRAM), `triGraphics.c:152` (`triInit(GU_PSM_8888, 1)`) | **a second opinion on swizzle and VRAM allocation**, and what a 8888 framebuffer costs |
+
+Notes from reading them for task 6, in the order they were tried:
+
+- **The upload recipe differs from ours in one way that matters**: both engines **swizzle** and pass
+  `swizzle = 1`. Ours uploads unswizzled with `swizzle = 0`. That is legal and texel-identical *if
+  the data really is unswizzled* — but it is the first thing to check when the right texture samples
+  wrong texels.
+- **`sceGuTexScale(1, 1)` and `sceGuTexOffset(0, 0)`** are set by PSPRuntime (`gpumanager.cpp:128`)
+  and PGE (`pgeGfx.c:174`) after every `sceGuTexMode`. **Tried, and measurably ruled out**: adding
+  them to `applyTexture` changed the capture by exactly zero pixels, so GU's default texture
+  transform is already identity. The calls stay (they are what every reference does, and cost
+  nothing) but they are not the bug.
+- **`pgeEmulator.c` is not useful here.** Despite the name it is a set of desktop shims (SDL/GL) so
+  PGE can run on a PC, i.e. the *opposite* direction. Skip it.
+- **Font atlases are 4-bit (`GU_PSM_T4`) in both PGE and PSPRuntime**, with a palette. Our path
+  expands grey+alpha to 8888 — correct first, cheap later; a 4-bit atlas is a phase-6 memory
+  decision, and worth re-reading `pgeFont.c` when we make it.
+
 ## What has to be true before starting
 
 - [x] Phase 4 batcher works, is measured and is the default build (sprints 007–009)
@@ -254,10 +284,14 @@ right places), but three specific deltas remain, all measured on the same binary
 | inside a sprite | (0,32,192) — the tint | (0,0,0) | alpha not applied: transparent texture areas painted with the tint |
 | at (130,60) | (80,4,0) | (240,240,240) background | wrong texel fetched, not just wrong alpha — suspect the UV/`tbw` path |
 
-62.4 % of pixels differ, so this is not a rounding question; it is the sampling path. The next
-concrete step is a **known-pattern texture** (a 2×2 or 4×4 image with distinct corner colours drawn
-1:1 on screen), which separates "wrong texel" from "wrong alpha" from "wrong blend" in one capture.
-Guessing further without it would cost more than it saves.
+62.4 % of pixels differ, so this is not a rounding question; it is the sampling path. A survey of the
+four reference engines (see "Reference implementations" below) ruled out the texture transform —
+`sceGuTexScale/Offset` changed **zero pixels** — and pointed at two live candidates: our upload is
+**unswizzled** where both PSPRuntime and PGE swizzle and pass `swizzle = 1`, and the reference
+`tbw`/padding recipe is `tbw = paddedPowerOfTwoWidth`, which ours computes but with a redundant
+second `nextPow2` call worth re-checking. The next concrete step is still a **known-pattern texture**
+(a 2×2 or 4×4 image with distinct corner colours drawn 1:1): it separates "wrong texel" from "wrong
+alpha" from "wrong blend" in one capture instead of three guesses.
 
 
 

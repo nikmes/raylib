@@ -128,6 +128,12 @@ static void applyTexture(PspGuTexture *t)
                   (void *)((unsigned char *)sceGeEdramGetAddr() + t->offset));
     sceGuTexFilter(t->filter, t->filter);
     sceGuTexWrap(t->wrap, t->wrap);
+    // GU's texture coordinate transform is not identity by default, and every reference
+    // engine sets it explicitly right here (PSPRuntime gpumanager.cpp:128, PGE pgeGfx.c:174).
+    // Leaving it unset makes every sample come from one texel - "wrong texel" with the
+    // right texture bound.
+    sceGuTexScale(1.0f, 1.0f);
+    sceGuTexOffset(0.0f, 0.0f);
     sceGuTexFlush();
 }
 
