@@ -12,6 +12,12 @@
 #ifndef FRAMES
     #define FRAMES 1800
 #endif
+#ifndef FRAME_MS
+    #define FRAME_MS 16
+#endif
+#ifndef TAP
+    #define TAP 0
+#endif
 
 typedef struct {
     int button;
@@ -44,6 +50,7 @@ int main(void)
 
     for (int frame = 0; frame < FRAMES; frame++)
     {
+        double frameStart = GetTime();
         int pressed = GetGamepadButtonPressed();
         if ((pressed != 0) && (pressed != lastShown)) TraceLog(LOG_INFO, "PAD pressed=%d frame=%d", pressed, frame);
         lastShown = pressed;
@@ -96,7 +103,15 @@ int main(void)
                 (down? RAYWHITE : LIGHTGRAY));
         }
 
+#if TAP
+        DrawText("TAP: tap CROSS once between frames", 10, 250, 10, ORANGE);
+#endif
+
         EndDrawing();
+
+        double frameSeconds = (double)FRAME_MS/1000.0;
+        double elapsed = GetTime() - frameStart;
+        if (elapsed < frameSeconds) WaitTime(frameSeconds - elapsed);
     }
 
     TraceLog(LOG_INFO, "DONE frames %d", FRAMES);

@@ -369,7 +369,8 @@ maps buttons to `GAMEPAD_BUTTON_*` with a 0.2 deadzone — start from that, then
 - Sampling: `sceCtrlSetSamplingCycle()` / mode, and whether to read once per frame or on a fixed rate.
 - `SetGamepadVibration()` must stay a documented no-op — the PSP has no rumble.
 Sprints 041–044 (P8-S1–P8-S4): 041 done (5/5) — input mapping, contract arms, held-button failure snapshot and
-T5 regression device-validated; 042–044 written.
+T5 regression device-validated; 042 T1 done (peek adopted; read/readn block ~13.7 ms with vsync off), T2 latch
+built (device tap pending); 043–044 written.
 Exit: a sample that draws every button's live state plus raw and normalised axis values; each control
 pressed and confirmed; measured nub range recorded on this console; `GetGamepadButtonPressed` returns the
 pressed button for exactly the frame whose poll saw it.

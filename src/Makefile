@@ -579,6 +579,25 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     CUSTOM_CFLAGS += -DPSP_PAD_STRICT=$(PSP_PAD_STRICT)
     PSP_PAD_FAIL ?= 0
     CUSTOM_CFLAGS += -DPSP_PAD_FAIL=$(PSP_PAD_FAIL)
+    # Sprint 042 (P8-S2): sampling arm, latch, HOLD freeze, service cycle, raw trace.
+    # T1 adopted peek: the only arm with no block when vsync is off; the latch
+    # in T2 recovers taps between polls.
+    PSP_PAD_POLL ?= peek
+    ifeq ($(PSP_PAD_POLL),peek)
+        CUSTOM_CFLAGS += -DPSP_PAD_POLL=1
+    else ifeq ($(PSP_PAD_POLL),readn)
+        CUSTOM_CFLAGS += -DPSP_PAD_POLL=2
+    else
+        CUSTOM_CFLAGS += -DPSP_PAD_POLL=0
+    endif
+    PSP_PAD_LATCH ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_LATCH=$(PSP_PAD_LATCH)
+    PSP_PAD_FREEZE ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_FREEZE=$(PSP_PAD_FREEZE)
+    PSP_PAD_CYCLE ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_CYCLE=$(PSP_PAD_CYCLE)
+    PSP_PAD_TRACE ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_TRACE=$(PSP_PAD_TRACE)
     # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
     # the only way to see what the batch actually submitted when a frame looks wrong.
     ifdef PSP_BATCH_TRACE

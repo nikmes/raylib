@@ -18,7 +18,9 @@ PSP_EBOOT_TITLE = pad api (raylib 6.2)
 PSP_LARGE_MEMORY = 0
 
 FRAMES ?= 1800
-CFLAGS += -DFRAMES=$(FRAMES)
+FRAME_MS ?= 16
+TAP ?= 0
+CFLAGS += -DFRAMES=$(FRAMES) -DFRAME_MS=$(FRAME_MS) -DTAP=$(TAP)
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak

@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 8 — Input](../phases/08-input/index.md) |
 | Sprint | P8-S2 |
 | Branch / base commit | `master` @ the sprint 041 close (`4d000e0e`, 2026-11-21) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / — |
 | Build number(s) | pspgu `b24` (unchanged); `libraylib.a` builds with `PSP_PAD_POLL`, `PSP_PAD_LATCH`, `PSP_PAD_FREEZE` and `PSP_PAD_CYCLE`; 041's `PSP_PAD_FAIL` is preserved on the read arm |
-| Tasks | 0/6 done |
+| Tasks | 1/6 done — T1 done; T2 doing; T3–T6 todo |
 
 ## 0. Handover
 
@@ -43,7 +43,8 @@ full matrix.
   reader** and must not be used as input evidence or run during the A/B. Its direct read is a Phase 13 cleanup.
 - **Return semantics differ by arm.** `ReadBufferPositive` returns a sample count: success is `ret > 0`. The
   `PeekBufferPositive` return is not documented in the public header; measure it in the first probe. Do not apply
-  the read's `ret <= 0` failure test to `peek`; a successful peek may return 0.
+  the read's `ret <= 0` failure test to `peek`. The PSP-1000 probe returned 1; keep `ret >= 0` as the safe
+  success predicate and log the raw value.
 - **A failed read changes nothing.** On the failure predicate for the chosen arm, log once per transition and
   return before mapping, axes or edges. The last good snapshot stays visible. Do not apply the latch on a failed
   snapshot.
@@ -70,8 +71,8 @@ full matrix.
 - **Counters at boot and every 30 polls during the A/B** (300 in the shipped build), so a 60-frame arm still
   produces evidence. The last periodic line at or before `DONE` is the final row; the sample's `DONE` is
   separate.
-- **Defaults stay on the control until §7 selects an arm.** `PSP_PAD_POLL=read`, `PSP_PAD_LATCH=0`,
-  `PSP_PAD_FREEZE=0`, `PSP_PAD_CYCLE=0`; change only after the table is in hand.
+- **Defaults now follow T1.** `PSP_PAD_POLL=peek` is the adopted arm; `PSP_PAD_LATCH=0`, `PSP_PAD_FREEZE=0`
+  and `PSP_PAD_CYCLE=0` stay until T2/T3/T6 select them.
 - **No public API change and no renderer change.** The gate is byte-identical.
 - **Stage only this sprint's paths.** `git status` before every commit.
 - Commit messages carry the task ID: `sprint 042 T2: ...`.
@@ -159,7 +160,7 @@ measured decision rather than leaving it implicit.
 - [ ] `pad_api` has `FRAME_MS`, `TAP` and short `FRAMES`
 - [ ] `PSP_PAD_POLL` maps `read|peek|readn` to numeric defines
 - [ ] Counters exist for `ret` per arm, block time, queue lag, `latchOnly`, `spurious`, `frozen`
-- [ ] The first 100 ms probe confirms the peek return and the `TimeStamp` scale
+- [x] The first 100 ms probe confirms the peek return and the `TimeStamp` scale
 - [ ] Device loop available; `reset` leaves partition 2 at 25,149,440 bytes
 - [ ] Sample builds with `PSP_LARGE_MEMORY=0`
 
@@ -169,8 +170,8 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Poll arms**: `read\|peek\|readn` at 16/33/100 ms; a `read` vs `peek` arm with `PSP_DISABLE_VSYNC=1` at 16 ms; confirm peek return and `TimeStamp` units | `todo` | table in §7; adopted arm named with numbers; no unbounded lag | — |
-| T2 | **Latch edges**: `PSP_PAD_LATCH=0\|1`; map `uiMake` into `lastButtonPressed`; `latchOnly`; test with `read` at 100 ms | `todo` | `TAP=1` at 100 ms: snapshot miss plus latch report; `latchOnly` matches; `readn` variant recorded | — |
+| T1 | **Poll arms**: `read\|peek\|readn` at 16/33/100 ms; a `read` vs `peek` arm with `PSP_DISABLE_VSYNC=1` at 16 ms; confirm peek return and `TimeStamp` units | `done` | table in §7; adopted arm named with numbers; no unbounded lag | adopted **peek**: 9 µs, no block in both vsync modes; read/readn block 13.7 ms with vsync off; readn returns up to 6 samples at 100 ms but blocks; full matrix in §7 |
+| T2 | **Latch edges**: `PSP_PAD_LATCH=0\|1`; map `uiMake` into `lastButtonPressed`; `latchOnly`; test with the adopted `peek` at 100 ms | `doing` | `TAP=1` at 100 ms: snapshot miss plus latch report; `latchOnly` matches; `readn` variant recorded | latch logic in `rcore_psp.c`; latch 0/1 peek PRXs built; device tap run pending |
 | T3 | **HOLD/interception**: `PSP_PAD_FREEZE=0\|1`; read-first order in `=1`; freeze/resync/suppress; `spurious` | `todo` | HOME/exit and HOLD runs: fixed spurious 0; control >0; held button stays down | — |
 | T4 | **Counters and one-reader rule**: `PAD` line at boot/every 30 polls; per-arm return counters; one library reader | `todo` | counters present in a 60-frame arm; `grep` shows one reader; `basic_shapes` exception recorded | — |
 | T5 | **Regression**: 041 contract, `PSP_PAD_FAIL` held-button run, `basic_shapes`, `batch_check` gate | `todo` | contract values unchanged; failure hook still logs/retains; gate hash unchanged | — |
@@ -180,7 +181,7 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 - Makefile mapping (numeric defines; strings cannot be compared by the preprocessor):
   ```make
-  PSP_PAD_POLL ?= read
+  PSP_PAD_POLL ?= peek          # adopted in T1
   ifeq ($(PSP_PAD_POLL),peek)
       CUSTOM_CFLAGS += -DPSP_PAD_POLL=1
   else ifeq ($(PSP_PAD_POLL),readn)
@@ -198,9 +199,9 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 - Add `#ifndef` fallbacks in `rcore_psp.c` (`PSP_PAD_POLL 0`, `PSP_PAD_LATCH 0`, `PSP_PAD_FREEZE 0`,
   `PSP_PAD_CYCLE 0`) so a direct compile still works, as 041 did for strict/fail.
 - `read`: `int n = sceCtrlReadBufferPositive(&pad, 1);` success `n > 0`; 0/negative is failure.
-- `peek`: `int ret = sceCtrlPeekBufferPositive(&pad, 1);` do **not** treat 0 as failure until the probe says
-  otherwise. Log `ret` and `pad.Buttons`; the header does not document the return, and PGE's emulator returns 0
-  for both calls, so it is not evidence.
+- `peek`: `int ret = sceCtrlPeekBufferPositive(&pad, 1);` the PSP-1000 probe returned **1** at 100 ms. Use
+  `ret >= 0` as the safe success predicate, log the raw value, and do not generalize from PGE's emulator (it
+  returns 0 for both calls).
 - `readn`: `SceCtrlData padN[6]; int n = sceCtrlReadBufferPositive(padN, 6);` success `n > 0`; newest sample is
   `padN[n-1]`; OR `Buttons` across `0..n-1` for edges; newest axes and `TimeStamp`; `n > 1` is a missed-cycle
   counter. Check HOME/HOLD on the **newest** sample, not the ORed mask.
@@ -223,8 +224,9 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
   snapshot's newly-pressed set, increment `latchOnly` once per bit. The 100 ms test expects one.
 - On a failed snapshot, return before applying the latch; read and discard it so it cannot fire on recovery. On a
   frozen sample, do the same: discard the latch, never apply it on the first clean sample.
-- Test with `PSP_PAD_POLL=read` at 100 ms so the tap can fall between snapshots. With `readn`, the ORed snapshot
-  may already contain the tap; record `latchOnly=0` as a valid result, not a failure.
+- Test with the adopted `PSP_PAD_POLL=peek` at 100 ms: the latch is the only tap recovery. Repeat with `read`
+  as the snapshot-miss control. With `readn`, the ORed snapshot may already contain the tap; `latchOnly=0` is
+  valid.
 - A chord still reports one `lastButtonPressed`; log all `uiMake` bits so the loss is visible.
 
 ### T3 design
@@ -296,6 +298,14 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 ### Task log (append-only)
 
 - 2026-11-21 — sprint rewritten for implementation readiness; all tasks `todo`, no device run
+- 2026-11-21 — T1 `doing`: `PSP_PAD_POLL`/`TRACE`/`LATCH`/`FREEZE`/`CYCLE` switches, read/peek/readn arms,
+  `pad_api` `FRAME_MS`/`TAP`/`FRAMES`; read and peek probe PRXs built, readn and 041 `PSP_PAD_FAIL` compile
+- 2026-11-21 — 100 ms probes: read ret=1, peek ret=1, both success; median `TimeStamp` delta
+  100,099/100,101 µs; `TimeStamp` is microseconds; no buttons
+- 2026-11-21 — T1 done: read/peek/readn at 16/33/100 and vsync-off arms; peek adopted (9 µs, no block);
+  read/readn block 13.7 ms vsync off; readn ret up to 6 at 100 ms; `PSP_PAD_POLL=peek` is the default
+- 2026-11-21 — T2 `doing`: latch read after the snapshot, snapshot-priority, `latchOnly`, failure discard;
+  latch 0/1 peek PRXs built; device tap run not started
 
 ## 6. Budgets
 
@@ -328,11 +338,38 @@ Protocol: device only; one variable per run; control → change → control agai
 | cycle 0 | adopted poll, `PSP_PAD_CYCLE=0` | 16/100 ms | | | | | | |
 | cycle 100 Hz | adopted poll, `PSP_PAD_CYCLE=10000` | 16/100 ms | | | | | | |
 
+**100 ms probe (2026-11-21, PSP-1000):**
+
+| arm | ret | success | median `TimeStamp` delta | buttons | lx / ly |
+|---|---|---|---|---|---|
+| read | 1 | 1 | 100,099 µs | 0x00000000 | 99–100 / 114 |
+| peek | 1 | 1 | 100,101 µs | 0x00000000 | 99–100 / 114 |
+
+**T1 results (2026-11-21, PSP-1000):**
+
+| arm | frame ms | ret | block med/max µs | frame med ms | lag med/max ms |
+|---|---|---|---|---|---|
+| read | 16 | 1 | 20/20 | 16.683 | 16.069/16.086 |
+| read | 33 | 1 | 21/21 | 33.367 | 16.082/16.145 |
+| read | 100 | 1 | 19/20 | 100.096 | 16.067/16.111 |
+| peek | 16 | 1 | 9/9 | 16.683 | 16.059/16.077 |
+| peek | 33 | 1 | 8/9 | 33.367 | 16.071/16.112 |
+| peek | 100 | 1 | 9/9 | 100.104 | 16.074/16.089 |
+| readn | 16 | 1/6 | 22/24 | 16.684 | 16.069/16.087 |
+| readn | 33 | 1/2/6 | 23/24 | 33.366 | 16.080/16.122 |
+| readn | 100 | 6 | 24/25 | 100.100 | 16.065/16.081 |
+| read, vsync off | 16 | 1 | 13,696/13,895 | 16.683 | 0.051/4.198 |
+| peek, vsync off | 16 | 1 | 9/10 | 16.076 | 8.572/16.696 |
+| readn, vsync off | 16 | 1/6 | 13,710/13,884 | 16.683 | 0.051/4.040 |
+
+Adopted **peek**: 9 µs and no block in both vsync modes. `read` and `readn` block ~13.7 ms with vsync off;
+`readn` catches up to 6 samples at 100 ms but inherits that block. T2's latch is therefore required for taps.
+
 ## 8. Exit criteria
 
-- [ ] the three poll arms are measured at 16/33/100 ms; the adopted arm and reason are recorded
-- [ ] the peek return and `TimeStamp` scale are confirmed by the first probe, not assumed
-- [ ] `peek` does not block; `read`'s block is quantified; `readn`'s merge rule is documented
+- [x] the three poll arms are measured at 16/33/100 ms; the adopted arm and reason are recorded
+- [x] the peek return and `TimeStamp` scale are confirmed by the first probe, not assumed
+- [x] `peek` does not block; `read`'s block is quantified; `readn`'s merge rule is documented
 - [ ] a sub-frame tap is reported by the latch or counted as lost; `latchOnly` matches the observed taps
 - [ ] `readn`'s ORed snapshot case is recorded (`latchOnly=0` is valid when the tap was already captured)
 - [ ] HOLD and interception produce zero spurious presses in the fixed build; the control build shows the cause
@@ -347,7 +384,13 @@ Protocol: device only; one variable per run; control → change → control agai
 
 ## 9. Result
 
-Not run yet.
+T1 is complete. The full matrix is in §7; **peek** is adopted. It holds 9 µs in both vsync modes, while
+`read` and `readn` block ~13.7 ms with vsync off; `readn` returns up to 6 samples at 100 ms but inherits the
+blocking read. `TimeStamp` is microseconds, and `peek` returned 1 on this PSP-1000.
+
+T2 latch code is implemented: the latch is read after the snapshot, snapshot presses take priority, `latchOnly`
+counts missed makes, and a failed read discards the latch. The latch-on/off `peek` PRXs are built; the device tap
+run is pending. T3–T6 remain pending. Evidence: `/home/psp/evidence/sprint042/`.
 
 ## 10. Follow-ups
 
@@ -355,5 +398,6 @@ Not run yet.
   counters to separate sampling from calibration. The 041 at-rest `LY=-0.21` is 043's first case.
 - **Sprint 044 (P8-S4)** — keyboard/mouse, DS3, extra bits and the phase close.
 - Remove `basic_shapes`' direct `sceCtrl` read in Phase 13; it is a second reader.
-- If `readn` is adopted, a buffer larger than 6 is a separate experiment; do not change it without a table.
+- `readn` was not adopted because it blocks with vsync off; its 6-sample merge is recorded, and a larger buffer
+  is not a substitute for a non-blocking read.
 - If cycle 0 wins, fixed-rate sampling remains a follow-up for a `PSP_DISABLE_VSYNC` build.

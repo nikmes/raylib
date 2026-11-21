@@ -407,6 +407,21 @@ void SetMouseCursor(int cursor)
 #ifndef PSP_PAD_FAIL
     #define PSP_PAD_FAIL 0
 #endif
+#ifndef PSP_PAD_POLL
+    #define PSP_PAD_POLL 0
+#endif
+#ifndef PSP_PAD_LATCH
+    #define PSP_PAD_LATCH 0
+#endif
+#ifndef PSP_PAD_FREEZE
+    #define PSP_PAD_FREEZE 0
+#endif
+#ifndef PSP_PAD_CYCLE
+    #define PSP_PAD_CYCLE 0
+#endif
+#ifndef PSP_PAD_TRACE
+    #define PSP_PAD_TRACE 0
+#endif
 
 static const struct {
     unsigned int psp;
@@ -469,40 +484,85 @@ void PollInputEvents(void)
     //    CORE.Input.Keyboard.keyRepeatInFrame[i] = 0;
     //}
 
-    // Poll input events for PSP (sprint 041, P8-S1)
+    // Poll input events for PSP (sprint 042, P8-S2)
     SceCtrlData pad = { 0 };
-    int read = 1;
+    int ret = 1;
+#if PSP_PAD_TRACE
+    SceInt64 pollStart = sceKernelGetSystemTimeWide();
+#endif
 
-#if PSP_PAD_FAIL
-    // Test-only: fail after 60 consecutive polls with CROSS or SQUARE held, so the last
-    // good snapshot contains a held button regardless of when the operator presses it.
-    static int pspFailCount = 0;
-    read = sceCtrlReadBufferPositive(&pad, 1);
-    if (read > 0)
-    {
-        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_SQUARE)) != 0)
+#if PSP_PAD_POLL == 0
+    #if PSP_PAD_FAIL
+        // 041 test hook: read-only, Cross or Square held for 60 consecutive polls.
+        static int pspFailCount = 0;
+        ret = sceCtrlReadBufferPositive(&pad, 1);
+        if (ret > 0)
         {
-            pspFailCount++;
-            if (pspFailCount >= 60) read = -1;
+            if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_SQUARE)) != 0)
+            {
+                pspFailCount++;
+                if (pspFailCount >= 60) ret = -1;
+            }
+            else pspFailCount = 0;
         }
-        else pspFailCount = 0;
-    }
+    #else
+        ret = sceCtrlReadBufferPositive(&pad, 1);
+    #endif
+#elif PSP_PAD_POLL == 1
+    ret = sceCtrlPeekBufferPositive(&pad, 1);
 #else
-    read = sceCtrlReadBufferPositive(&pad, 1);
+    {
+        SceCtrlData padN[6] = { 0 };
+        int n = sceCtrlReadBufferPositive(padN, 6);
+        ret = n;
+        if (n > 0)
+        {
+            pad = padN[n - 1];
+            for (int i = 0; i < (n - 1); i++) pad.Buttons |= padN[i].Buttons;
+        }
+    }
+#endif
+
+#if PSP_PAD_TRACE
+    SceInt64 pollEnd = sceKernelGetSystemTimeWide();
+    int blockus = (int)(pollEnd - pollStart);
+#endif
+
+    // Peek is not documented to return a sample count; the first probe confirms it.
+#if PSP_PAD_POLL == 1
+    int success = (ret >= 0);
+#else
+    int success = (ret > 0);
+#endif
+
+#if PSP_PAD_TRACE
+    static int pspTraceCount = 0;
+    if (pspTraceCount < 240)
+    {
+        TRACELOG(LOG_INFO, "PAD raw ret=%d success=%d blockus=%d now=%lld ts=%u buttons=0x%08X lx=%u ly=%u",
+            ret, success, blockus, (long long)pollEnd, pad.TimeStamp, pad.Buttons, pad.Lx, pad.Ly);
+        pspTraceCount++;
+    }
 #endif
 
 #if PSP_PAD_STRICT
-    static int pspLastRead = 1;
-    if (read <= 0)
+    static int pspLastSuccess = 1;
+    if (!success)
     {
-        if (pspLastRead > 0) TRACELOG(LOG_WARNING, "PAD read failed ret=%d", read);
-        pspLastRead = read;
+        if (pspLastSuccess) TRACELOG(LOG_WARNING, "PAD input failed ret=%d", ret);
+        pspLastSuccess = 0;
+#if PSP_PAD_LATCH
+        {
+            SceCtrlLatch discard = { 0 };
+            sceCtrlReadLatch(&discard);    // clear a make from the failed window
+        }
+#endif
         return;
     }
-    if (pspLastRead <= 0) TRACELOG(LOG_INFO, "PAD read recovered");
-    pspLastRead = read;
+    if (!pspLastSuccess) TRACELOG(LOG_INFO, "PAD input recovered");
+    pspLastSuccess = 1;
 #else
-    (void)read;
+    (void)success;
 #endif
 
     // Map the controller through one table into raylib's positional enum.
@@ -532,15 +592,62 @@ void PollInputEvents(void)
         (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = 0.0f;
 #endif
 
-    // Report only the first newly pressed button; raylib's API is single-value.
+    // Report the snapshot edge; the latch adds taps that fell between polls.
+    unsigned int snapshotNewMask = 0;
     for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
     {
         if (CORE.Input.Gamepad.currentButtonState[0][i] && !CORE.Input.Gamepad.previousButtonState[0][i])
         {
-            CORE.Input.Gamepad.lastButtonPressed = i;
-            break;
+            snapshotNewMask |= (1u << i);
+            if (CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN)
+                CORE.Input.Gamepad.lastButtonPressed = i;
         }
     }
+
+#if PSP_PAD_LATCH
+    {
+        static unsigned int pspLatchOnly = 0;
+        SceCtrlLatch latch = { 0 };
+        unsigned int pspMappedButtons = 0;
+        int latchPressed = 0;
+
+        sceCtrlReadLatch(&latch);
+        for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++) pspMappedButtons |= pspButtonMap[i].psp;
+
+        for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
+        {
+            if ((latch.uiMake & pspButtonMap[i].psp) != 0)
+            {
+                if ((snapshotNewMask & (1u << pspButtonMap[i].raylib)) == 0) pspLatchOnly++;
+            }
+        }
+
+        // First mapped make in GAMEPAD_BUTTON_* enum order.
+        for (int b = 1; b < MAX_GAMEPAD_BUTTONS; b++)
+        {
+            for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
+            {
+                if ((pspButtonMap[i].raylib == b) && ((latch.uiMake & pspButtonMap[i].psp) != 0))
+                {
+                    latchPressed = b;
+                    break;
+                }
+            }
+            if (latchPressed != 0) break;
+        }
+
+        if ((CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN) && (latchPressed != 0))
+            CORE.Input.Gamepad.lastButtonPressed = latchPressed;
+
+        if (latch.uiMake != 0)
+        {
+            TRACELOG(LOG_INFO, "PAD latchMake=0x%08X mapped=0x%08X latchOnly=%u",
+                latch.uiMake, pspMappedButtons, pspLatchOnly);
+        }
+    }
+#else
+    (void)snapshotNewMask;
+#endif
 }
 
 // Get name of a QWERTY key on the current keyboard layout
@@ -631,7 +738,7 @@ int InitPlatform(void)
     //call backs
     SetupCallbacks();
     //init control
-    sceCtrlSetSamplingCycle(0);
+    sceCtrlSetSamplingCycle(PSP_PAD_CYCLE);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
     // Mark the first gamepad as ready and advertise exactly one pad.
@@ -651,6 +758,8 @@ int InitPlatform(void)
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
 #endif
     TRACELOG(LOG_INFO, "PAD contract=%d fail=%d", PSP_PAD_STRICT, PSP_PAD_FAIL);
+    TRACELOG(LOG_INFO, "PAD poll=%d latch=%d freeze=%d cycle=%d trace=%d",
+        PSP_PAD_POLL, PSP_PAD_LATCH, PSP_PAD_FREEZE, PSP_PAD_CYCLE, PSP_PAD_TRACE);
 
     // NOTE: 6.2 has no CORE.Window.fullscreen member; fullscreen is a flag only.
     CORE.Window.flags |= FLAG_FULLSCREEN_MODE;

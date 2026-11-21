@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | in progress — P8-S1 done (5/5); 042–044 written |
+| State | in progress — P8-S1 done (5/5); P8-S2 T1 done (peek), T2 latch implemented; T3–T6 pending; 043–044 written |
 | Depends on | Phase 1 (a running build to press buttons in) — independent of the renderer phases |
 | Exit criterion | every control reachable through raylib's API, `GetGamepadButtonPressed()` fires for exactly the frame whose poll saw the press, and the nub's measured range is recorded on this console |
 
@@ -219,7 +219,7 @@ The phase is sized as four sprints. All four are written; none has run, so every
 | sprint | scope | state |
 |---|---|---|
 | [P8-S1 — 041 — Gamepad contract and the portable sample](../../sprints/041-phase8-gamepad-contract.md) | contract defaults, button map, edge window, portable sample | **done** — 5/5, device-validated |
-| [P8-S2 — 042 — Sampling, edges and system states](../../sprints/042-phase8-sampling-and-edges.md) | poll arms, latch, HOLD/interception, counters | written |
+| [P8-S2 — 042 — Sampling, edges and system states](../../sprints/042-phase8-sampling-and-edges.md) | poll arms, latch, HOLD/interception, counters | in progress — T1 done (peek), T2 latch built; device tap pending; T3–T6 pending |
 | [P8-S3 — 043 — Nub calibration and response](../../sprints/043-phase8-nub-calibration.md) | raw range, radial deadzone, magnitude clamp, idle threshold | written |
 | [P8-S4 — 044 — Decisions, compatibility and the Phase 8 close](../../sprints/044-phase8-decisions-and-close.md) | extra bits, keyboard/mouse, DS3, phase close | written |
 
