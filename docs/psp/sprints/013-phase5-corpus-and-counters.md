@@ -326,3 +326,29 @@ the failing scene is *which drawing call* is used:
 So the next probe is the last cheap one: **draw the same cube at the same camera** and predict its bbox from the
 same arithmetic. If `DrawCube` is wrong the fault is in the quad expansion or in the 36-vertex run (buffer overflow at
 1,024 is not it, but the emit could be), and `glDrawElements` is a separate test after it.
+
+### The cube probe: `DrawCube` draws nothing, and the sprite test is one reason
+
+`triangle_probe -DDRAW_CUBE` draws the same cube the mesh scene draws, at a camera whose projection is verified:
+**nothing appears**. `DrawTriangle3D` at the same camera and the same frame draws correctly to within 1 px. So the
+difference is not the matrix path — it is what happens to the cube's vertices.
+
+Two things learned on the way:
+
+- **`DrawCube` does not use immediate mode.** The mesh-scene trace shows it arriving as `draw mode=4 count=36` — a
+  36-vertex triangle draw through the *deferred raylib batch*. So the pixels depend on the projection that is current
+  **when the batch flushes**, not when the vertices were submitted.
+- **The sprite eligibility test was wrong for 3D.** It ran on submitted vertex positions, which in a 3D pass are
+  *world* coordinates — and a cube face is axis-aligned there while projecting to a parallelogram. Fixed: sprite
+  eligibility now requires `z == 0` on all four corners, which raylib's 2D always satisfies and which no 3D face
+  with depth can. **This fix alone did not make the cube appear**, so at least one more cause remains.
+
+Open, for the next session, in order of cheapness:
+
+1. Re-verify the 2D gate after the `z == 0` change (it should be untouched — 2D draws at z = 0 — but it has not been
+   re-run, and the gate is not optional).
+2. Trace the *flush* in the cube probe: log the projection matrix at the moment `glDrawArrays` is called for those 36
+   vertices. If it is still the frustum and the vertices are at x −1.7..−0.7, the arithmetic says they must land at
+   x 81..191, so a missing cube would mean the draw never happens at all — and then the question moves to whether
+   `rlDrawRenderBatchActive()` inside `EndMode3D` reaches our hook.
+3. Only after that: `DrawMesh`/`glDrawElements`.

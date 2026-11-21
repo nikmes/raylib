@@ -723,6 +723,12 @@ static inline int rlPspIsSpriteQuad(const RLPspVertex *q)
     if ((q[0].y != q[3].y) || (q[1].y != q[2].y)) return 0;     // top and bottom edges horizontal
     if ((q[0].x == q[2].x) || (q[0].y == q[2].y)) return 0;     // degenerate
 
+    // A GE sprite is axis-aligned in SCREEN space. This test runs on the vertex positions
+    // as submitted, which in a 3D pass are WORLD coordinates - and a cube face is perfectly
+    // axis-aligned there while projecting to a parallelogram on screen. Raylib's 2D always
+    // draws at z = 0; anything with depth is 3D and must stay triangles.
+    if ((q[0].z != 0.0f) || (q[1].z != 0.0f) || (q[2].z != 0.0f) || (q[3].z != 0.0f)) return 0;
+
     if (q[1].u != q[0].u) return 0;                             // UVs follow the corners
     if (q[3].u != q[2].u) return 0;
     if (q[3].v != q[0].v) return 0;

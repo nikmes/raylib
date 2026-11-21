@@ -50,9 +50,15 @@ int main(int argc, char **argv)
 #endif
 
             BeginMode3D(cam);
+#ifdef DRAW_CUBE
+                // Sprint 013 T1: the only drawing call in the corpus the probe has not tested.
+                // Predicted bbox x 81..191, y 92..189 for this camera and position.
+                DrawCube((Vector3){ -1.2f, 0.0f, 0.0f }, 1.0f, 1.0f, 1.0f, GREEN);
+#else
                 DrawTriangle3D((Vector3){ -0.5f, -0.5f, 0.0f },
                                (Vector3){  0.5f, -0.5f, 0.0f },
                                (Vector3){  0.0f,  0.5f, 0.0f }, RED);
+#endif
             EndMode3D();
 
         EndDrawing();
