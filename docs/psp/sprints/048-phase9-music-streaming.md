@@ -4,7 +4,7 @@
 |---|---|
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S4 |
-| Branch / base commit | `master` @ `84090af6` (P9-S3 close; pin at start) |
+| Branch / base commit | `master` @ `1427e2e8` (P9-S3 close + S4 review; pin at start) |
 | Started / closed | — / — |
 | Build number(s) | `audio b4`; pspgu `b24` unchanged |
 | Tasks | 0/9 done |
@@ -29,30 +29,38 @@ must measure the main-thread cost before deciding whether a decoder thread is ju
 6. `psp-tests/audio_smoke/main.c` and `Makefile` — the S3 harness; extend `MODE` rather than creating an app.
 7. `examples/audio/resources/target.ogg` and `sound.wav` — the staged test assets (do not edit `examples/`).
 
-**First action.** Add `MODE=music` to `audio_smoke`: stage `target.ogg` and a generated 16-bit stereo WAV on
-`host0:`, `LoadMusicStream()`, `PlayMusicStream()`, call `UpdateMusicStream()` once per frame, run 600 frames,
-and log the **wall time around that call** (p95/max) as well as the frame time. This main-thread run is the
+**First action.** Add `MODE=music|musicmix|stream` to `audio_smoke`. Stage
+`examples/audio/resources/target.ogg` and `sound.wav` under `host0:`; call
+`SetAudioStreamBufferSizeDefault(4096)`; `LoadMusicStream()` the OGG, `PlayMusicStream()`, call
+`UpdateMusicStream()` once per frame, run a 60-frame warm-up, then measure the next 600 calls into a static
+per-frame array. Log p95/max and count frames whose update exceeds 2 ms. That main-thread baseline is the
 control for the whole sprint.
 
 **Hard rules.**
 
 - **Keep `UpdateMusicStream()` as the public API.** The game must still call it while music plays. Any
   decoder-thread work is an internal optimization and must leave that call valid.
-- **Do not add a decoder thread on a guess.** T3 measures first. T4 is a decision gate: keep the main thread
-  if p95 ≤ 1 ms and max ≤ 2 ms; if it exceeds either, mark T4 `blocked` and open a follow-up sprint. Do not
-  cram an unmeasured thread into S4.
+- **Do not add a decoder thread on a guess.** T3 measures first. Use a fixed array of update times; exclude
+  the 60-frame warm-up (the lazy `pcmBuffer` allocation); sort a copy for p95. T4 is a decision gate: keep
+  the main thread if p95 ≤ 1 ms and max ≤ 2 ms; if it exceeds either, mark T4/T7 `blocked` and open a
+  follow-up sprint. Do not cram an unmeasured thread into S4.
 - **Never open a file from the audio thread.** Decode/read on the calling thread (or a decoder thread if a
   follow-up is opened); the backend only copies PCM.
 - **The audio thread must not block on a file read or a lock held by a long decode.** Measure lock/decode
   hold time; if it exceeds one 1024-frame block, redesign before the soak.
-- **`setvbuf` is OGG-specific here.** Replace `stb_vorbis_open_filename` with `fopen` + `setvbuf(FILE, NULL,
-  _IOFBF, 65536)` + `stb_vorbis_open_file(file, TRUE, ...)`. WAV uses `drwav_init_file` (no public FILE
-  handle); measure its read cost and add drwav callbacks only if WAV is over budget.
+- **`setvbuf` is OGG-specific here.** In `src/raudio.c`'s OGG branch (`~1414-1437`), replace
+  `stb_vorbis_open_filename` with `fopen(fileName,"rb")`, `setvbuf(file, NULL, _IOFBF, 64*1024)`, and
+  `stb_vorbis_open_file(file, TRUE, NULL, NULL)`. Close the file if the open fails. WAV uses
+  `drwav_init_file` (no public FILE handle); measure its read cost and add drwav callbacks only if WAV is
+  over budget. `sound.wav` is 32-bit mono, so the WAV arm also exercises conversion.
 - **No `sceAudio` in the game loop.** The backend owns the sink.
 - **`AudioStream` callbacks run on the audio thread.** They must not block, allocate, log or open files.
-- **A 5-minute soak is 18,000 frames at 60 fps**, not 300 frames. Use `FRAMES=18000` and a 320 s PSPLink
-  window.
-- **One variable per run.** OGG, WAV, callback stream and processor are separate arms.
+- **A 5-minute soak is 18,000 frames at 60 fps**, not 300 frames. Use `MODE=musicmix FRAMES=18000 COUNT=8`
+  and a 320 s PSPLink window. The harness logs frame time each second; the backend reports rest/errors
+  at close.
+- **One variable per run.** OGG, WAV, callback stream, processor, and musicmix are separate arms.
+- **Set the stream buffer before loading.** `SetAudioStreamBufferSizeDefault(4096)` in the harness, then
+  record the resulting stream buffer/period in §7. Do not leave the default 0 (derived from sampleRate/30).
 - **The gate is `cf43ce6d…`.** `batch_check` and the 018–021 captures must stay byte-identical.
 - Commit messages carry the task ID: `sprint 048 T3: measure main-thread music decode`.
 
@@ -103,8 +111,7 @@ baseline; OGG `setvbuf`; seek/loop/time; 5-minute soak; counters; optional decod
 - [ ] P9-S3 closed: API matrix, mix16/32, pitch/levels, 32-sound heap; gate `cf43ce6d…`
 - [ ] `reset` was run; partition 2 free reads 25,149,440 bytes
 - [ ] `target.ogg` (Vorbis, stereo, 22050 Hz) and `sound.wav` staged on `host0:`
-- [ ] A generated 16-bit stereo WAV is available as the WAV arm (do not use the 32-bit mono `sound.wav`
-      as the only WAV case)
+- [ ] `sound.wav` (32-bit mono, 44100 Hz) is staged; it is the WAV arm and also exercises conversion
 - [ ] `host0:` is the test root; no absolute desktop path is embedded
 - [ ] A 5-minute run can be left unattended; the app logs `DONE` and sleeps
 
@@ -115,13 +122,13 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **`Music` API matrix**: `LoadMusicStream`, `IsMusicValid`, `Play`, `IsMusicStreamPlaying`, `Update`, `Stop`, `Pause`, `Resume`, `Seek`, `SetMusicVolume`, `SetMusicPitch`, `SetMusicPan`, `GetMusicTimeLength`, `GetMusicTimePlayed`, `Unload`; OGG and WAV | `todo` | every call observed; seek/time within a frame; pitch changes duration; invalid music does nothing | — |
-| T2 | **`AudioStream` API**: `LoadAudioStream(44100,16,2)`, `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `todo` | a generated PCM stream plays; callback runs on the audio thread and is non-blocking; processor output is audible | — |
-| T3 | **Main-thread baseline**: `UpdateMusicStream()` in the frame loop, OGG then WAV, 600 frames | `todo` | decode/read p95 and max around the call, frame-spike count, gate baseline | — |
-| T4 | **Decoder decision gate**: compare T3 p95/max with 1 ms/2 ms; if over, mark `blocked` and open a follow-up; do not add an unmeasured thread | `todo` | written decision with numbers; no decoder thread unless authorized | — |
+| T2 | **`AudioStream` API**: `SetAudioStreamBufferSizeDefault(4096)`, `LoadAudioStream(44100,16,2)`, `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `todo` | a generated s16 stream plays; callback fills f32 stereo on the audio thread without blocking; processor output is audible | — |
+| T3 | **Main-thread baseline**: `UpdateMusicStream()` in the frame loop, OGG then WAV; 60 warm-up + 600 measured frames | `todo` | p95/max from a static array, frames >2 ms, gate baseline; OGG and WAV separate | — |
+| T4 | **Decoder decision gate**: compare T3 p95/max with 1 ms/2 ms; if over, mark T4/T7 `blocked` and open a follow-up; do not add an unmeasured thread | `todo` | written decision with numbers; no decoder thread unless authorized | — |
 | T5 | **Track change / seek / loop**: loop on, seek, stop/start, change track; time queries | `todo` | no torn audio, no stale track; `GetMusicTimePlayed` consistent | — |
-| T6 | **File I/O**: OGG `setvbuf` 64 KiB via `stb_vorbis_open_file`; WAV read cost; open/read timing | `todo` | card-stall spikes recorded; no file open from the feeder | — |
-| T7 | **5-minute soak**: music + 8 sounds, `FRAMES=18000`, counters each second | `todo` | zero underruns; rest length never 0 at the output call; frame p95 | — |
-| T8 | **Heap/stream buffers**: record stream buffer, ring (if any), decoder stack and free bytes | `todo` | numbers in §7; no per-frame allocation after warm-up | — |
+| T6 | **File I/O**: OGG `setvbuf` 64 KiB via `fopen`/`stb_vorbis_open_file` in `raudio.c`; WAV read cost; open/read timing | `todo` | card-stall spikes recorded; no file open from the feeder; OGG handle closes on unload | — |
+| T7 | **5-minute soak**: music + 8 sounds, `MODE=musicmix FRAMES=18000 COUNT=8`, frame log each second | `todo` | zero underruns; rest never 0; frame p95; blocked if T4 fails | — |
+| T8 | **Heap/stream buffers**: record stream buffer/period, ring (if any), decoder stack and free bytes; `SetAudioStreamBufferSizeDefault(4096)` | `todo` | numbers in §7; no per-frame allocation after warm-up | — |
 | T9 | **Regression**: `batch_check` and 018–021 gates; `git diff -- examples/` empty | `todo` | gate `cf43ce6d…` byte-identical | — |
 
 ### Task log (append-only)
@@ -147,10 +154,10 @@ frame-time distribution.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline OGG | `audio b4` | 1 OGG, main-thread update | update p95/max, frame max, spikes | | control |
-| baseline WAV | `audio b4` | 1 WAV, 16-bit stereo | same | | no setvbuf in drwav |
-| audio stream | `audio b4` | callback + processor | underruns, frame | | separate arm |
-| soak | `audio b4` | OGG + 8 sounds, 18,000 frames | underruns, rest min, frame p95 | | exit |
+| baseline OGG | `audio b4` | 1 OGG, main-thread update | update p95/max, frames >2 ms | | 60 warm-up + 600 measured |
+| baseline WAV | `audio b4` | 1 `sound.wav` | same | | 32-bit mono conversion |
+| audio stream | `audio b4` | callback + processor | underruns, frame | | separate arms |
+| soak | `audio b4` | `musicmix` OGG + 8 sounds, 18,000 frames | underruns, rest min, frame p95 | | exit; blocked if T4 fails |
 | gate | `audio b4` | `batch_check` | hash | `cf43ce6d…` | unchanged |
 
 ## 8. Exit criteria
@@ -161,8 +168,8 @@ frame-time distribution.
 - [ ] five minutes (18,000 frames) without a dropout or underrun, counters confirming
 - [ ] seek, loop, pause/resume and time queries are correct
 - [ ] T4 is `done` with a written decision (defer or authorize a follow-up), with the p95/max that justified it
-- [ ] OGG `setvbuf` and WAV read costs are recorded
-- [ ] stream/heap costs are recorded; no per-frame allocation after warm-up
+- [ ] OGG `setvbuf` and WAV read costs are recorded; OGG handle closes on unload
+- [ ] stream buffer/period and heap costs are recorded; no per-frame allocation after warm-up
 - [ ] `batch_check` stays `cf43ce6d…`; the 018–021 gates are unchanged
 
 ## 9. Result
@@ -174,6 +181,6 @@ Not started.
 - If T3 exceeds 1 ms p95 or 2 ms max, open P9-S4a for a decoder/feeder thread; do not silently accept the
   spike or hide it behind a larger stream buffer.
 - If `drwav_init_file` is over budget, add FILE-backed drwav callbacks for `setvbuf`; do not change WAV
-  semantics.
+  semantics. The WAV arm is 32-bit mono by design (`sound.wav`), so record conversion too.
 - `AudioStream` callbacks are user code on the audio thread; keep the non-blocking rule in Phase 9.
 - P9-S5 closes the phase and decides the SAS/ME route.
