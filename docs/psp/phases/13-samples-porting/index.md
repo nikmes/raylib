@@ -54,6 +54,9 @@ ported (Tier B 60, ported 5) without changing the audit's total.
 | C — blocked or not meaningful | 25 | 4 | 20 | **49** |
 | **total** | **49** | **45** | **33** | **127** |
 
+Progress: **32/127 ported** — 4 bring-up + 13 Tier A + 8 Tier B textures (P13-S2) + 7 Tier C `G2` samples
+(P13-S7). Remaining: **53 Tier B core/shapes** and **42 Tier C**.
+
 ### What the driver supports today
 
 Read from the code, with the path that decides it:
@@ -181,7 +184,7 @@ The frame is valid; only the interaction is dead. `G1` is the Phase 8 mapping of
 
 These eight were ported in P13-S2; only their interaction waits for `G1`.
 
-## Tier C — blocked or not meaningful (49)
+## Tier C — blocked or not meaningful (42 remaining; 7 ported in P13-S7)
 
 **Render targets / FBO (16).** The target texture stays blank under GL11:
 `core_2d_camera_split_screen`, `core_3d_camera_split_screen`, `core_render_texture`,
@@ -190,11 +193,9 @@ These eight were ported in P13-S2; only their interaction waits for `G1`.
 `textures_fog_of_war`, `textures_framebuffer_rendering`, `textures_magnifying_glass`,
 `textures_mouse_painting`, `textures_portal_window`. `core_vr_simulator` also needs shaders.
 
-**Texture size / VRAM (11).**
-- Padded to 1 MiB, over the 982,528 B budget; needs `G2`: `textures_image_kernel`,
-  `textures_image_processing`, `textures_image_text`, `textures_polygon_drawing`,
-  `textures_raw_data`, `textures_background_scrolling`, `textures_blend_modes`; plus the 45°
-  `textures_image_rotate` case.
+**Texture size / VRAM (4 remaining; 7 ported in P13-S7).**
+- The seven `G2` samples — `image_kernel`, `image_processing`, `image_text`, `polygon_drawing`,
+  `raw_data`, `background_scrolling`, `blend_modes` — and the 45° `image_rotate` case were ported in P13-S7.
 - Beyond the 1024 buffer, or needs a downscale/rewrite; `G3`: `textures_image_channel` (six textures),
   `textures_image_drawing` (non-binary font atlas), `textures_sprite_stacking` (11468-tall sheet),
   `textures_image_generation` (nine 1 MiB textures plus the heap).
@@ -222,15 +223,15 @@ the exit-key path is ever worth testing.
 |---|---|---|---|
 | `G0` | harness, 480×272, asset staging | this phase | 13 Tier A + 8 small-asset texture samples |
 | `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 53 Tier B core/shapes, 5 input testbeds |
-| `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 7 texture samples + 45° `image_rotate` |
+| `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 7 texture samples + 45° `image_rotate` — **done in P13-S7** |
 | `G3` | downscale or slice assets beyond 1024 or over budget | Phase 7 (windows already done in sprint 020) | 4 texture samples + pad art + explosion |
 | `G4` | render targets / FBO on the native backend | Phase 10 (with Phase 5) | 16 render-target samples |
 | `G5` | `sceAudio` output | Phase 9 | 2 audio samples |
 | `G6` | clipboard | Phase 8 / platform | 2 clipboard samples |
 | `G7` | texture readback (`glGetTexImage` equivalent) | Phase 6 | 1 readback sample |
 
-`G2` and `G3` are separate on purpose: a 1 MiB padded texture fits the 1024 buffer and still does not fit the
-8888 VRAM budget, while a 11468-tall sheet fits neither.
+`G2` is closed by P13-S7. `G2` and `G3` are separate on purpose: a 1 MiB padded texture fits the 1024 buffer
+and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neither.
 
 ## Wave plan
 
