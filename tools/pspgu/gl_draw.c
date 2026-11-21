@@ -219,6 +219,16 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
     pspguUploadMatrices();
     fmt = guVertexFormat();
 
+    {
+        static int traced = 0;
+        if (traced < 4)
+        {
+            pspguLog("drawElements count=%d tex2d=%d bound=%u fmt=0x%x", (int)count,
+                     pspgu.texEnabled, pspgu.boundTexture, fmt);
+            traced++;
+        }
+    }
+
     // Convert the vertices a chunk refers to, rebased so GU indexes from 0. The chunk's
     // index range is not necessarily contiguous or sorted, so take min and max.
     {

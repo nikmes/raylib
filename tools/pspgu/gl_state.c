@@ -76,7 +76,7 @@ void glEnable(GLenum cap)
         case GL_DEPTH_TEST:     if (pspgu.depthOffset) sceGuEnable(GU_DEPTH_TEST); break;
         case GL_CULL_FACE:      sceGuEnable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuEnable(GU_SCISSOR_TEST); break;
-        case GL_TEXTURE_2D:     sceGuEnable(GU_TEXTURE_2D); break;
+        case GL_TEXTURE_2D:     pspgu.texEnabled = 1; sceGuEnable(GU_TEXTURE_2D); break;
         case GL_LINE_SMOOTH:    break;      // the GE has no line antialiasing
         default: break;
     }
@@ -93,7 +93,7 @@ void glDisable(GLenum cap)
         case GL_DEPTH_TEST:     sceGuDisable(GU_DEPTH_TEST); break;
         case GL_CULL_FACE:      sceGuDisable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuDisable(GU_SCISSOR_TEST); break;
-        case GL_TEXTURE_2D:     sceGuDisable(GU_TEXTURE_2D); break;
+        case GL_TEXTURE_2D:     pspgu.texEnabled = 0; sceGuDisable(GU_TEXTURE_2D); break;
         default: break;
     }
 }

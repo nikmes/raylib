@@ -165,7 +165,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 ### Task log (append-only)
 
 - T0 `done`: current colour shared through `PspGuContext`; 2D gate unchanged at 0 differing pixels.
-- T1 `doing`, two candidates eliminated: the transpose hypothesis was tested and **rejected** (613 colours after transposing = the 2D-only count, so the cubes vanished). What is left is that the cubes are drawn *somewhere*, in 722 colours, and pspGL draws them in 474 — i.e. both drivers draw 3D, differently. Next suspects, in order: `glFrustum`'s matrix (the perspective term), depth-test behaviour, and `BeginMode3D`'s blend/cull state.
+- T1 `doing`, three candidates eliminated: the transpose hypothesis was tested and **rejected** (613 colours after transposing = the 2D-only count, so the cubes vanished). What is left is that the cubes are drawn *somewhere*, in 722 colours, and pspGL draws them in 474 — i.e. both drivers draw 3D, differently. Next suspects, in order: `glFrustum`'s matrix (the perspective term), depth-test behaviour, and `BeginMode3D`'s blend/cull state.
 - T1 measured: **25 % of the frame differs, all of it inside the 3D cubes**; the 2D part of the same frame still matches, which localises the fault to the perspective path rather than the matrix upload. Next: check whether `glMultMatrixf` must transpose raylib's row-major `Matrix`.
 - T3 `done`: immediate mode implemented in `tools/pspgu/gl_immediate.c`. First `WRAP=1` build since phase 5 began — `bunnymark` links, runs and logs counters.
 - T4 `done`: both builds report the counters the sprint expected. Batched: `arrays=400 arrayVerts=409,998`, `begins=verts=0` exactly as the review predicted. Unbatched (`PSP_BATCH=0`): `begins=ends=204,999 verts=819,996`, `arrays=0`.

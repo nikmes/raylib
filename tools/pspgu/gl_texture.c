@@ -299,6 +299,7 @@ void glBindTexture(GLenum target, GLuint id)
         t = lookup(id);
     }
 
+    pspgu.boundTexture = (id == 0)? defaultTexture : id;
     if (t != NULL) applyTexture(t);
 }
 

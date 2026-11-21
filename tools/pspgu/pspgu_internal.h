@@ -83,6 +83,8 @@ typedef struct {
     unsigned int enableBits;                // GL_* enable bits, mirrored for the draw path
     unsigned int clientBits;                // GL_*_ARRAY bits from glEnableClientState
     unsigned char cr, cg, cb, ca;           // Current colour: what GL11 uses when GL_COLOR_ARRAY is off
+    int texEnabled;                         // GL_TEXTURE_2D enable state (GU has no query)
+    unsigned int boundTexture;              // texture id currently bound
 } PspGuContext;
 
 extern PspGuContext pspgu;
