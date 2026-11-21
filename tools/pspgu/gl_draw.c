@@ -106,7 +106,14 @@ static void convertVertex(PspGuVertex *out, int index)
         out->color = ((unsigned int)c[3] << 24) | ((unsigned int)c[2] << 16) |
                      ((unsigned int)c[1] << 8) | (unsigned int)c[0];
     }
-    else out->color = 0xFFFFFFFF;
+    else
+    {
+        // No colour array: GL11 takes the colour from the last glColor*, which is how
+        // DrawMesh draws (material colour, arrays, no colour array). Hardcoding white here
+        // rendered meshes white where pspGL renders the material.
+        out->color = ((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
+                     ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr;
+    }
 
     if (pspgu.clientBits & PSPGU_CS_NORMAL)
     {

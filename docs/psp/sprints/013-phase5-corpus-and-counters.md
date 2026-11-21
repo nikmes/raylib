@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | — / — |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
-| Tasks | 2/6 done |
+| Tasks | 3/6 done, T1 measured with a lead |
 
 ## 0. Handover
 
@@ -152,8 +152,8 @@ they are link-time wrappers that do not exist yet.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T0 | **current colour when the colour array is off**: the array path must use the last `glColor*` value (GL11 semantics) instead of hardcoded white, which means the current colour moves from a static in `gl_immediate.c` into `PspGuContext` so both paths share it | `todo` | `DrawMesh`'s cube renders in the material's colour, not white; `batch_check` 2D stays byte-identical (the batcher always sets a colour array, so it cannot regress) | `gl_draw.c:109` hardcodes `0xFFFFFFFF` |
-| T1 | **the mesh scene**: `batch_check MESH_SCENE=1` (2D → `DrawCube` + `DrawMesh` → 2D) on both drivers, captured this session | `todo` | identical, or the differing pixels counted and localised; this is the first test of `glDrawElements` and the converting path under 3D | — |
+| T0 | **current colour when the colour array is off** | `done` | `DrawMesh`'s cube renders in the material colour; the 2D gate is unchanged | the current colour moved from a static in `gl_immediate.c` into `PspGuContext`, and `gl_draw.c` uses it when `GL_COLOR_ARRAY` is off. **2D gate after the change: 0 differing pixels**, as predicted — the batcher always sets a colour array |
+| T1 | **the mesh scene** | `doing` | identical, or the difference counted and localised | **25.0 % of the frame differs, and every differing pixel is inside the 3D cube region.** The 2D part of the same frame still matches. Sampling: at (120,140) pspgu draws the red `DrawCube` while pspGL shows background; pspgu has 722 colours against pspGL's 474. **The lead is narrow and specific: `glOrtho` is proven correct by the 2D parity, so the fault is in the perspective path — `glFrustum` and/or `glMultMatrixf`.** `BeginMode3D` feeds the camera through `rlMultMatrixf(MatrixToFloat(...))`, and raylib's `MatrixToFloat` emits **row-major** while GL's `glMultMatrixf` takes **column-major**: pspGL must be transposing somewhere we are not. That is the same transpose class of bug as the `sceGuSetMatrix` one in sprint 011, one layer up |
 | T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
 | T3 | **immediate-mode symbols** (task 12) | `done` | `psp-tests/*` link with `WRAP=1`; a `PSP_BATCH=0` bunnymark logs non-zero `verts` | `tools/pspgu/gl_immediate.c`: buffers into the array layout, emits through the `glDrawArrays` path, expands `GL_QUADS` to two triangles, 1,024-vertex buffer with emit-on-overflow. `bunnymark` now **links and runs with `WRAP=1`** — the first time since phase 5 began |
 | T4 | **counters under the new driver**, both builds | `done` | batched: `arrays`/`arrayVerts` non-zero, `begins`/`verts` zero by design; immediate: `begins`/`ends`/`verts` non-zero | `PSP_BATCH=1`: `begins=0 verts=0 arrays=400 arrayVerts=409,998`, `work 6.565 ms`. `PSP_BATCH=0`: `begins=204,999 ends=204,999 verts=819,996 arrays=0`, `work 25.980 ms` — against pspGL's 48.8 ms for the same unbatched workload |
@@ -163,6 +163,8 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### Task log (append-only)
 
+- T0 `done`: current colour shared through `PspGuContext`; 2D gate unchanged at 0 differing pixels.
+- T1 measured: **25 % of the frame differs, all of it inside the 3D cubes**; the 2D part of the same frame still matches, which localises the fault to the perspective path rather than the matrix upload. Next: check whether `glMultMatrixf` must transpose raylib's row-major `Matrix`.
 - T3 `done`: immediate mode implemented in `tools/pspgu/gl_immediate.c`. First `WRAP=1` build since phase 5 began — `bunnymark` links, runs and logs counters.
 - T4 `done`: both builds report the counters the sprint expected. Batched: `arrays=400 arrayVerts=409,998`, `begins=verts=0` exactly as the review predicted. Unbatched (`PSP_BATCH=0`): `begins=ends=204,999 verts=819,996`, `arrays=0`.
 - **Unplanned result worth having**: with pspgu the *unbatched* workload costs **25.98 ms** of work at N=1,000 where pspGL needed **48.8 ms** — our immediate path is ~1.9× cheaper than pspGL's GL interpretation, and the batched path is 6.57 ms against pspGL's 7.30 ms.

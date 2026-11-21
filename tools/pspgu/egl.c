@@ -101,6 +101,7 @@ static void pspguInitGu(void)
 
     pspguInitTextures();
     pspguResetMatrices();
+    pspgu.cr = pspgu.cg = pspgu.cb = pspgu.ca = 255;   // opaque white, GL's initial colour
     pspgu.clearColor = 0xFF000000;      // opaque black, what rlglInit clears to
     pspgu.clearDepth = 1.0f;
     pspgu.vsync = 1;

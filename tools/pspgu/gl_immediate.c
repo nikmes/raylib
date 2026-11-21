@@ -32,7 +32,13 @@ static PspGuImmVertex immTriangles[PSPGU_IMM_MAX*2];      // quads expand 4 -> 6
 static int immCount;
 static unsigned int immMode;            // GL primitive
 static float immU, immV;
-static unsigned char immR = 255, immG = 255, immB = 255, immA = 255;
+// The current colour lives in pspgu, not here: GL11 says it is what the vertex colour is
+// when GL_COLOR_ARRAY is off, which is exactly how DrawMesh draws (it calls rlColor4ub and
+// then sends arrays with no colour). A private static here made the array path paint white.
+#define immR (pspgu.cr)
+#define immG (pspgu.cg)
+#define immB (pspgu.cb)
+#define immA (pspgu.ca)
 
 static unsigned int immGuPrimitive(void)
 {

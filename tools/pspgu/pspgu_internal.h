@@ -82,6 +82,7 @@ typedef struct {
     float clearDepth;
     unsigned int enableBits;                // GL_* enable bits, mirrored for the draw path
     unsigned int clientBits;                // GL_*_ARRAY bits from glEnableClientState
+    unsigned char cr, cg, cb, ca;           // Current colour: what GL11 uses when GL_COLOR_ARRAY is off
 } PspGuContext;
 
 extern PspGuContext pspgu;
