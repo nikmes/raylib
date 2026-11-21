@@ -19,7 +19,7 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [4 — rlgl batcher](04-rlgl-batcher/index.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
 | [5 — Native GU backend](05-native-gu-backend/index.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
 | [6 — Textures and VRAM](06-textures-vram/index.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
-| [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **in progress** — 018–020 done; 021–023 written |
+| [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **in progress** — 018–021 done; 022–023 written |
 | [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | in progress — 041 implemented, device run pending; 042–044 written |
 | [9 — Audio](09-audio/index.md) | `sceAudio` output without costing frame time | **planned** — seven sprints written (045–051) |
 | [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |

@@ -934,6 +934,13 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   two-texture reference; captures are byte-identical to the pre-sliced references (`39d6547a…`, `ec18cdf7…`,
   `c34c01ce…`). The ≤512 path is unchanged (`windraws=0`), the gate is `b69830b8…`, and 512×512 8888 (1 MiB) does
   not fit beside the font, so the boundary was tested at 512×256.
+- **Sprite culling and 3-vertex triangles (sprint 021, b24):** `DrawTexturePro`/`DrawRectanglePro` reject an
+  unrotated draw wholly outside the screen before its corner math (`PSP_CULL=1`); 10,000 sprites at 50 %
+  off-screen drop from **20,000 to 10,000 submitted vertices**, 5 to 3 draws, and **48.67 to 35.12 ms** work with
+  an identical capture. On PSP, `DrawTriangleGradient` uses the 3-vertex untextured `RL_TRIANGLES` branch
+  (`PSP_TRI_FAST=1`) instead of a 4-vertex quad: the shape scene goes from **10,000 to 7,000 vertices**, 4 to 3
+  draws, **17.78 to 12.81 ms** work, and its median from **33.4 to 16.68 ms** (60 fps), capture byte-identical
+  (`b9cd43b6…`). Shapes bind the shapes texture once per frame, not per object. Gate `b69830b8…`.
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

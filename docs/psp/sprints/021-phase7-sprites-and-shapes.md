@@ -4,10 +4,10 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Sprint | P7-S4 |
-| Branch / base commit | `master` @ `acc1ade4` (docs) / code unchanged since `9e34303d` |
-| Started / closed | — / — |
-| Build number(s) | pspgu `b24` (unchanged); `libraylib.a` builds with `PSP_CULL` and `PSP_TRI_FAST` |
-| Tasks | 0/5 done |
+| Branch / base commit | `master` @ `acc1ade4` (docs); implementation `ce410003` |
+| Started / closed | 2026-11-21 / 2026-11-21 |
+| Build number(s) | pspgu `b24`; `libraylib.a` arms `PSP_CULL=0/1`, `PSP_TRI_FAST=0/1` |
+| Tasks | 5/5 done |
 
 ## 0. Handover
 
@@ -120,21 +120,21 @@ targets (phase 10), the batch cap/arena, and any driver change.
 
 ## 4. Preconditions
 
-- [ ] Sprint 020 closed at `9e34303d`; pspgu `b24`, gate `b69830b8…`
-- [ ] 018 shape baseline (`4 draws, 10,000 vertices, 21.79 ms`) and capture are in `sprint018/`
-- [ ] The 2k/6k/2k composition is confirmed by the counters, not assumed
-- [ ] `batch_check` includes an untextured rectangle (it does) for the gate
-- [ ] Device loop available; pspGL restorable (`2ab7378e`)
+- [x] Sprint 020 closed at `9e34303d`; pspgu `b24`, gate `b69830b8…`
+- [x] 018 shape baseline (`4 draws, 10,000 vertices, 21.79 ms`) and capture are in `sprint018/`
+- [x] The 2k/6k/2k composition is confirmed by the counters, not assumed
+- [x] `batch_check` includes an untextured rectangle (it does) for the gate
+- [x] Device loop available; pspGL restorable (`2ab7378e`)
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Corpus**: `MODE=sprites COUNT OFFSCREEN` with deterministic positions; keep `MODE=shapes`; baseline both with `PSP_CULL=0 PSP_TRI_FAST=0` | `todo` | objects/submitted vertices/work recorded; captures deterministic; 2k/6k/2k confirmed | |
-| T2 | **API culling**: in `DrawTexturePro` and `DrawRectanglePro`, return before the corner math when `rotation == 0`, size is positive, the destination is entirely outside the screen, and no render target is active; `PSP_CULL=0\|1` | `todo` | 10,000 sprites at 50 % off-screen submit ~10,000 vertices not 20,000; work drops; capture identical | |
-| T3 | **Triangle fast path**: `DrawTriangleGradient` on PSP submits `RL_TRIANGLES` with 3 vertices and the three colours when `PSP_TRI_FAST=1`; `=0` keeps the 4-vertex quad | `todo` | 1,000 triangles submit 3,000 vertices not 6,000; shape capture byte-identical | |
-| T4 | **Bind/run audit**: count binds vs object count in the shape and sprite scenes | `todo` | shapes: one shapes-texture run for rectangles, none added by triangles, not 1,000 binds; sprite scene: one bind per run | |
-| T5 | **Regression**: 018/019/020 captures, `batch_check`, mixed, VRAM/residency | `todo` | all hashes unchanged; gate `b69830b8…`; 0 evictions | |
+| T1 | **Corpus**: `MODE=sprites COUNT OFFSCREEN` with deterministic positions; keep `MODE=shapes`; baseline both with `PSP_CULL=0 PSP_TRI_FAST=0` | `done` | objects/submitted vertices/work recorded; captures deterministic; 2k/6k/2k confirmed | Sprites 10,000 at 50 % off-screen queued **20,000 vertices / 5 draws**, work **48.668/48.666 ms**; shapes baseline **10,000 vertices / 4 draws**, work **17.785/17.780 ms**, median 33.367 ms. Counters confirm 2k rects + 6k triangles + 2k lines |
+| T2 | **API culling**: in `DrawTexturePro` and `DrawRectanglePro`, return before the corner math when `rotation == 0`, size is positive, the destination is entirely outside the screen, and no render target is active; `PSP_CULL=0\|1` | `done` | 10,000 sprites at 50 % off-screen submit ~10,000 vertices not 20,000; work drops; capture identical | With `PSP_CULL=1`: **10,000 vertices / 3 draws**, work **35.189/35.124 ms** (−27.8 %/−27.9 %), capture byte-identical to the cull-off run. 5,000 visible × 2 vertices matches the submitted count |
+| T3 | **Triangle fast path**: `DrawTriangleGradient` on PSP submits `RL_TRIANGLES` with 3 vertices and the three colours when `PSP_TRI_FAST=1`; `=0` keeps the 4-vertex quad | `done` | 1,000 triangles submit 3,000 vertices not 6,000; shape capture byte-identical | With `PSP_TRI_FAST=1`: shape scene **7,000 vertices / 3 draws** (was 10,000 / 4), work **12.807/12.811 ms** (−28 %), median **16.683 ms** (was 33.367). Capture byte-identical to the baseline; final `PSP_CULL=1 PSP_TRI_FAST=1` gives 13.171/13.166 ms and the same capture |
+| T4 | **Bind/run audit**: count binds vs object count in the shape and sprite scenes | `done` | shapes: one shapes-texture run for rectangles, none added by triangles, not 1,000 binds; sprite scene: one bind per run | Shapes **300 binds / 300 frames = 1/frame** (rectangles' shapes texture), not 3,000; triangles add none. Sprites **1 bind per run**, not per sprite |
+| T5 | **Regression**: 018/019/020 captures, `batch_check`, mixed, VRAM/residency | `done` | all hashes unchanged; gate `b69830b8…`; 0 evictions | text8 **3.359 ms**, text24 **9.129**, tiles **3.125**, particles 500 **3.068**, mixed **10.590**, oversize 1024 **0.958**; all captures byte-identical to 018/019/020. Gate **b69830b8…**; every run 0 evictions/reloads/failures |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -223,30 +223,82 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T5.
+All runs 300 frames, two per point. Evidence: `/home/psp/evidence/sprint021/`
+(`s21_*_run{1,2}.txt|raw|log`, `gate_b24.raw`, `SHA256SUMS`). The boot line records the switch arm:
+`RLGL: PSP_CULL=… PSP_TRI_FAST=…`.
 
-**Sprites:** total / visible / submitted vertices / draws / work, with `PSP_CULL=0` and `=1`.
+**Sprites, 10,000 at 50 % off-screen:**
 
-**Shapes:** `PSP_TRI_FAST=0` vs `=1`: vertices, draws, binds, work; capture hashes.
+| `PSP_CULL` | total / visible | submitted vertices/frame | draws/frame | work run 1 / run 2 | capture |
+|---|---|---:|---:|---|---|
+| 0 | 10,000 / 5,000 | **20,000** | 5 | 48.668 / 48.666 ms | `4b0f7267da57265a` |
+| 1 | 10,000 / 5,000 | **10,000** | 3 | **35.189 / 35.124 ms** | `4b0f7267da57265a` |
 
-**Regression:** 018/019/020 hashes, gate, residency.
+Culling removes exactly 2 vertices per off-screen sprite and 27.8 % of the work, with a byte-identical capture.
+The frame median stays at 50.050 ms: 5,000 visible 32×32 sprites still exceed the 16.683 ms vblank, so this scene
+does not reach 60 fps; the work figure is the signal. Binds are 1 per run, not per sprite.
+
+**Shapes, 1,000 rectangles + 1,000 triangles + 1,000 lines:**
+
+| `PSP_TRI_FAST` / `PSP_CULL` | vertices/frame | draws/frame | binds/run | work run 1 / run 2 | median | capture |
+|---|---:|---:|---:|---|---:|---|
+| 0 / 0 | **10,000** | 4 | 300 | 17.785 / 17.780 ms | 33.367 ms | `b9cd43b6ede460bf` |
+| 1 / 0 | **7,000** | 3 | 300 | **12.807 / 12.811 ms** | **16.683 ms** | `b9cd43b6ede460bf` |
+| 1 / 1 (final) | 7,000 | 3 | 300 | 13.171 / 13.166 ms | 16.683 ms | `b9cd43b6ede460bf` |
+
+The triangle path removes 3,000 vertices and one draw, cuts work by 28 %, and takes the scene from 33.367 ms
+(20 fps) to **16.683 ms (60 fps)**. The capture is byte-identical across all three arms. Binds are 300 per run
+(one per frame, the rectangles' shapes texture), not 3,000; the triangles add none. The cull is neutral for this
+on-screen scene, as expected.
+
+**Regression (final `PSP_CULL=1 PSP_TRI_FAST=1`):**
+
+| scene | work | capture |
+|---|---:|---|
+| text 8 / 24 lines | 3.359 / 9.129 ms | matches 019 |
+| tiles (128² atlas) | 3.125 ms | matches 018 |
+| particles 500 | 3.068 ms | matches 018 |
+| mixed | 10.590 ms | matches 018 |
+| oversize 1024×128 | 0.958 ms | matches 020 |
+| `batch_check` gate | — | `b69830b86a899cc0…`, byte-identical to pspGL |
+
+Every run: 0 evictions, 0 reloads, 0 failed allocations.
 
 ## 8. Exit criteria
 
-- [ ] the sprite scene records total, visible and submitted vertices, and work with culling on and off
-- [ ] culling reduces submitted vertices to the visible count and lowers work; capture identical
-- [ ] a triangle submits 3 vertices, not 6, with a byte-identical `MODE=shapes` capture
-- [ ] the shape scene is at most 3 draws / 7,000 vertices, with work recorded
-- [ ] binds do not scale with object count in either scene
-- [ ] 018/019/020 captures and the gate are byte-identical
-- [ ] no driver (`tools/pspgu/`) change is in the sprint diff
+- [x] the sprite scene records total, visible and submitted vertices, and work with culling on and off
+- [x] culling reduces submitted vertices to the visible count and lowers work; capture identical
+- [x] a triangle submits 3 vertices, not 6, with a byte-identical `MODE=shapes` capture
+- [x] the shape scene is at most 3 draws / 7,000 vertices, with work recorded
+- [x] binds do not scale with object count in either scene
+- [x] 018/019/020 captures and the gate are byte-identical
+- [x] no driver (`tools/pspgu/`) change is in the sprint diff
 
 ## 9. Result
 
-Not run yet.
+Sprint 021 closed 5/5. The two changes are independent and both hold their pixel contracts:
+
+- **Culling** at the top of `DrawTexturePro`/`DrawRectanglePro` removes the per-sprite math and vertices for
+  unrotated draws wholly outside the screen. 10,000 sprites at 50 % off-screen go from **20,000 to 10,000
+  submitted vertices**, **5 to 3 draws**, and **48.67 to 35.12 ms** work (−27.8 %), with a byte-identical capture.
+  The scene still misses 60 fps because 5,000 visible 32×32 sprites are over the vblank budget; that is the
+  workload, not the cull.
+- **Triangle submission** on PSP uses the existing 3-vertex `RL_TRIANGLES` branch instead of the 4-vertex
+  textured quad. The shape scene goes from **10,000 to 7,000 vertices**, **4 to 3 draws**, work **17.78 to
+  12.81 ms** (−28 %), and the median from **33.367 ms (20 fps) to 16.683 ms (60 fps)**. The capture is
+  byte-identical; the final `PSP_CULL=1 PSP_TRI_FAST=1` build reproduces it.
+- **Binds** are 1 per frame for the shapes texture (rectangles), not per object; triangles add none; sprites use
+  one bind per run.
+- **Regression:** text 8/24, tiles, particles, mixed and oversize captures match 018/019/020; `batch_check` is
+  byte-identical to pspGL (`b69830b8…`); every run has 0 evictions/reloads/failures.
+
+The 018 shape work figure was 21.79 ms; the same-session baseline on the current tree is 17.78 ms for the same
+10,000-vertex composition. The sprint uses the same-session arm for the delta so code layout and thermal state
+do not contaminate it. The implementation commit is `ce410003`; this page records the evidence.
 
 ## 10. Follow-ups
 
 - **Sprint 022 (P7-S5) — particles**: one dynamic stream per texture run, simulation separate, cap boundary.
 - **Sprint 023 (P7-S6) — cache strips, regression, phase close**.
-- If T3 is a pixel null, `PSP_TRI_FAST` stays 0 and the reason is recorded; the culling win (T2) is independent.
+- The sprite scene is deliberately over the vblank budget; if a lighter culling timing point is wanted later,
+  use 2,000 sprites (1,000 visible) so the arena and vblank do not dominate.

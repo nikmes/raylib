@@ -185,7 +185,7 @@ copy, and do not invalidate the whole D-cache in a steady frame.
 
 ## Sprints and features
 
-The phase is sized as six sprints. P7-S1–P7-S3 (018–020) are done; P7-S4–P7-S6 (021–023) are written and are
+The phase is sized as six sprints. P7-S1–P7-S4 (018–021) are done; P7-S5–P7-S6 (022–023) are written and are
 implemented once the previous sprint's numbers are in hand (the fast paths depend on what the corpus measures).
 
 | sprint | scope | state |
@@ -193,7 +193,7 @@ implemented once the previous sprint's numbers are in hand (the fast paths depen
 | [P7-S1 — 018 — Corpus, counters and boot budget](../../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
 | [P7-S2 — 019 — Text work: submission, lookup and the 512 atlas limit](../../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
 | [P7-S3 — 020 — Tile maps and 512-pixel windowing](../../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | **done** — swizzled windows proven, 1024 uploads, 2/4 window draws, byte-identical to the pre-sliced refs |
-| [P7-S4 — 021 — Sprites and shapes](../../sprints/021-phase7-sprites-and-shapes.md) | offscreen rejection for axis-aligned quads; solid rectangles as one sprite; bind/run audit | written |
+| [P7-S4 — 021 — Sprites and shapes](../../sprints/021-phase7-sprites-and-shapes.md) | offscreen rejection for axis-aligned draws; 3-vertex triangle path; bind/run audit | **done** — cull 20k→10k vertices (−27.8 %), triangles 6k→3k, shapes median 33.4→16.7 ms, gate 0 |
 | [P7-S5 — 022 — Particles](../../sprints/022-phase7-particles.md) | one stream per texture run, api/direct probe, 2,048/4,000 cap boundary, tear audit | written |
 | [P7-S6 — 023 — Cache strips, regression, close](../../sprints/023-phase7-cache-strips-and-close.md) | 16/32/64/128 px strip A/B on single and repeated draws; full regression; phase exit table | written |
 
