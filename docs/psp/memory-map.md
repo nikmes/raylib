@@ -840,7 +840,7 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   and `VFPU_ALIGNMENT` (= 16 bytes) for matrix loads/stores.
 - **`__builtin_vfpu_*` and `__builtin_allegrex_*` do not exist in psp-gcc 15.2.0** — verified with
   `__has_builtin`, which answered no. VFPU work is inline asm (`mtv`/`mfv`/`vrsq`/`vrot`…), as the
-  [compute-units section](#101-vfpu--cop2-128-single-precision-registers) describes.
+  [compute-units section](#101-vfpu-cop2-128-single-precision-registers) describes.
 - `libpspgum_vfpu.a` is the GUM built with VFPU paths. It is not the default and no sample uses it; adopting it
   is a deliberate choice and must be A/B measured like anything else.
 

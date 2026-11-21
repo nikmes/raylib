@@ -2,38 +2,50 @@
 
 | | |
 |---|---|
-| State | not started |
+| State | **planned** — seven sprints written (P9-S1…S7, 045–051); no code started |
 | Depends on | Phase 1 (a running build) — independent of the renderer phases |
-| Exit criterion | several sounds plus one streamed track on the device, 60 fps held, audio thread cost measured, five minutes without a dropout, no `sceAudio` call on the main thread |
+| Exit criterion | several sounds plus one streamed track on the device, 60 fps held, audio thread cost measured, five minutes without a dropout, no `sceAudio` call in the steady-state frame loop |
 
 ## What this phase is about
 
 `raudio` is built on miniaudio, and **miniaudio has no PSP backend** — zero references in the whole library.
-That is why the 5.5 port's own boot log reads `raudio:.... not loaded (optional)`. Audio on this platform has to
-be written, not enabled, so the phase starts by choosing where it goes.
+The PSP build currently compiles raudio out (`src/Makefile:560`, `-DSUPPORT_MODULE_RAUDIO=0`) because miniaudio
+includes `<dlfcn.h>` for runtime linking; the 5.5 port's boot log reads `raudio:.... not loaded (optional)`.
+Audio has to be built and enabled first, then given a device route: the phase does not start from a working
+audio module.
 
 ## What has to be true before starting
 
 - [ ] A build that runs for minutes without a crash
-- [ ] A way to measure the audio thread separately from the frame loop
-- [ ] The microSD/PCIe-equivalent question settled: assets come from the memory stick or from `host0:`
+- [ ] A way to measure the audio thread separately from the frame loop (`sceKernelReferThreadRunStatus().runClocks`)
+- [ ] raudio compiles and links on PSP with a custom miniaudio backend (P9-S1)
+- [ ] The asset question settled: Memory Stick (`ms0:`) or `host0:` under PSPLink
 
 ## Tasks
 
-- [ ] Choose the integration: miniaudio's custom backend (`MA_ENABLE_ONLY_SPECIFIC_BACKENDS` +
-      `MA_ENABLE_CUSTOM`, the `ma_backend` vtable's `onDeviceInit`/`onDeviceStart`/`onDeviceStop`/`onDeviceUninit`)
-      versus driving `sceAudio` straight from `raudio.c` — [open question 6](../../memory-map.md#12-open-questions)
-- [ ] Define the device contract in one place: **44.1 kHz, s16, stereo**, and a period of N frames. raylib
-      currently defaults to `ma_format_f32`, 2 channels, rate 0 (`src/raudio.c:285-292`); a PSP backend that reports
-      s16/44100 lets miniaudio convert at load time instead of on the audio thread
-- [ ] Reserve output with `sceAudioChReserve()`; 64–65,472 frames, buffer size aligned to 64 bytes (a multiple of
-      16 stereo frames), 64-byte-aligned buffer memory
-- [ ] Put `sceAudioOutputPannedBlocking()` on its **own thread**, never in the frame loop — it paces to playback,
-      and the thread must not be starved for more than a few hundred microseconds
+- [ ] Choose the integration: route A is miniaudio's custom backend (`MA_ENABLE_ONLY_SPECIFIC_BACKENDS` +
+      `MA_ENABLE_CUSTOM` + `MA_NO_RUNTIME_LINKING`; `ma_backend_callbacks`' init/start/stop/uninit **and
+      `onDeviceWrite`/`onDeviceDataLoop`**) versus driving `sceAudio` straight from `raudio.c`. Routes B/C are
+      P9-S6/S7 and do not replace route A until measured — [open question 6](../../memory-map.md#12-open-questions)
+- [ ] Keep the application/mixer contract **f32, stereo, rate from the backend**; the PSP backend reports
+      **s16, 44100, stereo** as its internal format and a **1024-frame** period. Do not set
+      `AUDIO_DEVICE_FORMAT` to s16 — raylib's mixer writes `float` (`src/raudio.c:2468-2645`); measure the
+      f32→s16 conversion miniaudio performs on the audio thread
+- [ ] Reserve a regular channel with `sceAudioChReserve()`: 64–65,472 samples, a multiple of **64 samples**
+      (`PSP_AUDIO_SAMPLE_ALIGN`), 64-byte-aligned buffer memory; a stereo s16 buffer is `samplecount*4` bytes.
+      `sceAudioOutput2*`/`sceAudioSRCChReserve()` take 17–4,111 samples and are the same single output channel
+- [ ] Put `sceAudioOutputPannedBlocking()` on the **audio thread**, never in the frame loop — it paces to playback,
+      and the thread must not be starved for more than a few hundred microseconds. In route A that thread is
+      miniaudio's; `onDeviceWrite()` is where the blocking call belongs
 - [ ] Use at least a double buffer; the blocking call returns when the block is accepted, not when it has finished
       playing
-- [ ] Split decoder/reader from feeder: low-priority decoder + card reader, high-priority feeder that only copies
-      from a PCM ring and calls the blocking output
+- [ ] Copy miniaudio's frames into a static 64-byte-aligned PCM buffer before the output call: the pointer
+      `onDeviceWrite()` receives is a stack buffer (`src/external/miniaudio.h:20742`)
+- [ ] Split decoder/reader from feeder **only if the measurement needs it**: low-priority decoder + card reader,
+      high-priority feeder that only copies from a PCM ring and calls the blocking output. Route A's miniaudio
+      audio thread is already the feeder; do not add a second one without evidence
+- [ ] Keep `UpdateMusicStream()` as the public API; measure its main-thread decode first, then move decode/read
+      behind an internal decoder thread while preserving the public call
 - [ ] Prefer a regular 44.1 kHz channel and CPU resampling; if using `sceAudioSRCChReserve()`, reserve it **once**
       and keep it — re-reserving after release failed repeatedly on hardware in another project
 - [ ] Software-mix sounds into one or two channels, leaving hardware channels free for streamed music
@@ -42,9 +54,9 @@ be written, not enabled, so the phase starts by choosing where it goes.
 - [ ] Respect memory-stick cost: ~17 ms per `sceIoOpen`, so few long-lived handles and large reads
 - [ ] `SetSoundPitch` is resampling — profile it rather than assuming it is free
 - [ ] Make audio threads persistent; retry failed bring-up on a timer and log every failure
-- [ ] Decide the Media Engine route (see below): main-CPU mixer, `sceSas` through `pspsascore`, or an owned ME
-      mixer. Record the decision and the measurement behind it
-- [ ] If the ME is taken over: gate it behind a config file next to the EBOOT, keep the main-CPU path compiled in,
+- [ ] Decide the Media Engine route (see below): route A (miniaudio custom backend), `sceSas` through
+      `pspsascore`, or an owned ME mixer. Record the decision and the measurement behind it
+- [ ] If the ME is taken over: gate it behind a config file next to the EBOOT, keep route A compiled in,
       and handle suspend/resume
 - [ ] Define the exit path: stop and join the audio threads, release channels, then exit — in that order
 
@@ -70,7 +82,8 @@ hardware.
 | fact | value | tag |
 |---|---|---|
 | Output channels | 8 regular channels, reserved by number (0–7) or `PSP_AUDIO_NEXT_CHANNEL` | `[public: pspaudio.h]` |
-| Frames per block | 64–65,472; the request must satisfy the driver's 64-byte alignment. pspaudiolib uses **1,024** frames; Sony's SAS sample uses **736** (a multiple of 16 stereo frames) | `[public: pspaudio.h]` + `[external: Sony samples]` |
+| Regular-channel block | 64–65,472 samples, a multiple of **64 samples** (`PSP_AUDIO_SAMPLE_ALIGN`); pspaudiolib uses **1,024** | `[public: pspaudio.h]` |
+| Output2/SRC block | 17–4,111 samples; Sony `at3mix` uses **512**, `sas-streaming` **736** | `[public: pspaudio.h]` + `[external: Sony samples]` |
 | Volume | 0–`0x8000` per channel, applied by the hardware digital volume | `[public: pspaudio.h]` |
 | Formats | `PSP_AUDIO_FORMAT_STEREO` = 0, `PSP_AUDIO_FORMAT_MONO` = 0x10 | `[public: pspaudio.h]` |
 | Regular-channel rate | 44.1 kHz by default; the kernel can switch the output between 44100 and 48000 only | `[public: uofw audio.c]` |
@@ -82,7 +95,8 @@ hardware.
 | Double-buffer timing | with two 1,024-frame blocks in flight the blocking call is the audio clock, one block of latency (~23 ms at 44.1 kHz) | `[derived]` |
 | Music decode cost | Vorbis decode measured at ~5–6 ms of main-CPU time per frame even with clean I/O | `[measured: PSP-3000, large 3D port, via skill]` |
 | Mixer cost | a software mixer for an emulated sound chip measured 7.5 ms/frame on the game thread plus ~2 ms feeder time-stretch; moving it to the ME saved 5.8 ms/frame | `[measured: PSP-3000, large 3D port, via skill]` |
-| miniaudio hooks | custom backends are selected with `ma_backend_custom`; the vtable supplies `onContextInit`, `onDeviceInit`, `onDeviceStart`, `onDeviceStop`, `onDeviceUninit`, `onContextUninit` | `[public: src/external/miniaudio.h]` |
+| miniaudio hooks | custom backends use `ma_backend_callbacks`: context/device init/start/stop/uninit **and `onDeviceWrite`/`onDeviceDataLoop`**; select with `MA_ENABLE_ONLY_SPECIFIC_BACKENDS` + `MA_ENABLE_CUSTOM` + `MA_NO_RUNTIME_LINKING`, pass `{ ma_backend_custom }` and `ctxConfig.custom` | `[public: src/external/miniaudio.h]` |
+| PSP link line | `libraylib.a` is static: the app links `-lpspaudio -lpthread -latomic`; `libatomic.a` supplies miniaudio's 64-bit atomics; no `dlfcn` with `MA_NO_RUNTIME_LINKING` | `[measured: compile/link probe, 2026-11-21]` |
 
 ## What the reference implementations do
 
@@ -106,9 +120,9 @@ The references differ in where decoding and mixing happen, which is the actual d
 The hardware facts and the rules for running code on the ME are in
 [§10.2](../../memory-map.md#102-media-engine-the-second-mips-core). For this phase, five consequences matter:
 
-1. **The firmware already uses the ME for audio.** SAS (up to 32 voices, 44.1 kHz, ADPCM/PCM/ATRAC3) runs
-   mainly on the ME, and `sceSasCoreWithMix` exists to let it mix and then hand the result to Simple Audio.
-   `[external: Sony SAS Overview]`
+1. **The firmware already uses the ME for audio.** SAS (up to 32 voices, 44.1 kHz, VAG/ADPCM + raw PCM) runs
+   mainly on the ME, and `__sceSasCoreWithMix` exists to let it mix and then hand the result to Simple Audio.
+   ATRAC3 is decoded by `sceAtrac`, not by SAS. `[external: Sony SAS Overview; public: pspsascore.h]`
 2. **Taking the reset vector disables that.** A session that owns the ME loses `sceSas`, `sceAtrac` and
    `sceMpeg` until reboot. If the game needs an ATRAC or MPEG soundtrack, the ME is not available for a custom
    mixer. `[practice; measured: PSP-3000, large 3D port, via skill]`
@@ -125,8 +139,8 @@ Three routes, in increasing order of risk:
 
 | route | mechanism | main-CPU cost | prerequisites | gives up |
 |---|---|---|---|---|
-| **A — main-CPU mixer** | mix/resample into 1–2 `sceAudioChReserve` channels; feeder thread does the blocking output | mixer time, measured not assumed | none; works with the miniaudio custom backend | CPU time only |
-| **B — `sceSas`** | `__sceSasInit`/`__sceSasSetVoice`/`__sceSasCoreWithMix` from `pspsascore.h`; ME mixes up to 32 voices; feed the result to a regular channel or Simple Audio | voice setup + output only | VAG/ADPCM/PCM assets; raylib `Sound` needs a voice mapping | arbitrary PCM mixing, per-sound pitch semantics raylib expects |
+| **A — miniaudio custom backend** | mix/resample on the main CPU into 1–2 `sceAudioChReserve` channels; miniaudio's audio thread does the blocking output | mixer time, measured not assumed | none; this is the route-A build | CPU time only |
+| **B — `sceSas`** | `__sceSasInit`/`__sceSasSetVoice`/`__sceSasCoreWithMix` from `pspsascore.h`; the firmware mixes up to 32 voices; feed the result to a regular channel or Simple Audio | voice setup + output only | VAG/ADPCM/PCM assets; raylib `Sound` needs a voice mapping | voice-model differences; 32-voice cap; fixed 44.1 kHz |
 | **C — owned ME mixer** | reset-vector takeover, custom mixer/resampler in ME code | near zero once running | kernel mode (kubridge/ARK or kernel PRX), stub with a stack, exception handler, watchdog, suspend/resume handling, config gate | `sceSas`, `sceAtrac`, `sceMpeg`; PPSSPP testing |
 
 Route A is the smallest path to correct audio and the one that fits a miniaudio backend. Route B is the only
@@ -148,21 +162,35 @@ technique worked on hardware. These are the candidates, each with the measuremen
 | Offline resampling | bake assets to 44.1 kHz; for runtime pitch use 16.16 fixed-point linear interpolation | measured cheaper than the SRC channel for the same quality |
 | SRC channel, reserved once | `sceAudioSRCChReserve` at start-up and keep it for the session | it survives five minutes and repeated track changes |
 | 64-byte-aligned, written-back buffers | align every PCM buffer; write back the range before the blocking call; consider the uncached alias used by `triAt3` | no stale-cache noise; alignment assert never fires |
-| `sceSasCoreWithMix` on the ME | map `Sound` voices to SAS voices; ME mixes; main CPU calls `__sceSasCoreWithMix` and outputs | main-CPU mixer cost disappears from the frame profile and assets fit the SAS formats |
+| `sceSasCoreWithMix` on the ME | map `Sound` voices to SAS voices; the firmware mixes; the audio thread calls `__sceSasCoreWithMix` and outputs | main-CPU mixer cost disappears from the frame profile and assets fit the SAS formats |
 | ME takeover, config-gated | reset-vector stub, shared uncached queues, heartbeat then shadow mode, main-CPU fallback | heartbeat, shadow hashes and a live run all pass on device, and suspend/resume is handled |
 | Hardware volume | per-channel pan/volume in the blocking call instead of scaling every sample | identical output with less mixer work |
 
 ## Exit criteria
 
 - [ ] sounds and one streamed track play simultaneously, at 60 fps, measured
-- [ ] audio thread CPU cost in the profile, and the main thread free of `sceAudio`/`sceSas` calls
+- [ ] audio thread CPU cost in the profile, and the **steady-state frame loop** free of `sceAudio`/`sceSas` calls
 - [ ] five minutes without dropout or underrun, counters confirming
 - [ ] assets loaded from the stick survive a slow-mount case (the firmware's own fallback behaviour is the model)
 - [ ] pitch/resample cost measured, not assumed
 - [ ] a clean exit stops the threads, releases the channels, and leaves no audio thread running
+- [ ] `UpdateMusicStream()` remains the public API and its decode cost is measured
 - [ ] the Media Engine route is recorded as a decision, with the number that justified it (or the reason it was
       deferred)
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../../templates/sprint.md).
+Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7 is **conditional** and is
+`dropped` if S6 authorizes no route.
+
+| sprint | file | scope | state |
+|---|---|---|---|
+| P9-S1 — Enable raudio and the silent backend | [045](../../sprints/045-phase9-enable-raudio.md) | build flags, `dlfcn`/atomics/pthread, silent custom backend, link line | written |
+| P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, 64-byte buffer, `onDeviceWrite`, one sound | written |
+| P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | written |
+| P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread decision, 5-minute soak | written |
+| P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | written |
+| P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | written |
+| P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | written; conditional |
+
+Use the [sprint template](../../templates/sprint.md) for any added work.

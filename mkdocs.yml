@@ -105,6 +105,13 @@ nav:
               - psp/phases/08-input/index.md
           - 9 — Audio:
               - psp/phases/09-audio/index.md
+              - P9-S1 — Enable raudio: psp/sprints/045-phase9-enable-raudio.md
+              - P9-S2 — Custom backend: psp/sprints/046-phase9-custom-backend.md
+              - P9-S3 — Sound API: psp/sprints/047-phase9-sound-api.md
+              - P9-S4 — Music streaming: psp/sprints/048-phase9-music-streaming.md
+              - P9-S5 — Close and decision: psp/sprints/049-phase9-close-and-decision.md
+              - P9-S6 — SAS/ME prototype: psp/sprints/050-phase9-sas-me-prototype.md
+              - P9-S7 — Adopt route (conditional): psp/sprints/051-phase9-adopt-route.md
           - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
           - 11 — General optimisation outside the renderer: psp/phases/11-general-optimisation.md
