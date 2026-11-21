@@ -1,74 +1,309 @@
 /**********************************************************************************************
 *
-*   audio_smoke - P9-S2 output harness
+*   audio_smoke - P9-S3 Sound/Wave API and mixing harness
 *
-*   Generates a deterministic 1 kHz, 1-second, 16-bit stereo sine and plays it through
-*   the public raylib API. The PSP backend is inside libraylib.
+*   Modes: tone/sound (S2 control), api, mix, pitch, heap.
+*   The game path uses raylib.h only; PSP headers appear only in this test harness.
 *
 **********************************************************************************************/
 
+#include <malloc.h>
 #include <math.h>
 #include <pspkernel.h>
 #include <pspthreadman.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <raylib.h>
 
 PSP_MODULE_INFO("audio_smoke", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 
-int main(void)
+#ifndef AUDIO_COUNT
+    #define AUDIO_COUNT 16
+#endif
+#ifndef AUDIO_FRAMES
+    #define AUDIO_FRAMES 600
+#endif
+#ifndef AUDIO_PITCH
+    #define AUDIO_PITCH 1.0f
+#endif
+#ifndef AUDIO_WAVE_MS
+    #define AUDIO_WAVE_MS 1000
+#endif
+
+#if !defined(MODE_TONE) && !defined(MODE_SOUND) && !defined(MODE_API) && \
+    !defined(MODE_MIX) && !defined(MODE_PITCH) && !defined(MODE_LEVELS) && !defined(MODE_HEAP)
+    #define MODE_TONE
+#endif
+
+static Wave MakeWave(int milliseconds, float frequency)
 {
-    InitWindow(480, 272, "audio smoke (P9-S2)");
-    SetTargetFPS(60);
+    int sampleRate = 44100;
+    int frameCount = sampleRate*milliseconds/1000;
+    short *samples = (short *)MemAlloc(frameCount*2*sizeof(short));
 
-    InitAudioDevice();
-    if (!IsAudioDeviceReady()) TraceLog(LOG_ERROR, "AUDIO: device is not ready");
-
-    const int sampleRate = 44100;
-    const int sampleFrames = sampleRate;
-    short *samples = (short *)MemAlloc(sampleFrames*2*sizeof(short));
-
-    for (int i = 0; i < sampleFrames; i++)
+    for (int i = 0; i < frameCount; i++)
     {
-        float value = sinf(2.0f*3.14159265f*1000.0f*((float)i/(float)sampleRate))*0.20f;
+        float value = sinf(2.0f*3.14159265f*frequency*((float)i/(float)sampleRate))*0.20f;
         short sample = (short)(value*32767.0f);
         samples[i*2 + 0] = sample;
         samples[i*2 + 1] = sample;
     }
 
     Wave wave = { 0 };
-    wave.frameCount = sampleFrames;
+    wave.frameCount = frameCount;
     wave.sampleRate = sampleRate;
     wave.sampleSize = 16;
     wave.channels = 2;
     wave.data = samples;
+    return wave;
+}
 
+static void FreeWaveData(Wave *wave)
+{
+    MemFree(wave->data);
+    wave->data = NULL;
+}
+
+static void DrawFrame(int frame, const char *mode, const char *status)
+{
+    BeginDrawing();
+    ClearBackground(RAYWHITE);
+    DrawText(TextFormat("%s %d  audio=%s  %s", mode, frame,
+                        IsAudioDeviceReady()? "ready" : "NOT READY", status),
+             10, 10, 20, BLACK);
+    DrawFPS(10, 40);
+    EndDrawing();
+}
+
+static void RunFrames(int frames, const char *mode, const char *status)
+{
+    for (int frame = 0; frame < frames; frame++)
+    {
+        DrawFrame(frame, mode, status);
+        if ((frame > 0) && ((frame%60) == 0))
+        {
+            TraceLog(LOG_INFO, "%s FRAME %d  fps %d", mode, frame, GetFPS());
+        }
+    }
+}
+
+#if defined(MODE_API)
+static void ApiMatrix(void)
+{
+    Wave wave = MakeWave(AUDIO_WAVE_MS, 1000.0f);
+    Sound source = LoadSoundFromWave(wave);
+    TraceLog(LOG_INFO, "API LoadSoundFromWave valid=%d", IsSoundValid(source));
+
+    Sound invalid = { 0 };
+    TraceLog(LOG_INFO, "API IsSoundValid(invalid)=%d", IsSoundValid(invalid));
+
+    int exported = ExportWave(wave, "host0:/audio_smoke_tone.wav");
+    TraceLog(LOG_INFO, "API ExportWave=%d", exported);
+    if (exported)
+    {
+        Sound fileSound = LoadSound("host0:/audio_smoke_tone.wav");
+        TraceLog(LOG_INFO, "API LoadSound valid=%d", IsSoundValid(fileSound));
+        PlaySound(fileSound);
+        StopSound(fileSound);
+        UnloadSound(fileSound);
+        remove("host0:/audio_smoke_tone.wav");
+    }
+
+    Wave copy = WaveCopy(wave);
+    if (copy.data != NULL)
+    {
+        WaveCrop(&copy, 0, copy.frameCount/2);
+        WaveFormat(&copy, 22050, 16, 2);
+        float *waveSamples = LoadWaveSamples(copy);
+        TraceLog(LOG_INFO, "API WaveCopy/Crop/Format/LoadWaveSamples data=%d", waveSamples != NULL);
+        if (waveSamples != NULL) UnloadWaveSamples(waveSamples);
+        UnloadWave(copy);
+    }
+
+    SetMasterVolume(0.5f);
+    TraceLog(LOG_INFO, "API master=%.2f", GetMasterVolume());
+
+    SetSoundVolume(source, 0.5f);
+    SetSoundPan(source, -0.5f);
+    SetSoundPitch(source, 1.25f);
+
+    PlaySound(source);
+    TraceLog(LOG_INFO, "API PlaySound playing=%d", IsSoundPlaying(source));
+    PauseSound(source);
+    ResumeSound(source);
+
+    float *update = (float *)MemAlloc(wave.frameCount*2*sizeof(float));
+    for (int i = 0; i < wave.frameCount; i++)
+    {
+        float value = sinf(2.0f*3.14159265f*440.0f*((float)i/(float)wave.sampleRate))*0.10f;
+        update[i*2 + 0] = value;
+        update[i*2 + 1] = value;
+    }
+    UpdateSound(source, update, wave.frameCount);
+    MemFree(update);
+    TraceLog(LOG_INFO, "API UpdateSound done");
+
+    StopSound(source);
+    TraceLog(LOG_INFO, "API StopSound stopped=%d", !IsSoundPlaying(source));
+
+    Sound alias = LoadSoundAlias(source);
+    TraceLog(LOG_INFO, "API LoadSoundAlias valid=%d", IsSoundValid(alias));
+    UnloadSoundAlias(alias);
+    TraceLog(LOG_INFO, "API source still valid=%d", IsSoundValid(source));
+
+    UnloadSound(source);
+    FreeWaveData(&wave);
+
+    RunFrames(120, "api", "matrix done");
+}
+#endif
+
+#if defined(MODE_PITCH)
+static void PitchMode(void)
+{
+    Wave wave = MakeWave(AUDIO_WAVE_MS, 1000.0f);
+    Sound sound = LoadSoundFromWave(wave);
+    FreeWaveData(&wave);
+
+    SetSoundPitch(sound, AUDIO_PITCH);
+    PlaySound(sound);
+
+    int stopFrame = -1;
+    for (int frame = 0; frame < AUDIO_FRAMES; frame++)
+    {
+        DrawFrame(frame, "pitch", TextFormat("pitch=%.2f", (double)AUDIO_PITCH));
+        if ((stopFrame < 0) && !IsSoundPlaying(sound)) stopFrame = frame;
+    }
+
+    TraceLog(LOG_INFO, "PITCH value=%.2f stop_frame=%d", (double)AUDIO_PITCH, stopFrame);
+    UnloadSound(sound);
+}
+#endif
+
+#if defined(MODE_LEVELS)
+static void LevelsMode(void)
+{
+    Wave wave = MakeWave(AUDIO_WAVE_MS, 1000.0f);
+    Sound sound = LoadSoundFromWave(wave);
+    FreeWaveData(&wave);
+
+    SetMasterVolume(1.0f);
+    SetSoundVolume(sound, 1.0f);
+    SetSoundPan(sound, -1.0f);
+    PlaySound(sound);
+    RunFrames(30, "levels", "loud-left");
+    StopSound(sound);
+
+    SetSoundVolume(sound, 0.20f);
+    SetSoundPan(sound, 1.0f);
+    PlaySound(sound);
+    RunFrames(30, "levels", "quiet-right");
+    StopSound(sound);
+
+    TraceLog(LOG_INFO, "LEVELS loud-left then quiet-right");
+    UnloadSound(sound);
+}
+#endif
+
+#if defined(MODE_MIX)
+static void MixMode(void)
+{
+    Sound *sounds = (Sound *)MemAlloc(AUDIO_COUNT*sizeof(Sound));
+    int valid = 0;
+
+    for (int i = 0; i < AUDIO_COUNT; i++)
+    {
+        Wave wave = MakeWave(AUDIO_WAVE_MS, 300.0f + (float)i*20.0f);
+        sounds[i] = LoadSoundFromWave(wave);
+        if (IsSoundValid(sounds[i])) valid++;
+        FreeWaveData(&wave);
+        SetSoundVolume(sounds[i], 0.15f);
+        PlaySound(sounds[i]);
+    }
+
+    TraceLog(LOG_INFO, "MIX count=%d valid=%d wave_ms=%d playing0=%d",
+             AUDIO_COUNT, valid, AUDIO_WAVE_MS, IsSoundPlaying(sounds[0]));
+    RunFrames(AUDIO_FRAMES, "mix", TextFormat("count=%d", AUDIO_COUNT));
+
+    for (int i = 0; i < AUDIO_COUNT; i++) UnloadSound(sounds[i]);
+    MemFree(sounds);
+}
+#endif
+
+#if defined(MODE_HEAP)
+static void HeapMode(void)
+{
+    int before = sceKernelTotalFreeMemSize();
+    int maxBefore = sceKernelMaxFreeMemSize();
+    struct mallinfo miBefore = mallinfo();
+    char *brkBefore = (char *)sbrk(0);
+
+    Sound *sounds = (Sound *)MemAlloc(AUDIO_COUNT*sizeof(Sound));
+    int valid = 0;
+    for (int i = 0; i < AUDIO_COUNT; i++)
+    {
+        Wave wave = MakeWave(AUDIO_WAVE_MS, 300.0f + (float)i*10.0f);
+        sounds[i] = LoadSoundFromWave(wave);
+        if (IsSoundValid(sounds[i])) valid++;
+        FreeWaveData(&wave);
+    }
+
+    int after = sceKernelTotalFreeMemSize();
+    int maxAfter = sceKernelMaxFreeMemSize();
+    struct mallinfo miAfter = mallinfo();
+    char *brkAfter = (char *)sbrk(0);
+    TraceLog(LOG_INFO, "HEAP count=%d valid=%d sbrk_delta=%d ma_arena=%u ma_uordblks=%u ma_fordblks=%u partition_before=%d max_before=%d partition_after=%d max_after=%d",
+             AUDIO_COUNT, valid, (int)(brkAfter - brkBefore),
+             (unsigned)miAfter.arena, (unsigned)miAfter.uordblks, (unsigned)miAfter.fordblks,
+             before, maxBefore, after, maxAfter);
+
+    for (int i = 0; i < AUDIO_COUNT; i++) { if (IsSoundValid(sounds[i])) UnloadSound(sounds[i]); }
+    MemFree(sounds);
+
+    RunFrames(60, "heap", TextFormat("count=%d", AUDIO_COUNT));
+}
+#endif
+
+#if defined(MODE_TONE) || defined(MODE_SOUND)
+static void ToneMode(void)
+{
+    Wave wave = MakeWave(AUDIO_WAVE_MS, 1000.0f);
     Sound tone = LoadSoundFromWave(wave);
-    MemFree(samples);
+    FreeWaveData(&wave);
 
     TraceLog(LOG_INFO, "AUDIO: tone valid=%d", IsSoundValid(tone));
     PlaySound(tone);
-
-    int frames = 0;
-    while (!WindowShouldClose() && (frames < 600))
-    {
-        BeginDrawing();
-        ClearBackground(RAYWHITE);
-        DrawText(TextFormat("audio smoke %d  %s  sound=%s", frames,
-                            IsAudioDeviceReady()? "ready" : "NOT READY",
-                            IsSoundPlaying(tone)? "on" : "off"),
-                 10, 10, 20, BLACK);
-        DrawFPS(10, 40);
-        EndDrawing();
-
-        frames++;
-        if ((frames%60) == 0) TraceLog(LOG_INFO, "FRAME %d  fps %d  sound=%d", frames, GetFPS(), IsSoundPlaying(tone));
-    }
-
-    TraceLog(LOG_INFO, "DONE frames %d  audio=%d  sound_playing=%d", frames, IsAudioDeviceReady(), IsSoundPlaying(tone));
-
+    RunFrames(AUDIO_FRAMES, "tone", "sound");
+    TraceLog(LOG_INFO, "TONE playing=%d", IsSoundPlaying(tone));
     UnloadSound(tone);
+}
+#endif
+
+int main(void)
+{
+    InitWindow(480, 272, "audio smoke (P9-S3)");
+    SetTargetFPS(60);
+
+    InitAudioDevice();
+    if (!IsAudioDeviceReady()) TraceLog(LOG_ERROR, "AUDIO: device is not ready");
+
+#if defined(MODE_API)
+    ApiMatrix();
+#elif defined(MODE_PITCH)
+    PitchMode();
+#elif defined(MODE_LEVELS)
+    LevelsMode();
+#elif defined(MODE_MIX)
+    MixMode();
+#elif defined(MODE_HEAP)
+    HeapMode();
+#else
+    ToneMode();
+#endif
+
+    TraceLog(LOG_INFO, "DONE audio=%d", IsAudioDeviceReady());
     CloseAudioDevice();
 
     // Never CloseWindow()/sceKernelExitGame() here: both end the PSPLink session.
