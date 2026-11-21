@@ -50,7 +50,18 @@ int main(int argc, char **argv)
 #endif
 
             BeginMode3D(cam);
-#ifdef DRAW_CUBE
+#ifdef DRAW_MESH
+                // Sprint 013 T1, the last untested call: DrawMesh -> glDrawElements.
+                // GenMeshCube is indexed, so this exercises index rebasing and the converting
+                // vertex path. Predicted bbox x 193..287, y 92..189.
+                {
+                    Mesh mesh = GenMeshCube(1.0f, 1.0f, 1.0f);
+                    Material mat = LoadMaterialDefault();
+                    Matrix xform = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+                    DrawMesh(mesh, mat, xform);
+                }
+#elif defined(DRAW_CUBE)
                 // Sprint 013 T1: the only drawing call in the corpus the probe has not tested.
                 // Predicted bbox x 81..191, y 92..189 for this camera and position.
                 DrawCube((Vector3){ -1.2f, 0.0f, 0.0f }, 1.0f, 1.0f, 1.0f, GREEN);
