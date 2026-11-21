@@ -189,7 +189,7 @@ sprint's numbers are in hand (the fast paths depend on what the corpus measures)
 |---|---|---|
 | [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
 | [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
-| 020 — Tile maps and 512-pixel windowing | per-atlas-run tiles, scrolled traversal, window slicing with full-stride `tbw`, seam screenshots | planned |
+| [020 — Tile maps and 512-pixel windowing](../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | written |
 | 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
 | 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |
 | 023 — Cache strips, regression, close | 16/32/64/128 px strip A/B on the repeated-draw case; full sample comparison; phase exit table | planned |
