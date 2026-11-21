@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started |
+| State | **done** — sprints 007–009; 1,000 sprites at 60 fps, 60 fps ceiling 1,600, batched by default |
 | Depends on | Phase 3 (know the cost of the library), Phase 2 (counters) |
 | Exit criterion | a run of N same-texture sprites produces ~`ceil(N/capacity)` submissions, and screenshots are identical to the unbatched path |
 

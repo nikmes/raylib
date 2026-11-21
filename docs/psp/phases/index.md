@@ -10,13 +10,13 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | phase | about | state |
 |---|---|---|
 | [0 — Baseline](00-baseline.md) | fork, branch at 6.2, remotes, docs site | **done** |
-| [1 — 6.2 boots on pspGL](01-bring-up-6-2.md) | the port's platform file, three stubs, four guards | not started |
-| [2 — Instrumentation](02-instrumentation.md) | counters and baselines; nothing measurable yet exists | not started |
-| [3 — pspGL upgrade A/B](03-pspgl-upgrade.md) | eleven ready-made commits, measured | not started |
-| [4 — rlgl batcher](04-rlgl-batcher.md) | collapse per-sprite submission, still on GL | not started |
-| [5 — Native GU backend](05-native-gu-backend.md) | drop OpenGL and pspGL entirely | not started |
-| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | not started |
-| [7 — 2D specialisation](07-2d-specialisation.md) | text, tile maps, shapes, particles | not started |
+| [1 — 6.2 boots on pspGL](01-bring-up-6-2.md) | the port's platform file, three stubs, four guards | **done** |
+| [2 — Instrumentation](02-instrumentation.md) | counters and baselines; nothing measurable yet exists | **done** |
+| [3 — pspGL upgrade A/B](03-pspgl-upgrade.md) | eleven ready-made commits, measured | **done** — fork `ae9a668` @ 8192 words |
+| [4 — rlgl batcher](04-rlgl-batcher.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
+| [5 — Native GU backend](05-native-gu-backend.md) | drop OpenGL and pspGL entirely | **ready, not started** — reviewed, 52-symbol spec; deferred |
+| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **in progress** — sprint 010 probe was negative on format; residency waits on 5 |
+| [7 — 2D specialisation](07-2d-specialisation.md) | text, tile maps, shapes, particles | not started — its draw-rejection half does not need 5 or 6 |
 | [8 — Input](08-input.md) | pad mapping, nub calibration, edge detection | not started |
 | [9 — Audio](09-audio.md) | `sceAudio` output without costing frame time | not started |
 | [10 — 3D and advanced](10-3d-advanced.md) | models, RTT, culling, ME options | not started |
@@ -24,6 +24,15 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | [12 — Release gate](12-release-gate.md) | four configurations, one report | not started |
 
 Notes on ordering that are easy to get wrong:
+
+- **We deviated from the sequence twice, and both deviations are deliberate.** Sprint 010 ran a *probe* inside
+  phase 6 before phase 5 because the answer — is fill texel-byte-bound? — decided whether phase 5 was worth
+  building. It came back no (fill is rasterisation-rate-bound), so phase 5's case is smaller than it looked and
+  phase 6's own deliverable (residency, eviction, per-texture formats) still cannot start: it needs a driver that
+  owns VRAM, which is phase 5. A probe is not the phase it lives in; the dependencies below are unchanged.
+- **Phase 7's draw rejection does not depend on 5 or 6.** Skipping off-screen draws happens above the driver, in
+  rlgl or the batch, so it can be measured before a backend exists — but only on a benchmark whose overdraw is not
+  bunnymark's 9.4×.
 
 - **Phase 2 before phase 3 and 4.** Without counters there is no way to attribute a gain to a change, and the
   first two optimisations available are ones we did not write.

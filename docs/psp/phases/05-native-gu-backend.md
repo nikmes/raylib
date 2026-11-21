@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started — **reviewed after sprint 009, shape decided (§0)** |
+| State | **reviewed and implementation-ready, not started** — deferred: the binding constraint moved to fill, which a backend does not touch (§0) |
 | Depends on | Phase 4 closed (batcher shipped, ceiling measured at 1,600 sprites) |
 | Exit criterion | the 60 fps ceiling **beats** phase 4's, not merely matches it, with no pspGL symbols in the ELF and VRAM accounted at boot |
 

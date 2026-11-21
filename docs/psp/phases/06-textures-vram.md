@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started |
+| State | **in progress** — sprint 010 (probe) proved texture format is not a speed lever; the rest needs phase 5 to own VRAM |
 | Depends on | Phase 5 (a backend that owns the upload path) |
 | Exit criterion | no eviction when the working set fits in VRAM, upload benchmarks by format, fragmentation bounded under load/unload churn |
 

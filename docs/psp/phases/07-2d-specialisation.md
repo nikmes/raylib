@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started |
+| State | not started — its draw-rejection work can start without phases 5/6, but needs a benchmark that is not bunnymark |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
