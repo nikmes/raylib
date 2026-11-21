@@ -321,7 +321,7 @@ void DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color)
 // Draw triangle with interpolated colors (vertex in counter-clockwise order!)
 void DrawTriangleGradient(Vector2 v1, Vector2 v2, Vector2 v3, Color c1, Color c2, Color c3)
 {
-#if SUPPORT_QUADS_DRAW_MODE
+#if SUPPORT_QUADS_DRAW_MODE && !(defined(PLATFORM_PSP) && defined(PSP_TRI_FAST) && (PSP_TRI_FAST == 1))
     rlSetTexture(GetShapesTexture().id);
     Rectangle shapeRect = GetShapesTextureRectangle();
 
@@ -617,6 +617,20 @@ void DrawRectangleRec(Rectangle rec, Color color)
 // Draw a color-filled rectangle with pro parameters
 void DrawRectanglePro(Rectangle rec, Vector2 origin, float rotation, Color color)
 {
+#if defined(PLATFORM_PSP) && defined(PSP_CULL) && (PSP_CULL == 1)
+    // Sprint 021: same off-screen rule as DrawTexturePro. This is the solid rectangle
+    // path; it already submits as a 2-vertex sprite through the batcher.
+    if ((rotation == 0.0f) && (rec.width > 0.0f) && (rec.height > 0.0f) &&
+        (rlGetActiveFramebuffer() == 0))
+    {
+        float cx = rec.x - origin.x;
+        float cy = rec.y - origin.y;
+
+        if ((cx + rec.width <= 0.0f) || (cx >= (float)GetScreenWidth()) ||
+            (cy + rec.height <= 0.0f) || (cy >= (float)GetScreenHeight())) return;
+    }
+#endif
+
     Vector2 topLeft = { 0 };
     Vector2 topRight = { 0 };
     Vector2 bottomLeft = { 0 };

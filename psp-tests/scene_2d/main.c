@@ -756,6 +756,60 @@ static void oversizeDraw(void)
 #endif
 
 // ---------------------------------------------------------------------------------
+// Sprite culling scene (sprint 021 T1)
+// ---------------------------------------------------------------------------------
+#if defined(MODE_SPRITES)
+static Texture2D spriteTex;
+static int spriteVisible;
+
+static void spritesInit(void)
+{
+    Image img = GenImageColor(32, 32, (Color){ 20, 20, 20, 255 });
+    ImageDrawRectangle(&img,  0,  0, 16, 16, (Color){ 230,  40,  40, 255 });
+    ImageDrawRectangle(&img, 16,  0, 16, 16, (Color){  40, 220,  60, 255 });
+    ImageDrawRectangle(&img,  0, 16, 16, 16, (Color){  50,  90, 230, 255 });
+    ImageDrawRectangle(&img, 16, 16, 16, 16, (Color){ 230, 220,  50, 255 });
+    spriteTex = LoadTextureFromImage(img);
+    UnloadImage(img);
+
+    int offscreen = (SCENE_COUNT*SCENE_OFFSCREEN_PCT)/100;
+    spriteVisible = SCENE_COUNT - offscreen;
+}
+
+static void spritesDraw(void)
+{
+    Rectangle src = { 0.0f, 0.0f, 32.0f, 32.0f };
+    int offscreen = SCENE_COUNT - spriteVisible;
+
+    for (int i = 0; i < offscreen; i++)
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+
+        switch (i%4)
+        {
+            case 0: x = -64.0f - (float)((i%8)*40); y = (float)((i%7)*38); break;
+            case 1: x = (float)SCREEN_W + 32.0f + (float)((i%4)*8); y = (float)((i%7)*38); break;
+            case 2: x = (float)((i%14)*34); y = -64.0f - (float)((i%8)*40); break;
+            default: x = (float)((i%14)*34); y = (float)SCREEN_H + 32.0f + (float)((i%4)*8); break;
+        }
+
+        DrawTexturePro(spriteTex, src, (Rectangle){ x, y, 32.0f, 32.0f },
+                       (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+    }
+
+    for (int i = 0; i < spriteVisible; i++)
+    {
+        float x = (float)((i%14)*34);
+        float y = (float)(((i/14)%7)*38);
+
+        DrawTexturePro(spriteTex, src, (Rectangle){ x, y, 32.0f, 32.0f },
+                       (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+    }
+}
+#endif
+
+// ---------------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------------
 static int sceneObjects(void)
@@ -772,6 +826,8 @@ static int sceneObjects(void)
     return particleCount;
 #elif defined(MODE_SHAPES)
     return SCENE_COUNT*3;
+#elif defined(MODE_SPRITES)
+    return SCENE_COUNT;
 #elif defined(MODE_FONT)
     return TextLength(FONT_SAMPLE);
 #elif defined(MODE_OVERSIZE)
@@ -784,7 +840,7 @@ static int sceneObjects(void)
 static int sceneRuns(void)
 {
 #if defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_PARTICLES) || \
-    defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE)
+    defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES)
     return 1;
 #else
     return 4;
@@ -805,6 +861,8 @@ static void sceneInit(void)
     fontInit();
 #elif defined(MODE_OVERSIZE)
     oversizeInit();
+#elif defined(MODE_SPRITES)
+    spritesInit();
 #else
     textInit();
     tilesInit();
@@ -817,7 +875,7 @@ static void sceneUpdate(void)
 {
 #if defined(MODE_PARTICLES)
     particlesUpdate();
-#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE)
+#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES)
     // stationary
 #else
     particlesUpdate();
@@ -848,6 +906,8 @@ static void sceneDraw(void)
     fontDraw();
 #elif defined(MODE_OVERSIZE)
     oversizeDraw();
+#elif defined(MODE_SPRITES)
+    spritesDraw();
 #else
     tilesDraw();
     particlesDraw();
@@ -885,6 +945,8 @@ static const char *sceneName(void)
     return "font";
 #elif defined(MODE_OVERSIZE)
     return "oversize";
+#elif defined(MODE_SPRITES)
+    return "sprites";
 #else
     return "mixed";
 #endif
@@ -1013,6 +1075,9 @@ int main(void)
 #else
              0);
 #endif
+#elif defined(MODE_SPRITES)
+    snprintf(sceneExtra, sizeof(sceneExtra), " sprites total=%d visible=%d offscreen_pct=%d",
+             SCENE_COUNT, spriteVisible, SCENE_OFFSCREEN_PCT);
 #endif
 
     SaveFileText("scene2d_done.txt",

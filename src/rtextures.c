@@ -4889,6 +4889,21 @@ void DrawTexturePro(Texture2D texture, Rectangle srcrec, Rectangle dstrec, Vecto
         if (dstrec.width < 0) dstrec.width *= -1;
         if (dstrec.height < 0) dstrec.height *= -1;
 
+#if defined(PLATFORM_PSP) && defined(PSP_CULL) && (PSP_CULL == 1)
+        // Sprint 021: an unrotated axis-aligned sprite wholly outside the screen cannot
+        // contribute a pixel. Reject it before the corner math and vertex generation.
+        // Render targets are phase 10; never cull when one is active.
+        if ((rotation == 0.0f) && (dstrec.width > 0.0f) && (dstrec.height > 0.0f) &&
+            (rlGetActiveFramebuffer() == 0))
+        {
+            float cx = dstrec.x - origin.x;
+            float cy = dstrec.y - origin.y;
+
+            if ((cx + dstrec.width <= 0.0f) || (cx >= (float)GetScreenWidth()) ||
+                (cy + dstrec.height <= 0.0f) || (cy >= (float)GetScreenHeight())) return;
+        }
+#endif
+
         Vector2 topLeft = { 0 };
         Vector2 topRight = { 0 };
         Vector2 bottomLeft = { 0 };

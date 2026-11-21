@@ -566,6 +566,11 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     # PSP_BATCH=0 builds the reference immediate-mode library.
     PSP_BATCH ?= 1
     CUSTOM_CFLAGS += -DPSP_BATCH=$(PSP_BATCH)
+    # Sprint 021: API-level off-screen culling and the 3-vertex triangle path.
+    PSP_CULL ?= 1
+    CUSTOM_CFLAGS += -DPSP_CULL=$(PSP_CULL)
+    PSP_TRI_FAST ?= 1
+    CUSTOM_CFLAGS += -DPSP_TRI_FAST=$(PSP_TRI_FAST)
     # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
     # the only way to see what the batch actually submitted when a frame looks wrong.
     ifdef PSP_BATCH_TRACE

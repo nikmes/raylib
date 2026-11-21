@@ -19,6 +19,7 @@ OBJS = main.o psp_counters.o
 MODE ?= text
 FRAMES ?= 300
 COUNT ?= 2000
+OFFSCREEN ?= 50
 LINES ?= 8
 BUDGET_FLOOR_KB ?= 128
 
@@ -39,6 +40,7 @@ ATLAS_WIDE ?= 0
 ATLAS_REF ?= 0
 
 CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
+         -DSCENE_OFFSCREEN_PCT=$(OFFSCREEN) \
          -DSCENE_LINES=$(LINES) -DBUDGET_FLOOR_KB=$(BUDGET_FLOOR_KB) \
          -DFONT_PATH="\"$(FONT_PATH)\"" -DFONT_SIZE=$(FONT_SIZE) -DFONT_SIZE2=$(FONT_SIZE2) -DFONT_GLYPHS=$(FONT_GLYPHS)
 
@@ -78,6 +80,8 @@ else ifeq ($(MODE),particles)
     CFLAGS += -DMODE_PARTICLES
 else ifeq ($(MODE),shapes)
     CFLAGS += -DMODE_SHAPES
+else ifeq ($(MODE),sprites)
+    CFLAGS += -DMODE_SPRITES
 else ifeq ($(MODE),mixed)
     CFLAGS += -DMODE_MIXED
 else ifeq ($(MODE),font)
