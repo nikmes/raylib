@@ -43,6 +43,7 @@ typedef struct {
 static PspGuTexture textures[PSPGU_MAX_TEXTURES];
 static unsigned int currentTexture = 0;
 static unsigned int defaultTexture = 0;
+static int textureLogEnabled = 1;       // probes turn the per-texture line off while timing
 
 // T3: the standard 16-byte-block / 8-row swizzle, the same one PSPRuntime's SwizzleFast
 // and the SDK samples use. Swizzling changes no texel, only the order, so a correct
@@ -591,8 +592,9 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 
     unsigned int bytes = texBytes(t);
 
-    pspguLog("texture %u: %dx%d src=0x%x -> PSM 0x%x (%u B)",
-             currentTexture, width, height, format, t->guFormat, bytes);
+    if (textureLogEnabled)
+        pspguLog("texture %u: %dx%d src=0x%x -> PSM 0x%x (%u B)",
+                 currentTexture, width, height, format, t->guFormat, bytes);
 
     // Main-RAM shadow: the reload source, not VRAM.
     if ((t->shadow == NULL) || (t->shadowBytes != bytes))
@@ -818,6 +820,11 @@ void pspguResidencyStats(PspGuResidencyStats *out)
     {
         if (textures[i].used && textures[i].resident) out->resident++;
     }
+}
+
+void pspguSetTextureLog(int on)
+{
+    textureLogEnabled = on? 1 : 0;
 }
 
 void pspguTextureReport(const char *when)

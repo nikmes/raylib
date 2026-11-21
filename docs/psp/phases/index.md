@@ -15,7 +15,7 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 | [3 — pspGL upgrade A/B](03-pspgl-upgrade.md) | eleven ready-made commits, measured | **done** — fork `ae9a668` @ 8192 words |
 | [4 — rlgl batcher](04-rlgl-batcher.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
 | [5 — Native GU backend](05-native-gu-backend.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
-| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **in progress** — sprint 015 done; **sprint 016 done** (residency/eviction); sprint 017 (format matrix + gated decisions) next; 018 conditional |
+| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
 | [7 — 2D specialisation](07-2d-specialisation.md) | text, tile maps, shapes, particles | not started — its draw-rejection half does not need 5 or 6 |
 | [8 — Input](08-input.md) | pad mapping, nub calibration, edge detection | not started |
 | [9 — Audio](09-audio.md) | `sceAudio` output without costing frame time | not started |

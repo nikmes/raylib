@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); **sprint 016 done** (residency/eviction); sprint 017 (format/size matrix and gated decisions) is next; 018 is conditional on 017 |
+| State | **done** — sprint 015 (NPOT, PSM, allocator, upload), sprint 016 (residency/eviction), sprint 017 (format/size matrix; CLUT and mipmaps dropped with measurements). 018 not needed |
 | Depends on | Phase 5 (a backend that owns the upload path) |
 | Exit criterion | no eviction when the working set fits in VRAM, upload benchmarks by format, fragmentation bounded under load/unload churn |
 
@@ -30,8 +30,9 @@ re-uploaded mid-frame costs more than the draw it feeds.
       pad to powers of two, the padding is zeroed and swizzled, and `sceGuTexScale` restores the logical size.
       33×17 → 64×32 = 8,192 B (logical 2,244 B); the 33×17 checkerboard went from 281/561 wrong cells to 0/561,
       and the parity scenes stayed byte-identical
-- [ ] CLUT path for glyph atlases (T4/T8) only if measured to pay — **decision in sprint 017**; implementation is
-      sprint 018 only if the probe says it pays
+- [x] CLUT path for glyph atlases (T4/T8) only if measured to pay — **sprint 017 measured and dropped it**: T4
+      8,256 B vs 32,768 B (24,512 B saved, 2.7 % of free) and 0.080 vs 0.532 ms, but no workload is VRAM-bound and
+      the integration adds a palette/4-bit path. 018 not needed
 - [x] Best-fit allocator over 512-byte blocks, coalescing on free, free bytes and largest block tracked
       separately — one allocator for framebuffers *and* textures — **sprint 015 T3**: 4,096 blocks over 2 MiB,
       32 KiB metadata, framebuffers/depth as fixed 8 KiB-aligned reservations, live `requested` and `internal`.
@@ -42,7 +43,8 @@ re-uploaded mid-frame costs more than the draw it feeds.
       **3,363 evictions / 3,348 reloads / 0 failed**; priority A/B swaps the victim; frag coalesces a 256²
 - [x] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame — one
       `pspguWriteback(base, tbw*padH*bpp)` per upload; no invalidate
-- [ ] No mipmaps unless a measurement says they pay — **decision in sprint 017**; 3D minification is phase 10
+- [x] No mipmaps unless a measurement says they pay — **sprint 017 measured and dropped them for 2D**: +33 % memory
+      (349,504 vs 262,144 B) and an identical capture at 4× in the raw-GU probe; 3D minification is phase 10
 - [x] Per-texture PSM, not a global swizzle mode — **sprint 015 T2**: default 8888 for parity; `PSP_GU_TEXFMT=auto`
       chooses 5650 for `GL_RGB` and 4444 for `GL_RGBA`/`GL_LUMINANCE_ALPHA` with binary alpha, else 8888. 32×32
       `GL_RGB` 4,096 → 2,048 B; the 128×128 LA font 65,536 → 32,768 B; texture VRAM 69,636 → 34,820 B. The `auto`
@@ -61,7 +63,8 @@ re-uploaded mid-frame costs more than the draw it feeds.
 ## Exit criteria
 
 - [x] no eviction or compaction in a workload whose working set fits — fit probe: **0 evictions**, 120 frames
-- [ ] upload/swizzle benchmarked by pixel format and size — **sprint 017** matrix
+- [x] upload/swizzle benchmarked by pixel format and size — sprint 017: 8888 32²–256² (0.499–33.332 ms), auto
+      5650/4444 half the bytes (512² 524,288 B / 113–130 ms); 384²/512² 8888 not allocatable
 - [x] fragmentation bounded across repeated load/unload — sprint 016: over-budget 3,363 evictions/3,348 reloads,
       0 failed; frag 3 evictions / 1 coalesce / 256² resident; no data-moving compaction
 - [x] priority changes demonstrably alter eviction order — sprint 016: 1.0/0.1 victim swaps with the priorities
@@ -81,5 +84,5 @@ re-uploaded mid-frame costs more than the draw it feeds.
   coalesce-by-eviction. Fit 0 evictions; over 3,363/3,348/0; priority A/B swaps; frag coalesces. Closes exits
   1, 3 and 4.
 - [Sprint 017 — Upload/swizzle matrix and the gated texture features](../sprints/017-phase6-format-matrix-and-gated-features.md)
-  — **written, next.** Format/size matrix; CLUT T4 glyph probe; mipmap probe; the two decisions recorded. Closes
-  exit 2. 018 is the CLUT implementation only if 017 measures that it pays; otherwise phase 6 closes at 017.
+  — **done 4/4.** Format/size matrix; CLUT T4 probe (8,256 vs 32,768 B) and mipmap probe (+33 % memory, identical
+  at 4×). Both gated features **dropped with evidence**; 018 not needed. Phase 6 closes here.

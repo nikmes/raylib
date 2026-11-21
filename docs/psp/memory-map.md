@@ -875,6 +875,13 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   range writeback. A 256×256 8888 upload measured **21.088 → 19.849 ms** with the heap allocation removed. A
   literal 128-byte block path through the uncached alias measured 26.2 ms and was rejected. Textures wider than
   512 are rejected until phase 7 windows them.
+- **Upload cost with the residency shadow (b23, 30-run median):** 8888 32² 4,096 B/0.499 ms, 64² 16,384/1.998,
+  128² 65,536/8.228, 256² 262,144/33.332. Logical 384² and 512² pad to 512² = 1,048,576 B and **do not fit** the
+  916,992 B free tail. `auto` halves the bytes for 5650/4444: 512² is 524,288 B at 113–130 ms.
+- **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
+  palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
+  VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in
+  the raw-GU probe. 3D mipmaps are phase 10; the CLUT can be revisited if a UI working set becomes tight.
 
 ### Samples worth reading
 
