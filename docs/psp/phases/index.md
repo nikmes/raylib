@@ -25,7 +25,7 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started — reviewed 2026-11-21; blocked on 7–10 |
 | [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
-| [13 — Samples porting](13-samples-porting/index.md) | the upstream core/shapes/textures corpus as a gated regression suite | in progress — P13-S1/S2 done; Tier A complete; S3–S11 placeholders |
+| [13 — Samples porting](13-samples-porting/index.md) | the upstream core/shapes/textures corpus as a gated regression suite | in progress — P13-S1/S2 done; Tier A complete; P13-S7 written; S3–S6/S8–S11 remaining |
 
 Notes on ordering that are easy to get wrong:
 

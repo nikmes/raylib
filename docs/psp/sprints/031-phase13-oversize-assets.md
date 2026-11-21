@@ -17,9 +17,12 @@ itself already exists (sprint 020); this sprint handles the assets that still do
 
 ## Planned scope
 
-2 texture samples plus asset prep:
+3 texture samples plus asset prep:
 
 - `textures_sprite_stacking` — `booth.png` 112×11468 pads to 128×16384, over the 1024 buffer; downscale or split
+- `textures_image_drawing` — `parrots.png` 512×384 (512² 5650 = 524,288 B under `auto`) plus a font atlas from
+  `custom_jupiter_crash.png` 426×284 RGBA non-binary (512² 8888 = 1,048,576 B); 1,572,864 B total is over the
+  depth-off budget, so the font atlas needs a downscale
 - `textures_image_generation` — nine full-screen images and nine textures; needs an explicit heap and a
   one-at-a-time rewrite, or is `dropped` as no longer the upstream sample
 
