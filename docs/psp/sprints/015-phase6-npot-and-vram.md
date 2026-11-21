@@ -5,8 +5,8 @@
 | Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
 | Branch / base commit | `master` @ `c31afe31` (T1 landed in `719b037e`) |
 | Started / closed | 2026-11-21 / — |
-| Build number(s) | `b16` baseline, `b17` T1, `b18` T2, `b19` T3, `b20` T4 |
-| Tasks | 1/4 done |
+| Build number(s) | `b16` baseline, `b17` T1, `b19` T3, `b20` T2, `b21` T4 |
+| Tasks | 2/4 done |
 
 ## 0. Handover
 
@@ -137,15 +137,16 @@ with coalescing, free and largest-block counters; a churn probe; direct swizzle 
 |---|---|---|---|---|
 | T1 | **NPOT textures (phase task 6c)**: pad **both** dimensions to powers of two (height at least 8 rows for the swizzle), zero the padding, swizzle the padded buffer, and correct with `sceGuTexScale(realW/padW, realH/padH)`; keep the logical size for GL | `done` | 33×17 checkerboard at (160,30), 3×: every cell single-colour and matching `(x+y)&1`; no shear; `texture_pattern` non-NPOT and the 2D gate unchanged | **281/561 cells wrong → 0/561**, two colours, no shear. 33×17 pads to 64×32 = **8,192 B** (logical 2,244 B; old linear 4,352 B). `batch_check` **0 differing pixels**; `basic_shapes` **284 colours, 0**. `b17`, commit `719b037e`; captures in `/home/psp/evidence/sprint015/` |
 | T2 | **Per-texture PSM** behind `PSP_GU_TEXFMT` (`8888` default, `auto` measured): opaque `GL_RGB` → `5650`; alpha sources → `4444` when every alpha is 0/255 (binary), else `8888`; one decision and one log line per texture | `todo` | 32×32 texture **4,096 → 2,048 B**; `auto`'s pixel delta vs `8888` counted by scene; default `batch_check`/`basic_shapes` still 0; half-alpha pattern checked for 4-bit quantisation | — |
-| T3 | **Best-fit allocator** over 512-byte blocks with coalescing; free bytes and largest block tracked separately; one allocator for framebuffers, depth and textures; `pspguVramFree` + stats | `todo` | 100 load/unload cycles: free and largest return within 512 B, no failure; boot line reports used/free/largest/allocs/frees; a texture unload returns its blocks; 2D gate 0 | — |
+| T3 | **Best-fit allocator** over 512-byte blocks with coalescing; free bytes and largest block tracked separately; one allocator for framebuffers, depth and textures; `pspguVramFree` + stats | `done` | 100 load/unload cycles: free and largest return within 512 B, no failure; boot line reports used/free/largest/allocs/frees; a texture unload returns its blocks; 2D gate 0 | **PASS twice.** 100 cycles × 16 textures: `free 916,992 → 916,992`, `largest 916,992 → 916,992`, `internal 508` (the 4-byte white texel's block), `allocs 1,606 / frees 1,600 / failures 0`. Boot line `reserved=1,114,112 requested=4 used=1,114,624 free=982,528 largest=982,528 internal=508`; assets `requested=69,636 used=1,184,256 free=912,896`. 2D gate **byte-identical**. `b19`; probe `psp-tests/texture_churn`, verdict in `churn_done.txt` |
 | T4 | **Direct swizzle into VRAM**: expand one **4×8-texel swizzle block** into a 128-byte stack tile and write it to the destination through the uncached alias; remove the full-texture `calloc` + memcpy | `todo` | 256×256 RGBA upload: scratch allocation gone (262,144 B → 0 heap; 128 B stack), elapsed time before/after, pixels unchanged; no whole-cache invalidate | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
 ### T3 design (implementation-ready)
 
-- **Arena.** The whole 2 MiB EDRAM, in 512-byte blocks: 4,096 blocks. Metadata `{ uint16 sizeInBlocks;
-  uint8 free; uint8 pad; }[4096]` = 16 KiB in main RAM.
+- **Arena.** The whole 2 MiB EDRAM, in 512-byte blocks: 4,096 blocks. Metadata `{ uint16 blocks; uint8 free;
+  uint8 fixed; uint32 requested; }[4096]` = **32 KiB** in main RAM. `requested` is live (subtracted on free), so
+  `internal = used - reserved - requested` stays meaningful across churn.
 - **Reservations at init.** Allocate the three colour buffers (544 blocks each, 8 KiB-aligned = 16 blocks) and
   the depth buffer (544 blocks, 8 KiB-aligned) before any texture. They are marked used and never freed. If a
   reservation fails, log and abort: rendering cannot continue.
@@ -214,6 +215,13 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 - 2026-11-21 — T1 `done`: b17 gives 0/561 wrong, two colours; parity scenes byte-identical; commit `719b037e`.
 - 2026-11-21 — sprint reviewed for implementation readiness: T3's allocator, T2's format switch and T4's tile
   path written down; T3 is the next action.
+- 2026-11-21 — T3 `doing`: 512-byte block table, fixed 8 KiB framebuffer/depth reservations, free+coalesce,
+  live `requested`, boot line `reserved/requested/used/free/largest/internal`.
+- 2026-11-21 — T3 `done`: churn probe `psp-tests/texture_churn`, 100 cycles × 16 textures, free and largest
+  return exactly (916,992 → 916,992), 1,600 frees, 0 failures, PASS in two runs; 2D gate byte-identical.
+  **Finding:** the first probe uploaded 1,600 textures with no `EndDrawing`, filled the 240 KiB list and hung at
+  cycle ~50; the probe now ends a frame per cycle. A texture-only workload with no swap remains a hazard (GU has
+  no list-capacity check) and is a follow-up.
 
 ## 6. Budgets
 
@@ -224,10 +232,11 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | NPOT padding cost, 33×17 | 64×32 = 8,192 B | **8,192 B** (logical 2,244 B; old 4,352 B) | `[measured]` |
 | 32×32 texture, `auto` | 2,048 B (4,096 B at 8888) | not started (T2) | — |
 | texture VRAM after T2, `batch_check` | measured, ≤ 69,636 B | not started (T2) | — |
-| block rounding / internal fragmentation | reported, not hidden | not started (T3) | — |
-| free tail after assets (depth=1) | — | **905,024 B** (`texture_pattern`), **913,344 B** (`batch_check`) | `[measured: b17]` |
-| largest free block | real, only after T3 | — | — |
-| churn: free/largest return | within 512 B after 100 cycles | not started (T3) | — |
+| block rounding / internal fragmentation | reported, not hidden | **508 B** (the 4-byte white texel's block) | `[measured: b19]` |
+| free tail after assets (depth=1) | — | **912,896 B** (`batch_check` at b19); 916,992 B in the churn baseline | `[measured: b19]` |
+| largest free block | real, not a free-tail alias | **982,528 B** at boot; **912,896 B** after assets; **916,992 B** at churn | `[measured: b19]` |
+| churn: free/largest return | within 512 B after 100 cycles | **exact**: 916,992 → 916,992 both | `[measured: b19, two runs]` |
+| allocator metadata | main RAM, cache-resident if possible | **32 KiB** (4,096 × 8 B) | `[measured]` |
 | upload 256×256 RGBA, heap | 0 (128 B stack) vs 262,144 B today | not started (T4) | — |
 | upload 256×256 RGBA, time | measured before/after | not started (T4) | — |
 | whole-cache invalidate in a steady frame | 0 | 0 today; keep 0 | `[measured]` |
@@ -244,13 +253,15 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 | control | b17 | `batch_check` | differing pixels vs pspGL | **0** | two identical captures |
 | control | b17 | `basic_shapes` | colours / differing pixels | **284 / 0** | byte-identical |
 | change | b17 | `texture_pattern` | texture VRAM after assets | **77,956 B** | 33×17: 4,352 → 8,192 B; 4×4: 64 → 256 B |
-| control | b18 | `batch_check` default | gate | expected 0 | T2 must not move it |
-| change | b18 | `batch_check` `auto` | pixel delta / texture bytes | | T2 |
-| change | b18 | `texture_pattern` `auto` | 32×32 bytes | expected 2,048 | T2 |
-| baseline | b18 | churn probe | free / largest at cycle 0 | | T3 |
-| change | b19 | churn probe 100 cycles | free / largest | | T3 |
-| baseline | b19 | 256×256 upload | heap / ms | 262,144 B / | T4 |
-| change | b20 | 256×256 upload | heap / ms | 0 / | T4 |
+| baseline | b17 | bump allocator | texture unload | **cannot free** | the old arena only moves forward |
+| control | b19 | `batch_check` default | gate / VRAM line | **0 differing pixels**; `reserved=1,114,112 requested=69,636 used=1,184,256 free=912,896 largest=912,896 internal=508` | T3 did not move the gate |
+| change | b19 | churn 100 × 16 textures | free / largest | **916,992 / 916,992 → 916,992 / 916,992** | two runs, `PASS`, `failures=0` |
+| change | b19 | churn accounting | allocs / frees / internal | **1,606 / 1,600 / 508** | 6 permanent allocations + 1,600 churn |
+| control | b20 | `batch_check` default | gate | expected 0 | T2 must not move it |
+| change | b20 | `batch_check` `auto` | pixel delta / texture bytes | | T2 |
+| change | b20 | `texture_pattern` `auto` | 32×32 bytes | expected 2,048 | T2 |
+| baseline | b20 | 256×256 upload | heap / ms | 262,144 B / | T4 |
+| change | b21 | 256×256 upload | heap / ms | 0 / | T4 |
 
 ## 8. Exit criteria
 
@@ -259,8 +270,8 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 - [x] the default 2D gate is 0 differing pixels and `basic_shapes` is 284 colours
 - [ ] T2: `PSP_GU_TEXFMT=auto` implemented; 32×32 = 2,048 B; its pixel delta is counted and recorded; the default
       build is still 0 differing pixels
-- [ ] T3: 100-cycle churn returns free and largest within 512 B, no allocation failure; the boot line reports
-      used/free/largest/allocs/frees; a texture unload returns its blocks
+- [x] T3: 100-cycle churn returns free and largest within 512 B, no allocation failure; the boot line reports
+      used/free/largest/allocs/frees; a texture unload returns its blocks — **exact return**, two runs
 - [ ] T4: 256×256 upload uses no full-texture scratch (0 heap, 128 B stack); time measured; pixels unchanged;
       no whole-cache invalidate added
 - [ ] phase-6 facts written back into the phase page and `memory-map.md`
@@ -268,8 +279,17 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 
 ## 9. Result so far
 
-T1 is closed (details in §5 and §7). T2–T4 are implementation-ready but not started; T3 is the next action because
-it defines the allocation API the other two use.
+T1 and T3 are closed. T3 replaced the bump arena with a 512-byte block best-fit allocator: the three framebuffers
+and depth are fixed 8 KiB-aligned reservations, textures allocate/free with coalescing, and the boot line reports
+`reserved/requested/used/free/largest/internal/allocs/frees/failures` from the table. The churn probe passed twice:
+**free and largest returned exactly** (916,992 → 916,992 B), 1,600 frees, **0 failures**, with 32 KiB of metadata
+in main RAM. The 2D gate did not move.
+
+The probe also found a driver-level hazard worth carrying: a workload that uploads textures **without ever ending a
+frame** fills the 240 KiB display list and hangs (it stopped at cycle ~50 with the allocator still perfect). GU has
+no list-capacity check. The probe now ends a frame per cycle; the driver needs a high-water guard (follow-up).
+
+T2 and T4 are implementation-ready and remain.
 
 ## 10. Follow-ups
 
@@ -278,5 +298,8 @@ it defines the allocation API the other two use.
   (phase 7) or an explicit size guard; do not hide the padded size in the VRAM line.
 - 16-bit alpha (`4444`) is a measured trade, not a default: the parity gate wins until a game accepts the delta.
 - CLUT (`T4`/`T8`) glyph atlases and mipmaps: only if an upload/footprint measurement says they pay.
-- Allocator metadata (16 KiB) lives in main RAM; if it ever shows in a profile, a smaller block size or a
+- Allocator metadata (32 KiB) lives in main RAM; if it ever shows in a profile, a smaller block size or a
   two-level table is the lever.
+- **Texture-only workloads with no swap can overrun the 240 KiB display list.** The churn probe hit it at ~800
+  texture binds; GU has no capacity check. Add a high-water guard or a periodic finish in the driver before a real
+  loading screen relies on texture upload without `EndDrawing` (phase 11 or a small follow-up).

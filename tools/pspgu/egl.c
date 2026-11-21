@@ -37,6 +37,208 @@ static void pspguSwapCallback(void **display, void **render)
     *render = pspgu.fbOffset[pspgu.swapRender];
 }
 
+//------------------------------------------------------------------------------------
+// VRAM: 512-byte block allocator (sprint 015 T3)
+//------------------------------------------------------------------------------------
+// The whole 2 MiB EDRAM is 4,096 blocks. Each span starts with a header; the table is
+// scanned by jumping span to span. 4 bytes per block = 16 KiB of main RAM, cache-resident.
+// Framebuffers and depth are fixed reservations and are never freed; textures allocate
+// and free, and adjacent free spans coalesce. The bump allocator this replaces could not
+// reclaim a deleted texture and could not report a largest block.
+typedef struct {
+    unsigned short blocks;      // span length in 512-byte blocks
+    unsigned char free;         // 1 = free
+    unsigned char fixed;        // 1 = framebuffer/depth reservation, never freed
+    unsigned int requested;     // logical bytes requested, live only (0 when free)
+} VramSpan;                     // 8 bytes x 4,096 = 32 KiB in main RAM
+
+static VramSpan vramMap[PSPGU_VRAM_BLOCKS];
+static unsigned int vramUsedBlocks;
+
+static void vramInit(void)
+{
+    memset(vramMap, 0, sizeof(vramMap));
+    vramMap[0].blocks = PSPGU_VRAM_BLOCKS;
+    vramMap[0].free = 1;
+    vramUsedBlocks = 0;
+
+    pspgu.vramEnd = 2*1024*1024;
+    pspgu.vramReserved = 0;
+    pspgu.vramReservedRequested = 0;
+    pspgu.vramRequested = 0;
+    pspgu.vramAllocs = 0;
+    pspgu.vramFrees = 0;
+    pspgu.vramFailures = 0;
+}
+
+static unsigned int vramLargestFree(void)
+{
+    unsigned int i = 0, best = 0;
+
+    while (i < PSPGU_VRAM_BLOCKS)
+    {
+        unsigned int n = vramMap[i].blocks;
+        if (n == 0) break;
+        if (vramMap[i].free && (n > best)) best = n;
+        i += n;
+    }
+
+    return best*PSPGU_VRAM_BLOCK;
+}
+
+// bytes, alignment, fixed reservation. Returns an EDRAM offset or PSPGU_VRAM_INVALID.
+static unsigned int vramAllocRaw(unsigned int bytes, unsigned int align, int fixed)
+{
+    unsigned int need = (bytes + PSPGU_VRAM_BLOCK - 1)/PSPGU_VRAM_BLOCK;
+
+    if ((bytes == 0) || (need > PSPGU_VRAM_BLOCKS)) { pspgu.vramFailures++; return PSPGU_VRAM_INVALID; }
+    if (align < PSPGU_VRAM_BLOCK) align = PSPGU_VRAM_BLOCK;
+
+    int best = -1;
+    unsigned int bestBlocks = PSPGU_VRAM_BLOCKS + 1, bestSkip = 0;
+    unsigned int i = 0;
+
+    // best fit, with the alignment prefix counted in the span
+    while (i < PSPGU_VRAM_BLOCKS)
+    {
+        unsigned int n = vramMap[i].blocks;
+        if (n == 0) break;
+
+        if (vramMap[i].free)
+        {
+            unsigned int startByte = i*PSPGU_VRAM_BLOCK;
+            unsigned int aligned = (startByte + align - 1) & ~(align - 1);
+            unsigned int skip = (aligned - startByte)/PSPGU_VRAM_BLOCK;
+
+            if ((skip + need <= n) && (n < bestBlocks))
+            {
+                best = (int)i;
+                bestBlocks = n;
+                bestSkip = skip;
+            }
+        }
+        i += n;
+    }
+
+    if (best < 0) { pspgu.vramFailures++; return PSPGU_VRAM_INVALID; }
+
+    unsigned int at = (unsigned int)best;
+    unsigned int old = vramMap[at].blocks;
+
+    if (bestSkip > 0)
+    {
+        vramMap[at].blocks = (unsigned short)bestSkip;
+        vramMap[at].free = 1;
+        vramMap[at].fixed = 0;
+        vramMap[at].requested = 0;
+        at += bestSkip;
+    }
+
+    vramMap[at].blocks = (unsigned short)need;
+    vramMap[at].free = 0;
+    vramMap[at].fixed = (unsigned char)fixed;
+    vramMap[at].requested = bytes;
+
+    unsigned int tail = old - bestSkip - need;
+    if (tail > 0)
+    {
+        vramMap[at + need].blocks = (unsigned short)tail;
+        vramMap[at + need].free = 1;
+        vramMap[at + need].fixed = 0;
+        vramMap[at + need].requested = 0;
+    }
+
+    vramUsedBlocks += need;
+    pspgu.vramAllocs++;
+    pspgu.vramRequested += bytes;
+
+    return at*PSPGU_VRAM_BLOCK;
+}
+
+static void vramFreeRaw(unsigned int offset)
+{
+    if ((offset == PSPGU_VRAM_INVALID) || ((offset % PSPGU_VRAM_BLOCK) != 0)) return;
+    if (offset >= pspgu.vramEnd) return;
+
+    unsigned int at = offset/PSPGU_VRAM_BLOCK;
+    VramSpan *s = &vramMap[at];
+
+    if (s->blocks == 0) { pspguLog("VRAM free: %08x is not a span", offset); return; }
+    if (s->free) return;                        // double free is a no-op
+    if (s->fixed) { pspguLog("VRAM free: %08x is a fixed reservation", offset); return; }
+
+    unsigned int freed = s->blocks;
+
+    vramUsedBlocks -= freed;
+    if (pspgu.vramRequested >= s->requested) pspgu.vramRequested -= s->requested;
+    else pspgu.vramRequested = 0;
+    s->requested = 0;
+    s->free = 1;
+
+    // merge the next free span
+    unsigned int next = at + s->blocks;
+    if ((next < PSPGU_VRAM_BLOCKS) && vramMap[next].free)
+    {
+        s->blocks = (unsigned short)(s->blocks + vramMap[next].blocks);
+        vramMap[next].blocks = 0;
+    }
+
+    // merge the previous free span: find the header whose span ends at `at`
+    unsigned int prev = 0, guard = 0;
+    while ((prev < at) && ((prev + vramMap[prev].blocks) < at))
+    {
+        if ((vramMap[prev].blocks == 0) || (++guard > PSPGU_VRAM_BLOCKS))
+        {
+            pspguLog("VRAM: span table corrupt while freeing %08x", offset);
+            return;
+        }
+        prev += vramMap[prev].blocks;
+    }
+    if (((prev + vramMap[prev].blocks) == at) && vramMap[prev].free)
+    {
+        vramMap[prev].blocks = (unsigned short)(vramMap[prev].blocks + s->blocks);
+        s->blocks = 0;
+    }
+
+    pspgu.vramFrees++;
+}
+
+unsigned int pspguVramAllocAligned(unsigned int bytes, unsigned int align)
+{
+    return vramAllocRaw(bytes, align, 0);
+}
+
+// Texture wrapper: textures never occupy offset 0, so 0 keeps meaning "failed" at the
+// existing call sites. Framebuffer reservations use vramAllocRaw directly and check for
+// PSPGU_VRAM_INVALID, because offset 0 is a legal framebuffer.
+unsigned int pspguVramAlloc(unsigned int bytes)
+{
+    unsigned int off = vramAllocRaw(bytes, 64, 0);
+    return (off == PSPGU_VRAM_INVALID)? 0 : off;
+}
+
+void pspguVramFree(unsigned int offset)
+{
+    vramFreeRaw(offset);
+}
+
+void pspguVramStats(PspGuVramStats *out)
+{
+    if (out == NULL) return;
+
+    out->reserved = pspgu.vramReserved;
+    out->requested = (pspgu.vramRequested >= pspgu.vramReservedRequested)?
+                     (pspgu.vramRequested - pspgu.vramReservedRequested) : 0;
+    out->used = vramUsedBlocks*PSPGU_VRAM_BLOCK;
+    out->free = (PSPGU_VRAM_BLOCKS - vramUsedBlocks)*PSPGU_VRAM_BLOCK;
+    out->largest = vramLargestFree();
+    out->internal = (out->used > out->reserved + out->requested)?
+                    (out->used - out->reserved - out->requested) : 0;
+    out->allocs = pspgu.vramAllocs;
+    out->frees = pspgu.vramFrees;
+    out->failures = pspgu.vramFailures;
+}
+
 // Boot the GE. Called from eglMakeCurrent, which is the first moment a GL call is legal.
 static void pspguInitGu(void)
 {
@@ -68,19 +270,35 @@ static void pspguInitGu(void)
     // VRAM map: three framebuffers, optional depth, then textures. Three buffers are what
     // makes a queued submission tear-free: the display can show frame N-1 while frame N
     // is still being drawn, so no steady frame has to wait for the GE before swapping.
+    // The reservations go through the same allocator as textures; they are 8 KiB aligned
+    // (GU requires it) and marked fixed, so a texture can never free them. Offset 0 is a
+    // legal framebuffer, which is why failures use PSPGU_VRAM_INVALID.
+    vramInit();
+
     for (int i = 0; i < PSP_GU_FB_COUNT; i++)
     {
-        pspgu.fbOffset[i] = EDRAM(i*fb);
+        unsigned int off = vramAllocRaw(fb, 8192, 1);
+
+        if (off == PSPGU_VRAM_INVALID) pspguLog("VRAM: framebuffer %d reservation FAILED", i);
+        pspgu.fbOffset[i] = EDRAM(off);
         pspgu.bufQid[i] = -1;
     }
-    pspgu.vramNext = PSP_GU_FB_COUNT*fb;
 
 #if PSP_GU_DEPTH
-    pspgu.depthOffset = EDRAM(PSP_GU_FB_COUNT*fb);
-    pspgu.vramNext = (PSP_GU_FB_COUNT + 1)*fb;
+    {
+        unsigned int off = vramAllocRaw(fb, 8192, 1);
+        if (off == PSPGU_VRAM_INVALID) pspguLog("VRAM: depth reservation FAILED");
+        pspgu.depthOffset = EDRAM(off);
+    }
 #else
     pspgu.depthOffset = NULL;
 #endif
+
+    // Snapshot the fixed reservations before any texture allocates. `reserved` is block
+    // bytes; `reservedRequested` is the same total in logical bytes (they are equal here
+    // because every buffer is a whole number of blocks).
+    pspgu.vramReserved = vramUsedBlocks*PSPGU_VRAM_BLOCK;
+    pspgu.vramReservedRequested = pspgu.vramRequested;
     pspgu.vramEnd = 2*1024*1024;        // the whole of EDRAM
     pspgu.readOffset = pspgu.fbOffset[PSP_GU_FB_COUNT - 1];
     pspgu.drawOffset = pspgu.fbOffset[0];
@@ -275,37 +493,27 @@ void pspguFinishAndWait(void)
     if (qid >= 0) sceGeListSync(qid, PSP_GE_LIST_DONE);
 }
 
-unsigned int pspguVramAlloc(unsigned int bytes)
+unsigned int pspguVramFreeBytes(void)
 {
-    unsigned int off = (pspgu.vramNext + 63) & ~63u;
-
-    if ((off + bytes) > pspgu.vramEnd) return 0;        // out of VRAM; caller decides
-
-    pspgu.vramNext = off + bytes;
-    pspgu.vramAllocated += bytes;
-    pspgu.vramAllocs++;
-    pspgu.texAllocated += bytes;                        // only textures allocate after boot
-    if (pspgu.vramNext > pspgu.vramPeak) pspgu.vramPeak = pspgu.vramNext;
-
-    return off;
+    return (PSPGU_VRAM_BLOCKS - vramUsedBlocks)*PSPGU_VRAM_BLOCK;
 }
 
-// One line, from the allocator's own counters. "used" is the bump pointer; the padding
-// column accounts for the 64-byte alignment between allocations, so the totals add up
-// exactly. The display lists live in main RAM and are deliberately not part of this sum.
+unsigned int pspguVramLargestBytes(void)
+{
+    return vramLargestFree();
+}
+
+// One line from the allocator's own table. `internal` is real: used - reserved - requested
+// is block rounding and alignment. The display lists and vertex arenas are main RAM and
+// are not part of the 2 MiB sum.
 void pspguVramReport(const char *when)
 {
-    unsigned int used = pspgu.vramNext;
-    unsigned int buffers = PSP_GU_FB_COUNT*pspgu.fbBytes +
-                           ((pspgu.depthOffset != NULL)? pspgu.fbBytes : 0u);
-    unsigned int pad = (used > buffers + pspgu.texAllocated)?
-                       (used - buffers - pspgu.texAllocated) : 0u;
+    PspGuVramStats s;
 
-    pspguLog("VRAM [%s]: fb=%u x%d + depth=%u + textures=%u + pad=%u = used=%u free=%u peak=%u allocs=%u (bytes)",
-             when, pspgu.fbBytes, PSP_GU_FB_COUNT,
-             (pspgu.depthOffset != NULL)? pspgu.fbBytes : 0u,
-             pspgu.texAllocated, pad, used, pspgu.vramEnd - used, pspgu.vramPeak,
-             pspgu.vramAllocs);
+    pspguVramStats(&s);
+    pspguLog("VRAM [%s]: reserved=%u requested=%u used=%u free=%u largest=%u internal=%u allocs=%u frees=%u failures=%u (bytes)",
+             when, s.reserved, s.requested, s.used, s.free, s.largest, s.internal,
+             s.allocs, s.frees, s.failures);
 }
 
 // Per-list vertex memory. The pointer handed to sceGuDrawArray must stay valid until the

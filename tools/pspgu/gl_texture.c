@@ -26,6 +26,7 @@
 typedef struct {
     int used;
     unsigned int offset;        // EDRAM offset of the texels
+    unsigned int requestedBytes; // logical allocation size, for reuse and freeing
     int width, height;          // logical size the application asked for
     int tbw;                    // texture buffer width: power of two >= width, as GU wants
     int padW, padH;             // allocated size: powers of two >= width/height
@@ -40,7 +41,6 @@ typedef struct {
 static PspGuTexture textures[PSPGU_MAX_TEXTURES];
 static unsigned int currentTexture = 0;
 static unsigned int defaultTexture = 0;
-static unsigned int vramUsed = 0;       // bytes of texture VRAM handed out
 
 // T3: the standard 16-byte-block / 8-row swizzle, the same one PSPRuntime's SwizzleFast
 // and the SDK samples use. Swizzling changes no texel, only the order, so a correct
@@ -233,7 +233,6 @@ void pspguInitTextures(void)
 {
     memset(textures, 0, sizeof(textures));
     currentTexture = 0;
-    vramUsed = 0;
 
     // A 1x1 white texel, so bind(0) can never leave the GE sampling an undefined address -
     // which is what blacked the whole screen when GL_TEXTURE_2D was first enabled.
@@ -249,6 +248,7 @@ void pspguInitTextures(void)
             defaultTexture = 1;
             textures[1].used = 1;
             textures[1].offset = offset;
+            textures[1].requestedBytes = 4;
             textures[1].width = textures[1].height = 1;
             textures[1].tbw = 1;
             textures[1].padW = textures[1].padH = 1;
@@ -283,9 +283,17 @@ void glDeleteTextures(GLsizei n, const GLuint *ids)
     for (GLsizei i = 0; i < n; i++)
     {
         PspGuTexture *t = lookup(ids[i]);
-        if (t != NULL) t->used = 0;
-        // VRAM is not reclaimed: the allocator is a bump arena. Texture churn belongs to
-        // phase 6's residency work, and raylib loads its textures once at startup.
+
+        if (t == NULL) continue;
+        if (ids[i] == defaultTexture) continue;     // bind(0) must always have a texel
+
+        if (t->offset != 0)
+        {
+            pspguVramFree(t->offset);
+            t->offset = 0;
+            t->requestedBytes = 0;
+        }
+        t->used = 0;
     }
 }
 
@@ -336,19 +344,31 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t->scaleU = (float)width / (float)t->padW;
     t->scaleV = (float)height / (float)t->padH;
 
-    if (t->offset == 0)
     {
         unsigned int bytes = (unsigned int)(t->padW * t->padH * 4);
 
-        t->offset = pspguVramAlloc(bytes);
-        if (t->offset == 0)
+        // Reuse the block when the padded size is unchanged; otherwise return the old
+        // span and take a new one. The allocator rounds to 512-byte blocks.
+        if ((t->offset == 0) || (t->requestedBytes != bytes))
         {
-            pspguLog("texture %u: out of VRAM for %dx%d (%u bytes, %u used)",
-                     currentTexture, width, height, bytes, vramUsed);
-            t->used = 0;
-            return;
+            if (t->offset != 0)
+            {
+                pspguVramFree(t->offset);
+                t->offset = 0;
+            }
+
+            t->offset = pspguVramAlloc(bytes);
+            if (t->offset == 0)
+            {
+                PspGuVramStats st;
+                pspguVramStats(&st);
+                pspguLog("texture %u: out of VRAM for %dx%d (%u bytes; used=%u free=%u largest=%u)",
+                         currentTexture, width, height, bytes, st.used, st.free, st.largest);
+                t->used = 0;
+                return;
+            }
+            t->requestedBytes = bytes;
         }
-        vramUsed += bytes;
     }
 
     if (pixels != NULL) upload8888(t, (const unsigned char *)pixels, format, type);

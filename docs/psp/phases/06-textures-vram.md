@@ -18,8 +18,8 @@ re-uploaded mid-frame costs more than the draw it feeds.
 - [x] Boot-time VRAM accounting exists **for the free tail** — sprint 014 reports used/free/peak from the
       allocation counter. The **largest block** does not exist yet: the allocator is a bump arena. It arrives
       with T3 of sprint 015, and until then no “largest free block” may be quoted
-- [ ] Upload/eviction counters exist — upload bytes are counted (`texAllocated`); there is no eviction to count,
-      because nothing is ever freed. T3 adds free/coalesce counters
+- [x] Upload/eviction counters exist — sprint 015 T3 counts allocations, frees, failures, requested bytes, used,
+      free and largest block. Eviction still does not exist; sprint 016 adds it
 
 ## Tasks
 
@@ -29,8 +29,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
       33×17 → 64×32 = 8,192 B (logical 2,244 B); the 33×17 checkerboard went from 281/561 wrong cells to 0/561,
       and the parity scenes stayed byte-identical
 - [ ] CLUT path for glyph atlases (T4/T8) only if measured to pay
-- [ ] Best-fit allocator over 512-byte blocks, coalescing on free, free bytes and largest block tracked
-      separately — one allocator for framebuffers *and* textures
+- [x] Best-fit allocator over 512-byte blocks, coalescing on free, free bytes and largest block tracked
+      separately — one allocator for framebuffers *and* textures — **sprint 015 T3**: 4,096 blocks over 2 MiB,
+      32 KiB metadata, framebuffers/depth as fixed 8 KiB-aligned reservations, live `requested` and `internal`.
+      Churn 100 × 16 textures: free and largest return exactly (916,992 → 916,992 B), 1,600 frees, 0 failures
 - [ ] Residency: priority-aware eviction where application priority is a strong weight; usage that ages per
       frame, never accumulating forever
 - [ ] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame

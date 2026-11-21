@@ -850,6 +850,14 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   8-row swizzle), the padding is zeroed and swizzled, and `sceGuTexScale(realW/padW, realH/padH)` restores the
   logical size. The padding is allocated and counted: 33×17 becomes 64×32, **8,192 B** against 2,244 B of
   logical texels (sprint 015 T1).
+- **The pspgu allocator is a 512-byte block best-fit over the whole 2 MiB**: 4,096 blocks, 32 KiB of metadata in
+  main RAM, coalescing on free. Framebuffers and depth are fixed 8 KiB-aligned reservations; textures allocate
+  and free. It reports `used / free / largest / internal / allocs / frees / failures`, and `largest` is a real
+  span — not the free tail the old bump arena could report. A 4-byte request costs one 512-byte block
+  (sprint 015 T3: churn 100 × 16 textures returned free and largest exactly, 1,600 frees, 0 failures).
+- **Texture-only work must end a frame.** The display list is 240 KiB and GU has no capacity check; a probe that
+  uploaded 1,600 textures without `EndDrawing` overran it at cycle ~50. End a frame, or add a list high-water
+  guard before a loading screen uploads textures in bulk.
 
 ### Samples worth reading
 

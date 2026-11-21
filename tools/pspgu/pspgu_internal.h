@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b17"
+#define PSPGU_BUILD "b19"
 
 #ifndef PSP_GU_DEPTH
     #define PSP_GU_DEPTH 1              // 16-bit depth buffer, 272 KiB at 512 stride
@@ -125,12 +125,13 @@ typedef struct {
     void *depthOffset;                      // NULL when PSP_GU_DEPTH is 0
     void *readOffset;                       // buffer holding the last completed frame
 
-    unsigned int vramNext;                  // bump allocator for textures, after the buffers
-    unsigned int vramEnd;
-    unsigned int vramAllocated;             // requested bytes handed to the allocator
-    unsigned int vramPeak;                  // high-water mark of vramNext
-    unsigned int vramAllocs;                // allocation counter
-    unsigned int texAllocated;              // texture bytes, from the same counter
+    unsigned int vramEnd;                   // 2 MiB
+    unsigned int vramReserved;              // block bytes held by framebuffers + depth
+    unsigned int vramReservedRequested;     // logical bytes of those reservations
+    unsigned int vramRequested;             // logical bytes requested, all callers
+    unsigned int vramAllocs;
+    unsigned int vramFrees;
+    unsigned int vramFailures;
 
     // GL state that GU needs on every draw because GU has no query for it
     unsigned int clearColor;                // 0xAABBGGRR
@@ -148,8 +149,31 @@ extern PspGuContext pspgu;
 void pspguBeginFrame(void);                 // start a list if one is not open
 void pspguEndFrame(void);                   // finish the open list, no GE wait
 void pspguFinishAndWait(void);              // finish, then wait for it (readback/boot only)
-unsigned int pspguVramAlloc(unsigned int bytes);    // bump allocator, returns EDRAM offset
-void pspguVramReport(const char *when);     // one line: allocations, used, free tail, peak
+
+// VRAM: a 512-byte block allocator over the whole 2 MiB, with coalescing. Framebuffers
+// and depth are fixed reservations; textures allocate and free. Offset 0 is a legal
+// framebuffer, so failures use PSPGU_VRAM_INVALID and the texture wrapper maps it to 0.
+#define PSPGU_VRAM_BLOCK      512u
+#define PSPGU_VRAM_BLOCKS     (2u*1024u*1024u/PSPGU_VRAM_BLOCK)     // 4,096
+#define PSPGU_VRAM_INVALID    0xFFFFFFFFu
+
+typedef struct {
+    unsigned int reserved;       // block bytes held by fixed reservations
+    unsigned int requested;      // logical texture bytes requested
+    unsigned int used;           // all used blocks * 512 (reserved + textures)
+    unsigned int free;           // free blocks * 512
+    unsigned int largest;        // longest free span, bytes
+    unsigned int internal;       // used - reserved - requested (rounding/alignment)
+    unsigned int allocs, frees, failures;
+} PspGuVramStats;
+
+unsigned int pspguVramAlloc(unsigned int bytes);                 // texture wrapper, 64-byte aligned
+unsigned int pspguVramAllocAligned(unsigned int bytes, unsigned int align);  // INVALID on failure
+void pspguVramFree(unsigned int offset);                          // ignores fixed reservations
+void pspguVramStats(PspGuVramStats *out);
+unsigned int pspguVramFreeBytes(void);      // probes use these two for the churn self-check
+unsigned int pspguVramLargestBytes(void);
+void pspguVramReport(const char *when);     // one line: reserved/requested/used/free/largest/internal
 
 // Per-list vertex memory. Every draw copies its vertices here before handing the pointer
 // to GU, so a list queued two frames ago never points at memory this frame writes.
