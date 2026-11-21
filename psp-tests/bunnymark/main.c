@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #include "raylib.h"
+#include "rlgl.h"                   // rlDisableColorBlend, for the sprint 010 blend probe
 #include "psp_counters.h"
 
 #ifdef PSPGL_PROFILE_APP
@@ -89,7 +90,18 @@ int main(void)
                                     GetRandomValue(100, 240), 255 };
     }
 
-    Texture2D texBunny = LoadTexture("host0:/textures/bunnymark/wabbit_alpha.png");
+    // Sprint 010 probe: upload the same image as a 16-bit texture. App-side only, so a
+    // null result leaves the renderer untouched.
+    Image imBunny = LoadImage("host0:/textures/bunnymark/wabbit_alpha.png");
+#if TEX_FMT_SEL == 5650
+    ImageFormat(&imBunny, PIXELFORMAT_UNCOMPRESSED_R5G6B5);
+#elif TEX_FMT_SEL == 5551
+    ImageFormat(&imBunny, PIXELFORMAT_UNCOMPRESSED_R5G5B5A1);
+#endif
+    Texture2D texBunny = LoadTextureFromImage(imBunny);
+    TraceLog(LOG_INFO, "TEXFMT %i format px=%i bytes/image=%i", TEX_FMT_SEL,
+             (int)imBunny.format, GetPixelDataSize(imBunny.width, imBunny.height, imBunny.format));
+    UnloadImage(imBunny);
     Rectangle src = { 0.0f, 0.0f, (float)texBunny.width, (float)texBunny.height };
 
     PspCountersReset();
@@ -116,6 +128,9 @@ int main(void)
 
         BeginDrawing();
             ClearBackground(RAYWHITE);
+#ifdef BLEND_OFF
+            rlDisableColorBlend();      // sprint 010 probe: isolate blend traffic from texel traffic
+#endif
 
 #ifndef SKIP_DRAW
             // DrawTexturePro keeps this at one primitive per sprite, same as

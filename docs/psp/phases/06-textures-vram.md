@@ -51,3 +51,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
 ## Sprints and features
 
 None yet. Use the [sprint template](../templates/sprint.md).
+
+## Sprints and features
+
+- [Sprint 010 — What fill actually costs, and 16-bit textures](../sprints/010-phase6-fill-and-texture-format.md)
+  — phase 4's ceiling is `work 11.0 ms + fill ~5.5 ms` in a 16.683 ms period, and only the first half has been
+  attacked. This sprint finds out whether fill is texel bytes (16-bit uploads fix it), pixel area (fewer sprites
+  fix it) or blend traffic (opaque passes fix it) before anything is implemented, then bisects the ceiling again

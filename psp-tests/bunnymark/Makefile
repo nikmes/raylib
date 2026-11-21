@@ -27,6 +27,20 @@ ifdef SKIP_DRAW
     CFLAGS += -DSKIP_DRAW
 endif
 
+# Sprint 010 probe: sprite texture upload format and blending, app-side only.
+TEX_FMT ?= 8888
+ifeq ($(TEX_FMT),5650)
+    CFLAGS += -DTEX_FMT_SEL=5650
+else ifeq ($(TEX_FMT),5551)
+    CFLAGS += -DTEX_FMT_SEL=5551
+else
+    CFLAGS += -DTEX_FMT_SEL=8888
+endif
+
+ifdef BLEND_OFF
+    CFLAGS += -DBLEND_OFF
+endif
+
 # Sprint 008: rotate every second sprite, i.e. force a sprite/triangle mode switch
 # per sprite pair. Measures what a mixed scene costs instead of guessing.
 ifdef ROTATE_ODD
