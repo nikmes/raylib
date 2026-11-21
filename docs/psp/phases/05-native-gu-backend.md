@@ -61,6 +61,57 @@ pspGL's per-vertex conversion (~0.44 µs/vertex) and gives `GU_TRANSFORM_2D`/`GU
 4.95 µs of arithmetic stays exactly where it is. So the phase's own exit number must be about vertices and fill, not
 about "no worse than pspGL" — which phase 4 already achieved.
 
+### Second review (2026-11-21) — checked against the code the implementer will hit
+
+**Finding 5: task 1 as written cannot pass its own verification.** It says "stubs that log, links with no pspGL,
+boots to a **cleared screen**" — but a stub cannot clear a screen. The first milestone has to be a *vertical slice*:
+egl + two framebuffers + `glClear` producing a cleared screen, stubbed everything else. Rewritten below.
+
+**Finding 6: the boot contract is static, so nobody has to discover it.** `rlglInit()` on GL11 issues exactly this,
+in this order, before any application draw:
+
+```c
+rlglInit:  glDepthFunc(GL_LEQUAL);  glDisable(GL_DEPTH_TEST);
+           glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  glEnable(GL_BLEND);
+           glCullFace(GL_BACK);  glFrontFace(GL_CCW);  glEnable(GL_CULL_FACE);
+           glShadeModel(GL_SMOOTH);
+           glClearColor(0,0,0,1);  glClearDepth(1.0);
+           glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+```
+
+Two consequences the drop-in must honour: **backface culling is ON from boot** — our batcher emits
+`(TL,BL,BR), (TL,BR,TR)` and that winding is only known-good because pspGL accepts it, so a wrong convention gives
+*invisible* sprites rather than wrong ones, and a one-triangle test belongs in task 5 — and **depth testing is off**
+but the **depth clear is not**: see finding 7.
+
+**Finding 7: every frame asks to clear a depth buffer that does not exist.** `rlClearScreenBuffers()` is
+`glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)`, and `BeginDrawing()` calls it every frame. With no depth
+buffer allocated, the drop-in must treat the DEPTH bit as a documented no-op — otherwise the GE is told to clear
+through a null Z pointer. This makes finding 3 (§0) a blocking decision rather than a preference.
+
+**Finding 8: `glGetFloatv` needs a CPU-side matrix mirror.** raylib queries `GL_MODELVIEW_MATRIX` and
+`GL_PROJECTION_MATRIX` (rlgl.h:5031, 5059) as well as `GL_LINE_WIDTH`, `GL_POINT_SIZE` and
+`GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT`. A backend that only forwarded matrices to the GE and forgot them would fail on
+`rlGetMatrixModelview()`; so the stack lives in CPU/VFPU memory *and* is pushed to the GE.
+
+**Finding 9: `glReadPixels` is real work, not a stub.** `rlReadScreenPixels()` calls
+`glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,…)` under GL11 and `TakeScreenshot()`/`LoadImageFromScreen()` use it.
+The framebuffer is `5650`, so the drop-in must expand 5-6-5 to 8-8-8 and flip vertically. Note our **evidence
+pipeline does not test this**: `scrshot` reads VRAM through PSPLink, bypassing GL entirely, so a broken
+`glReadPixels` would go unnoticed by every capture we have. It needs its own test.
+
+**Finding 10: `eglSwapInterval` is missing from the 52 for a silly reason** — it is compiled out unless
+`PSP_DISABLE_VSYNC` is defined. Implement it anyway, or that measurement switch stops building.
+
+**Finding 11: in the default build the only vertex path is client arrays**, and it is narrow: three `*Pointer`
+calls (position 3×`f32`, texcoord 2×`f32`, colour 4×`u8`), `glDrawArrays` with mode **10** (`GL_SPRITES_PSP`), **4**
+(triangles) or **1** (lines), and `glDisable(GL_TEXTURE_2D)` + `glBindTexture(0)` for texture-less runs. Immediate
+mode (`glBegin`/`glVertex*`) only appears in a `PSP_BATCH=0` build — 11 extra symbols, one dispatch.
+
+**Finding 12: the viewport recipe, with numbers.** 480×272 visible inside a 512-wide buffer:
+`sceGuOffset(2048 - 240, 2048 - 136)`, `sceGuViewport(2048, 2048, 480, 272)`, scissor `(0, 0, 480, 272)`. The oracle
+is the first byte-identical capture against `c4eb44e7…`; anything off by a pixel shows up there and nowhere else.
+
 ## What it is worth, measured (re-priced after sprint 008)
 
 > The sections below were written before the review above. The measurement table stands; the "fifth backend"
@@ -111,13 +162,13 @@ optimises.
 
 | # | task | verification |
 |---|---|---|
-| 1 | **skeleton and link**: the 52 symbols, each a stub that logs and returns; `make PLATFORM=PLATFORM_PSP` links and boots to a cleared screen with **no pspGL objects** in the ELF | `psp-nm app.elf \| grep -c pspgl_` is 0; the stubs' log shows the boot path's call order, which is the de-facto initialisation sequence |
-| 2 | **egl layer**: config, context, surface, `eglSwapBuffers` with the same vsync semantics as today (bunnymark times the swap), `eglGetError` | `psp-tests/bunnymark` boots and reaches `DONE` with counters intact; `SPLIT ... swap=` non-zero |
+| 1 | **vertical slice**: the 52 symbols as logging stubs **plus** real egl init, two framebuffers, GU display setup and `glClear` — enough to show a cleared screen. Everything else returns without doing anything | `psp-nm app.elf \| grep -c pspgl_` is 0 **and** the screen is actually cleared in the requested colour; the stub log then shows the remaining call order (the boot contract in §0 finding 6 is what it should match) |
+| 2 | **egl layer**: config, context, surface, `eglSwapBuffers` with the same vsync semantics as today, `eglSwapInterval` (compiled out of the 52 but needed by `PSP_DISABLE_VSYNC`), `eglGetError`; and the DEPTH bit of `glClear` handled explicitly (§0 finding 7) | `psp-tests/bunnymark` boots and reaches `DONE` with counters intact; `SPLIT ... swap=` non-zero; a `PSP_DISABLE_VSYNC=1` build still links |
 | 3 | **state mapping**: a table of every `glEnable`/`glDisable` bit the library uses, plus `glBlendFunc`, `glDepthFunc/Mask`, `glColorMask`, `glCullFace`, `glFrontFace`, `glScissor`, `glViewport`, `glShadeModel`, `glPolygonMode`, `glLineWidth` → GU commands, emitted only when the value changes | the state trace of one `batch_check` frame matches the 31 flush points the batcher has; no command re-emitted with the same value |
-| 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` over the VFPU (GUM or hand-written), composed and pushed as float24 | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling |
-| 5 | **vertex arrays**: the four `*Pointer` calls, `glEnable/DisableClientState`, `glDrawArrays`, `glDrawElements`, with the 24-byte layout as the native fast path (it already is pspGL's native GE layout) and per-attribute conversion for everything else. `GL_SPRITES_PSP` (mode 10) → `GU_SPRITES` | `arrayVerts`/frame unchanged; the same batch reaches the GE without a copy for our own vertices |
+| 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` over the VFPU (GUM or hand-written), kept in CPU/VFPU memory **and** pushed to the GE as float24, with `glGetFloatv` answering both matrix queries (§0 finding 8) | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling; `rlGetMatrixModelview()` returns a sane matrix |
+| 5 | **vertex arrays**: the four `*Pointer` calls, `glEnable/DisableClientState`, `glDrawArrays`, `glDrawElements`, with the 24-byte layout as the native fast path (it already is pspGL's native GE layout) and per-attribute conversion for everything else. `GL_SPRITES_PSP` (mode 10) → `GU_SPRITES`; mode 1/4 for lines/triangles. **Verify the winding against the culling that is on from boot** (§0 finding 6) | `arrayVerts`/frame unchanged; the batch reaches the GE without a copy for our own vertices; one sprite renders — if culling is wrong the sprite is *invisible*, not distorted |
 | 6 | **textures**: `glGenTextures`, `glBindTexture`, `glTexImage2D`, `glTexSubImage2D`, `glTexParameteri`, `glPixelStorei`, `glDeleteTextures` — swizzling, format conversion, VRAM allocation and eviction | the same textures load; a swizzle bug shows as diagonal garbage, so compare a 32×32 and a 512×512 texture capture |
-| 7 | **readback and queries**: `glReadPixels` (`TakeScreenshot`), `glGetFloatv`, `glGetString` | `TakeScreenshot` produces a valid PNG; `glGetString(GL_VERSION)` returns something non-NULL so rlgl's init logs do not crash |
+| 7 | **readback**: `glReadPixels` expanding the `5650` framebuffer to RGBA8888 and flipping, plus `glGetString`. `scrshot` reads VRAM through PSPLink and proves nothing about this path (§0 finding 9) | `TakeScreenshot` produces a PNG whose pixels match a `scrshot` capture of the same frame within the 5-6-5 quantisation; `glGetString(GL_VERSION)` is non-NULL |
 | 8 | **display lists**: two rotating, 16-byte aligned, sized from a measured worst case; submit frame N, sync frame N-1 (`GU_SYNC_WHAT_QUEUED`); never a per-frame `FINISH` | `SPLIT work/swap` shows no full wait in steady state; a deliberately undersized list asserts instead of overrunning |
 | 9 | **cache discipline**: `sceKernelDcacheWritebackRange()` over exactly the ranges the CPU wrote, then publish the pointer | a texture uploaded then drawn in the same frame is correct on hardware (this is the classic PSP-only corruption) |
 | 10 | **VRAM accounting at boot**: framebuffers, textures, free bytes, largest block | printed once at boot and matching the budget in §"What we already know" |
