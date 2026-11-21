@@ -28,6 +28,7 @@ typedef struct {
     unsigned int offset;        // EDRAM offset of the texels
     int width, height;
     int tbw;                    // texture buffer width: power of two >= width, as GU wants
+    int swizzled;               // 1 when the texels are in the swizzled layout
     unsigned int guFormat;      // GU_PSM_*
     int filter;                 // GU_NEAREST / GU_LINEAR
     int wrap;                   // GU_REPEAT / GU_CLAMP for both axes
@@ -37,6 +38,54 @@ static PspGuTexture textures[PSPGU_MAX_TEXTURES];
 static unsigned int currentTexture = 0;
 static unsigned int defaultTexture = 0;
 static unsigned int vramUsed = 0;       // bytes of texture VRAM handed out
+
+// T3: the standard 16-byte-block / 8-row swizzle, the same one PSPRuntime's SwizzleFast
+// and the SDK samples use. Swizzling changes no texel, only the order, so a correct
+// implementation must leave every capture identical - that is exactly how it is verified.
+// PSP_GU_NO_SWIZZLE=1 keeps the linear layout for the A/B.
+#ifndef PSP_GU_NO_SWIZZLE
+    #define PSPGU_SWIZZLE 1
+#else
+    #define PSPGU_SWIZZLE 0
+#endif
+
+static void swizzleFast(unsigned char *out, const unsigned char *in, unsigned int widthBytes, unsigned int height)
+{
+    unsigned int blockx, blocky, j;
+    unsigned int widthBlocks = widthBytes/16;
+    unsigned int heightBlocks = height/8;
+    unsigned int srcPitch = (widthBytes - 16)/4;
+    unsigned int srcRow = widthBytes*8;
+    const unsigned char *ysrc = in;
+    unsigned int *dst = (unsigned int *)out;
+
+    for (blocky = 0; blocky < heightBlocks; blocky++)
+    {
+        const unsigned char *xsrc = ysrc;
+
+        for (blockx = 0; blockx < widthBlocks; blockx++)
+        {
+            const unsigned int *src = (const unsigned int *)xsrc;
+
+            for (j = 0; j < 8; j++)
+            {
+                *(dst++) = *(src++); *(dst++) = *(src++); *(dst++) = *(src++); *(dst++) = *(src++);
+                src += srcPitch;
+            }
+            xsrc += 16;
+        }
+        ysrc += srcRow;
+    }
+}
+
+// Where texel (x,y) lives in the swizzled layout - needed for sub-image updates
+static unsigned int swizzledOffset(int x, int y, int tbw)
+{
+    unsigned int widthBytes = (unsigned int)tbw*4;
+    unsigned int block = (unsigned int)((y/8)*(widthBytes/16) + (x/4))*128;
+
+    return block + (unsigned int)((y%8)*16) + (unsigned int)((x%4)*4);
+}
 
 static int nextPow2(int v)
 {
@@ -98,8 +147,13 @@ static int sourceBytesPerPixel(GLenum format, GLenum type)
 // Expand any source the library passes into a GE 8888 texture
 static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum format, GLenum type)
 {
-    unsigned int *dst = (unsigned int *)((unsigned char *)sceGeEdramGetAddr() + t->offset);
+    unsigned char *base = (unsigned char *)sceGeEdramGetAddr() + t->offset;
+    unsigned int rowBytes = (unsigned int)t->tbw*4;
+    unsigned int total = rowBytes*(unsigned int)t->height;
+    unsigned int *scratch = (unsigned int *)calloc(1, total);      // zeroed: padding is real
     int bytes = sourceBytesPerPixel(format, type);
+
+    if (scratch == NULL) return;
 
     for (int y = 0; y < t->height; y++)
     {
@@ -109,7 +163,6 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
 
             if (isPacked16(type))
             {
-                // Already a 16-bit GE format: widen it so one path serves every source
                 unsigned short v = ((const unsigned short *)pixels)[y*t->width + x];
                 unsigned int r = (v & 0x1F) << 3;
                 unsigned int g = ((v >> 5) & 0x3F) << 2;
@@ -117,16 +170,23 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
                 unsigned int a = (type == GL_UNSIGNED_SHORT_5_5_5_1)? ((v & 0x8000)? 0xFF : 0) : 0xFF;
                 texel = (a << 24) | (b << 16) | (g << 8) | r;
             }
-            else
-            {
-                texel = pack8888(pixels + ((size_t)y*t->width + x)*bytes, format);
-            }
+            else texel = pack8888(pixels + ((size_t)y*t->width + x)*bytes, format);
 
-            dst[(size_t)y*t->tbw + x] = texel;
+            scratch[(size_t)y*t->tbw + x] = texel;
         }
     }
 
-    pspguWriteback(dst, (unsigned int)(t->tbw * t->height * 4));
+    // The swizzle is an 8-row block operation: it needs a power-of-two width and a height
+    // that is a multiple of 8. A non-power-of-two texture (33x17) has neither, so it stays
+    // linear. T2's real fix is to pad BOTH dimensions and correct with TexScale - see the
+    // sprint log; until then, linear is safe and swizzled would read out of bounds.
+    t->swizzled = (PSPGU_SWIZZLE && (t->tbw == t->width) && ((t->height % 8) == 0))? 1 : 0;
+
+    if (t->swizzled) swizzleFast(base, (const unsigned char *)scratch, rowBytes, (unsigned int)t->height);
+    else memcpy(base, scratch, total);
+
+    free(scratch);
+    pspguWriteback(base, total);
 }
 
 // Push the bound texture's state into the GE, which has no texture objects of its own
@@ -134,7 +194,7 @@ static void applyTexture(PspGuTexture *t)
 {
     pspguBeginFrame();
 
-    sceGuTexMode(t->guFormat, 0, 0, GU_FALSE);
+    sceGuTexMode(t->guFormat, 0, 0, t->swizzled? GU_TRUE : GU_FALSE);
     sceGuTexImage(0, t->width, t->height, t->tbw,
                   (void *)((unsigned char *)sceGeEdramGetAddr() + t->offset));
     // GU_TCC_RGBA: take the ALPHA from the texture, not from the vertex colour. Without
@@ -246,8 +306,10 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t->guFormat = GU_PSM_8888;
     t->width = width;
     t->height = height;
+    // GU wants a power-of-two row stride. Rows are written at that stride, and the padding
+    // columns are part of the texture (the swizzle moves them around), so they are zeroed
+    // rather than left as whatever VRAM held before.
     t->tbw = nextPow2(width);
-    if (t->tbw != width) t->tbw = nextPow2(width);   // GU wants a power-of-two row stride
 
     if (t->offset == 0)
     {
@@ -303,7 +365,10 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
             }
             else texel = pack8888((const unsigned char *)pixels + ((size_t)y*width + x)*bytes, format);
 
-            dst[(size_t)(yoffset + y)*t->tbw + (xoffset + x)] = texel;
+            if (t->swizzled)
+                *(unsigned int *)((unsigned char *)dst + swizzledOffset(xoffset + x, yoffset + y, t->tbw)) = texel;
+            else
+                dst[(size_t)(yoffset + y)*t->tbw + (xoffset + x)] = texel;
         }
     }
 

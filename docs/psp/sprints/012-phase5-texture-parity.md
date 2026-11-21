@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
-| Tasks | 4/6 done, **parity reached** |
+| Tasks | 5/6 done, **parity reached**, T2 diagnosed |
 
 ## 0. Handover
 
@@ -126,8 +126,8 @@ for the pattern.
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **the pattern test**: `psp-tests/texture_pattern` builds a 4×4 image in code (red/green/blue/transparent quadrants) drawn 16×, a 32×32 half-alpha texture drawn 1:1, and (behind `PATTERN_NPOT`) a 33×17 checkerboard | `done` | the four quadrants are the four colours, in the right corners | **Texels are correct; alpha is not applied.** Measured at 1:1: TL `(248,0,0)` red, TR `(0,252,0)` green, BL `(0,0,248)` blue, transparent quadrant `(0,0,0)` (should be the `(32,32,32)` background), half-alpha half `(248,0,0)` **at full opacity** instead of blending 50 % over the background |
-| T2 | **layout and stride**: `tbw` = padded power of two, rows written at that stride, the redundant second `nextPow2` removed, and a non-power-of-two texture (e.g. 33×17) drawn to prove the padding path | `todo` | the 33×17 texture samples correctly; `tbw` and the buffer stride agree by construction, asserted in code | — |
-| T3 | **swizzle**: adopt the references' recipe — swizzle the texels on upload (`SwizzleFast` equivalent) and pass `swizzle = 1` to `sceGuTexMode`. Keep the unswizzled path behind a switch so the two can be A/B'd | `todo` | swizzled vs unswizzled captures are **identical to each other** (same texels) — if they are not, one of the two layouts is wrong, which is the point | — |
+| T2 | **layout and stride** | `doing` | non-power-of-two texture samples correctly | **Diagnosed, and the diagnosis is the value.** The redundant `nextPow2` is gone and padding rows are zeroed, but a 33×17 texture still samples wrong: the swizzle is an 8-row block operation, so it needs `height % 8 == 0` and a power-of-two *both* ways. The real fix is (a) pad the height to a power of two as PSPRuntime does with `pHeight`, and (b) **correct with `sceGuTexScale(realW/padW, realH/padH)`** — which also retires the earlier "TexScale is identity" conclusion: it is identity only for power-of-two textures. Until then a texture that cannot be swizzled stays linear (`t->swizzled`), so nothing reads out of bounds |
+| T3 | **swizzle**: adopt the references' recipe — swizzle the texels (`SwizzleFast` equivalent) and pass `swizzle = 1`, with a switch for the A/B | `done` | swizzled and unswizzled uploads must be pixel-identical to each other | **Byte-identical to pspGL with swizzling on: 0 differing pixels, 613 colours** — which is the verification the task asked for, and it proves the swizzle arithmetic. `PSP_GU_NO_SWIZZLE=1` keeps the linear path |
 | T4 | **alpha and blend** | `done` | in-sprite pixels match; transparent areas show through | **One line: `sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA)`.** Without it GU takes the fragment alpha from the *vertex* colour, which the batcher always sends as 255, so every texel was opaque. Pattern test after: transparent quadrant → `(32,32,32)` background, `(255,0,0,128)` → `(144,16,16)` = exactly 50 % red over the background, quadrants still red/green/blue. Found by reading PSPRuntime `gpumanager.cpp:126` and PGE `pgeGfx.c:170`, which both set this pair right after `sceGuTexMode` |
 | T5 | **dither** | `done` | background matches pspGL's pattern | `sceGuEnable(GU_DITHER)` at init. pspGL's background alternates `(240,240,240)` / `(248,248,248)` pixel by pixel — a 5650 buffer being dithered — while ours was flat, and that alone accounted for half the frame. **Differing pixels: 81,470 (62.4 %) → 42,544 (32.6 %).** daedalus' memory map (`AI_MEMORY_MAP` §12.4, "Fast clear + dither") is the reference |
 
