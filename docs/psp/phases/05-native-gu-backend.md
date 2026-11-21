@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| State | **reviewed and implementation-ready, not started** — deferred: the binding constraint moved to fill, which a backend does not touch (§0) |
+| State | **done** — sprint 014 closed the backend; the `DrawMesh` 2D→3D→2D parity criterion is deferred to phase 10 by recorded decision |
 | Depends on | Phase 4 closed (batcher shipped, ceiling measured at 1,600 sprites) |
-| Exit criterion | the 60 fps ceiling **beats** phase 4's, not merely matches it, with no pspGL symbols in the ELF and VRAM accounted at boot |
+| Exit criterion | the 60 fps ceiling **beats** phase 4's, not merely matches it, with no pspGL symbols in the ELF and VRAM accounted at boot — **met: 2,375 sprites** |
 
 ## What this phase is about
 
@@ -13,6 +13,25 @@ every GL call it serves is an interpretation of something the GE could be told d
 supports this shape of work: `GRAPHICS_API_OPENGL_SOFTWARE` is nothing but `#define GRAPHICS_API_OPENGL_11`,
 which is raylib's own admission that "rlgl speaks GL 1.1, and whatever library supplies those symbols is the
 backend". A `GRAPHICS_API_PSP_GU` backend replaces the supplier.
+
+## Sprint 014 outcome (2026-11-21) — the phase closes
+
+**The driver wins the measurement it was built for.** The 60 fps ceiling on the final configuration is **2,375
+sprites** (last pass; 2,376 fails in two runs), against pspGL's **1,600**. The one-list pspgu build reached 1,895, so
+the queued submission is worth **+480 sprites**, and `batch_check` is still **byte-identical** to pspGL.
+
+Two design points changed under measurement, and they supersede the two-buffer budget below:
+
+- **Three framebuffers.** With two, the frame being displayed is the one just submitted, which forces a full GE wait
+  before the swap. Three let the display show frame N−1 while N is drawn; the reported VRAM map is **3 × 272 KiB
+  colour + 272 KiB depth = 1,088 KiB**, leaving 913,344 B for textures (69,636 B used by the corpus).
+- **64-byte vertex arenas.** Each draw's vertices are copied into a per-list arena (two lists × 128 KiB). Starts are
+  cache-line aligned: 16-byte alignment left one polyline sharing a dirty line with its neighbour, and `basic_shapes`
+  differed from pspGL by 26–71 edge pixels; 64-byte alignment made it byte-identical.
+
+`GU_SYNC_WHAT_QUEUED` is a non-blocking poll in this SDK (`pspge.h`: syncType 1 = peek), so memory safety is a
+`sceGeListSync(qid, PSP_GE_LIST_DONE)` on the list being reused, using the qid `ge_list_executed[0]` exposes after
+`sceGuStart`. Both waits (reused list and displayed frame) measure 18–26 µs in a steady frame.
 
 ## 0. Review findings (2026-11-21) — the shape is decided and it is not the one written below
 
@@ -73,6 +92,12 @@ The budget, for the record (2 MiB of EDRAM):
 272 KiB is 13.3 % of VRAM and it buys the 3D phase (§10) without reopening this decision later; the switch means no
 2D game has to pay it. **Lazy allocation** (allocate on first `glEnable(GL_DEPTH_TEST)`) is a follow-up, not a
 phase-5 feature: it adds a mid-run allocation and a stall on the first 3D frame.
+
+> **Superseded by sprint 014 (measured).** The queued submission needs a third colour buffer: with two, the frame
+> being displayed is the one just submitted, so the swap needs a full GE wait. The shipped map is **3 × 272 KiB
+> colour + 272 KiB depth = 1,088 KiB**, leaving **913,344 B** free for textures (69,636 B used by the current
+> corpus); without depth it is 835,584 B used and 1,191,872 B free. The table above is the pre-T5 decision; the
+> measured lines are in [sprint 014 §9](../sprints/014-phase5-ceiling-vram-readback.md).
 
 **Finding 4: what the measured case is, after sprint 009.** The ceiling is 1,600 sprites at 60 fps, held there by
 `work (11.0 ms) + GE fill (~5.5 ms)` against a 16.683 ms period. A backend can move the *work* half only: it removes
@@ -215,8 +240,8 @@ Notes from reading them for task 6, in the order they were tried:
 - [x] Framebuffer format (§0 finding 2): **`GU_PSM_5650`**, to stay pixel-identical; `5551` would shift every capture
 - [x] Depth (§0 finding 3): **allocated, 16-bit, 272 KiB, behind `PSP_GU_DEPTH ?= 1`** — matches today, keeps 3D open,
       and a 2D-only build can switch it off
-- [ ] A worst-case display-list size measured from a real frame (N=5,000 bunnymark = 9 draws, 30,150 vertices), not
-      guessed from the GL11 path's 1,025 submissions
+- [x] A worst-case display-list size measured from a real frame — at the ceiling (N=2,375) the list high-water is
+      **1,456 bytes** of 245,760; the per-frame vertex high-water is ≤91 KiB of the 128 KiB arena
 
 ## Tasks (reviewed 2026-11-21, after tasks 1/4/5/6 came back from the device)
 
@@ -234,17 +259,18 @@ history stays readable.
 | 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `done` | **byte-identical to pspGL** (613 colours, 0 differing pixels) after the four fixes in sprint 012 |
 | 6b | texture parity: pattern test, swizzle recipe, alpha, dither | `done` | [sprint 012](../sprints/012-phase5-texture-parity.md) — the pattern test cut three deltas to one, and the last was our own LA-decode bug. **0 differing pixels** |
 | 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `todo` | 012 T2 diagnosed it: the swizzle needs a power-of-two width and `height % 8 == 0`, so NPOT textures currently fall back to linear and still sample wrong. Corrects the earlier "TexScale is identity" claim, which holds only for pow2 |
-| 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `todo` | `scrshot` bypasses GL, so nothing we own tests this |
-| 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `todo` | currently one list and a full sync per frame — correct but the slowest option |
+| 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `done` | stopped-frame PNG vs `scrshot`: max diff **7**, 0 pixels >8, two captures identical. The framebuffer is RGB565 and `scrshot` writes BGR, so the comparison swaps its channels |
+| 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `done` | **2,375 sprites**, queued submission, three framebuffers, per-list 128 KiB arenas; list high-water 1,456 B; targeted waits 18–26 µs; no full GE wait |
 | 9 | cache discipline before the GE reads vertices or texels | `done` | it was **blocking**, not an optimisation: without it the GE read stale vertices and drew nothing |
-| 10 | VRAM accounting at boot: framebuffers, depth, textures, free | `todo` | the boot line has the numbers but not the texture total |
-| 11 | depth switch `PSP_GU_DEPTH`, DEPTH clear bit a no-op when 0 | `doing` | default build allocates 272 KiB; the `=0` build has not been booted |
-| 12 | **immediate-mode symbols** — new: `glBegin`/`glEnd`/`glVertex2i/2f/3f`/`glTexCoord2f`/`glColor4ub/3f/4f`/`glNormal3f`. Needed by the `--wrap` counter harness (it requires `__real_*` to exist) and by any `PSP_BATCH=0` library | `todo` | this is why `psp-tests/*` currently build with `WRAP=0` |
-| 13 | **remove the stubs** — new: once 6b/7/12 land, `gl_stub.c` should hold nothing; any remaining call logs once and asserts in a debug build instead of silently doing nothing | `todo` | a silent stub is how "the driver draws nothing" stays invisible |
+| 10 | VRAM accounting at boot: framebuffers, depth, textures, free | `done` | one line from allocation counters: depth=1 `used=1,183,808 free=913,344`, depth=0 `used=905,280 free=1,191,872`; totals add up |
+| 11 | depth switch `PSP_GU_DEPTH`, DEPTH clear bit a no-op when 0 | `done` | depth=0 boots, reserves no depth, the 2D gate is byte-identical; `glClear(GL_DEPTH_BUFFER_BIT)` drops the bit |
+| 12 | **immediate-mode symbols** — new: `glBegin`/`glEnd`/`glVertex2i/2f/3f`/`glTexCoord2f`/`glColor4ub/3f/4f`/`glNormal3f`. Needed by the `--wrap` counter harness (it requires `__real_*` to exist) and by any `PSP_BATCH=0` library | `done` | sprint 013: `WRAP=1` links and runs; `PSP_BATCH=0` reports non-zero `begins`/`verts` |
+| 13 | **remove the stubs** — new: once 6b/7/12 land, `gl_stub.c` should hold nothing; any remaining call logs once and asserts in a debug build instead of silently doing nothing | `done` | `gl_stub.c` deleted; `gl_query.c` holds the real symbols; 52/52 required symbols are supplied |
 
 **Dropped:** nothing. Every original task survived the review; the list grew by five (3b, 6b, 6c, 12, 13) because
-doing the work found work. Five are done, one is diagnosed and waiting (6c), and the rest belong to sprints 013
-(12) and 014 (7, 8, 10, 11, 13).
+doing the work found work. All are done except **6c** (non-power-of-two textures), which is diagnosed and carried
+into phase 6: the swizzle needs a power-of-two width and `height % 8 == 0`, and the fix is a padded height plus
+`sceGuTexScale(realW/padW, realH/padH)`.
 
 
 ## Sprints
@@ -257,14 +283,16 @@ Four sprints, in order. 011 and 012 are done and written up; 013 is written out 
 | [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
 | [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
 | [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
-| [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **written, next** | 60 fps ceiling **> 1,600 sprites**, VRAM accounted, no stubs, phase exit met |
+| [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **done** | **2,375 sprites** at 60 fps (pspGL 1,600); 2D gate 0; VRAM accounted in both depth configs; no full GE wait; no stubs; depth-correct cubes |
 
-Where the phase stands in one paragraph: the driver renders **byte-identically to pspGL on the 2D scene** —
-textures, alpha, dither, swizzle and all — after six bugs that each looked like "draws nothing" or "draws garbage".
-It has not yet been compared on 3D, on `basic_shapes`, or with the counters linked, which is exactly sprint 013.
-The one known defect is non-power-of-two textures, diagnosed in 012 T2: the swizzle needs a power-of-two width and a
-height divisible by 8, so those textures need a padded height plus `sceGuTexScale(realW/padW, realH/padH)` — and
-that fix also retires the earlier "TexScale is identity" claim, which holds only for power-of-two textures.
+Where the phase stands in one paragraph: the driver is **byte-identical to pspGL on the 2D corpus** — `batch_check`
+and `basic_shapes` both to 0 differing pixels, textures, alpha, dither, swizzle and all — and it now **beats pspGL's
+ceiling by 48 %**: 2,375 sprites at 60 fps against 1,600, with no full GE wait in a steady frame. The display runs
+three framebuffers so a completed frame is shown while the next is submitted, and each list owns a 128 KiB vertex
+arena aligned to the 64-byte cache line. VRAM is accounted at boot in both depth configurations. The one criterion
+not met is the 2D→3D→2D scene: `DrawMesh`/`glDrawElements` emits a draw and produces no pixels. That is **deferred to
+phase 10** by recorded decision, not redefined; the overlapping-cubes depth probe that phase 5 did own passes. The
+remaining known defect is non-power-of-two textures (task 6c), carried into phase 6.
 
 ### What it cost — six bugs, and what each one looked like from outside
 
@@ -289,16 +317,21 @@ working, which is the most expensive failure mode this phase has.
 
 ## Exit criteria
 
-- [ ] the ELF contains **no pspGL objects**: `psp-nm app.elf | grep -c pspgl_` is 0, and `-lGL` is no longer what
-      supplies `gl*`
-- [ ] `batch_check` plain scene **and** the 2D → `DrawCube` + `DrawMesh` → 2D scene are byte-identical to the phase-4
-      archives (`c4eb44e7…`, `58bcbb9b…`) — which requires keeping `GU_PSM_5650`
-- [ ] `basic_shapes` renders with the same 284-colour fingerprint
-- [ ] the 60 fps ceiling **beats 1,600 sprites**, by bisection; if fill stops it below 2,000, that is the finding and
-      it is written down with the fill rate
-- [ ] no full GE wait in a steady-state frame (counters, not feel)
-- [ ] VRAM high-water documented against the 2 MiB budget, with and without `PSP_GU_DEPTH`
-- [ ] 3D depth-correct with `PSP_GU_DEPTH=1` (the sprint-009 scene with **overlapping** cubes, which is the test the current one lacks)
+- [x] the ELF contains **no pspGL objects**: `psp-nm app.elf | grep -c pspgl_` is 0, and `-lGL` is no longer what
+      supplies `gl*` — verified; the installed archive reports 0 pspGL objects
+- [x] `batch_check` plain scene is byte-identical to the phase-4 archive — **0 differing pixels** with depth=1 and
+      depth=0
+- [ ] `batch_check` **2D → `DrawCube` + `DrawMesh` → 2D** is byte-identical — **not met; deferred to phase 10 by
+      recorded decision.** `glDrawElements` emits and produces no pixels (sprint 013 T1 split). The decision is
+      carried in the Phase 10 page; this box stays unticked because the scene is not identical, not because the
+      phase failed
+- [x] `basic_shapes` renders with the same 284-colour fingerprint — **284 colours, 0 differing pixels** on both
+- [x] the 60 fps ceiling **beats 1,600 sprites**, by bisection — **2,375 pass / 2,376 fail**, 2.432 M texels/frame
+- [x] no full GE wait in a steady-state frame (counters, not feel) — targeted waits 18–26 µs
+- [x] VRAM high-water documented against the 2 MiB budget, with and without `PSP_GU_DEPTH` — 1,183,808 B / 905,280 B,
+      adding up from the allocation counter
+- [x] 3D depth-correct with `PSP_GU_DEPTH=1` (overlapping cubes) — near-red drawn first holds the 6,360-px overlap;
+      depth=0 makes the same pixels far-blue
 
 **Not** an exit criterion: "frame time ≤ best pspGL result". Phase 4 already achieved that (16.683 ms at N=1,000)
 without any of this work, so it cannot certify it.
@@ -307,5 +340,5 @@ without any of this work, so it cannot certify it.
 
 - [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) — **done**
 - [012 — Texture parity](../sprints/012-phase5-texture-parity.md) — **done**
-- [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) — **next**
-- [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) — **next**
+- [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) — **done**
+- [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) — **done**

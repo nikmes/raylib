@@ -13,6 +13,24 @@ X/Y clipping, normalised s16 positions, a GE that skins in hardware, and a fixed
 be mapped deliberately rather than discovered. This phase also adds render-to-texture, which is where
 read-after-write hazards become real.
 
+## Carried in from phase 5 (sprint 014 decision)
+
+Phase 5 deferred one criterion here rather than redefining it. In the `batch_check` `MESH_SCENE=1` build the
+2D → `DrawCube` + `DrawMesh` → 2D scene is **not** byte-identical to the phase-4 archive. The evidence is narrow:
+
+- `DrawMesh(GenMeshCube)` reaches the driver as `drawElements count=36 tex2d=0 fmt=0x1e3` and produces **no pixels**.
+- Disabling `GL_CULL_FACE` for the draw changes nothing, so culling is ruled out.
+- The converting vertex path (`PspGuVertex`, index rebasing) is the suspect; the immediate and array paths are
+  byte-identical to pspGL on the 2D corpus.
+- Everything else about 3D is proven: frustum, rotated view matrix, `sceGuSetMatrix` (including the `w` row),
+  viewport/offset, perspective divide and immediate quads all match within a pixel, and **overlapping cubes are
+  depth-correct with `PSP_GU_DEPTH=1`** (sprint 014 T8: the near-red cube drawn first holds the 6,360-pixel overlap;
+  with depth off the same pixels are far-blue).
+
+The rest of the starting point is measured, not assumed: the 60 fps ceiling is **2,375 sprites** on three
+framebuffers with two rotating lists and 64-byte per-list vertex arenas, and a steady frame has **no full GE wait**
+(only 18–26 µs targeted waits). See [sprint 014](../sprints/014-phase5-ceiling-vram-readback.md).
+
 ## What has to be true before starting
 
 - [ ] The batcher and the texture/VRAM layer are stable and measured
@@ -21,6 +39,8 @@ read-after-write hazards become real.
 
 ## Tasks
 
+- [ ] **Carried from phase 5, first:** make `glDrawElements`/`DrawMesh` produce pixels — the converting path and
+      index rebasing in `tools/pspgu/gl_draw.c`; verify against the predicted cube bbox x 193..287, y 92..189
 - [ ] Convert model vertex data **once**, offline or at load, into GE-native formats; no per-frame conversion
 - [ ] Index buffers where type and alignment allow; verify alignment costs are not paid at draw time
 - [ ] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
