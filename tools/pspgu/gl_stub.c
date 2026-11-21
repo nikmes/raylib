@@ -20,40 +20,6 @@ unsigned int pspguStubDraw = 0;
 unsigned int pspguStubTexture = 0;
 
 //------------------------------------------------------------------------------------
-// Matrices - task 4
-//------------------------------------------------------------------------------------
-
-void glMatrixMode(GLenum mode)                              { (void)mode; pspguStubMatrix++; }
-void glLoadIdentity(void)                                   { pspguStubMatrix++; }
-void glPushMatrix(void)                                     { pspguStubMatrix++; }
-void glPopMatrix(void)                                      { pspguStubMatrix++; }
-void glMultMatrixf(const GLfloat *m)                        { (void)m; pspguStubMatrix++; }
-void glOrtho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f)
-                                                            { (void)l; (void)r; (void)b; (void)t; (void)n; (void)f; pspguStubMatrix++; }
-void glFrustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f)
-                                                            { (void)l; (void)r; (void)b; (void)t; (void)n; (void)f; pspguStubMatrix++; }
-void glRotatef(GLfloat a, GLfloat x, GLfloat y, GLfloat z)  { (void)a; (void)x; (void)y; (void)z; pspguStubMatrix++; }
-void glScalef(GLfloat x, GLfloat y, GLfloat z)              { (void)x; (void)y; (void)z; pspguStubMatrix++; }
-void glTranslatef(GLfloat x, GLfloat y, GLfloat z)          { (void)x; (void)y; (void)z; pspguStubMatrix++; }
-
-//------------------------------------------------------------------------------------
-// Vertex arrays and draws - task 5
-//------------------------------------------------------------------------------------
-
-void glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
-                                                            { (void)size; (void)type; (void)stride; (void)ptr; pspguStubDraw++; }
-void glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
-                                                            { (void)size; (void)type; (void)stride; (void)ptr; pspguStubDraw++; }
-void glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
-                                                            { (void)size; (void)type; (void)stride; (void)ptr; pspguStubDraw++; }
-void glNormalPointer(GLenum type, GLsizei stride, const GLvoid *ptr)
-                                                            { (void)type; (void)stride; (void)ptr; pspguStubDraw++; }
-void glDrawArrays(GLenum mode, GLint first, GLsizei count)
-                                                            { (void)mode; (void)first; (void)count; pspguStubDraw++; }
-void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
-                                                            { (void)mode; (void)count; (void)type; (void)indices; pspguStubDraw++; }
-
-//------------------------------------------------------------------------------------
 // Textures - task 6
 //------------------------------------------------------------------------------------
 
@@ -115,11 +81,8 @@ void glGetFloatv(GLenum pname, GLfloat *params)
         case GL_LINE_WIDTH: params[0] = 1.0f; break;
         case GL_MODELVIEW_MATRIX:
         case GL_PROJECTION_MATRIX:
-        {
-            // Identity for now; gl_matrix.c answers these from the real stack
-            memset(params, 0, 16*sizeof(GLfloat));
-            params[0] = params[5] = params[10] = params[15] = 1.0f;
-        } break;
+            glGetFloatvMatrices(pname, params);
+            break;
         default: params[0] = 0.0f; break;
     }
 }

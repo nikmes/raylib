@@ -53,7 +53,9 @@
     #define PSP_GU_STRIDE 512               // pixels per line; 512 is the GE's fast width
 #endif
 #ifndef PSP_GU_LIST_BYTES
-    #define PSP_GU_LIST_BYTES (256*1024)    // one command list, rotated per frame later
+    // 0x3FFFF is GU's maximum list size, and 256 KiB is one byte over it. 240 KiB leaves
+    // room and still holds a 2,000-sprite frame with plenty to spare.
+    #define PSP_GU_LIST_BYTES (240*1024)
 #endif
 
 // One context and one window surface is all raylib ever makes
@@ -88,6 +90,28 @@ extern PspGuContext pspgu;
 void pspguBeginFrame(void);                 // start a list if one is not open
 void pspguEndFrame(void);                   // finish + sync what is queued
 unsigned int pspguVramAlloc(unsigned int bytes);    // bump allocator, returns EDRAM offset
+
+// The GE reads vertices and indices straight out of main RAM, through its own path, so
+// anything the CPU wrote has to be written back first. Without this the GE reads stale
+// (usually zero) vertices and every primitive is a degenerate point: invisible, not
+// distorted. This is phase 5 task 9, and it turned out to be blocking rather than an
+// optimisation.
+static inline void pspguWriteback(const void *addr, unsigned int bytes)
+{
+    if ((addr == NULL) || (bytes == 0)) return;
+    sceKernelDcacheWritebackRange(addr, bytes);
+}
+
+// Matrices (gl_matrix.c): the draw path pushes both before it emits vertices
+void pspguResetMatrices(void);
+void pspguUploadMatrices(void);
+void glGetFloatvMatrices(GLenum pname, GLfloat *params);
+
+// glEnableClientState bits: one source of truth, set in gl_state.c, read in gl_draw.c
+#define PSPGU_CS_VERTEX 1u
+#define PSPGU_CS_TEXCOORD 2u
+#define PSPGU_CS_COLOR 4u
+#define PSPGU_CS_NORMAL 8u
 
 // Set when a command was issued outside eglMakeCurrent; the first one logs
 extern int pspguWarnedNoContext;

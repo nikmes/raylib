@@ -6,6 +6,8 @@
  * and are stubs until their tasks come up.
  */
 
+#include <stdlib.h>
+
 #include "pspgu_internal.h"
 
 // Convert a GL colour (0..1 floats) to the GE's 0xAABBGGRR
@@ -213,10 +215,10 @@ void glEnableClientState(GLenum array)
     // built from these bits when the draw happens (gl_draw.c). Record them here.
     switch (array)
     {
-        case GL_VERTEX_ARRAY:        pspgu.clientBits |= 1u; break;
-        case GL_TEXTURE_COORD_ARRAY: pspgu.clientBits |= 2u; break;
-        case GL_COLOR_ARRAY:         pspgu.clientBits |= 4u; break;
-        case GL_NORMAL_ARRAY:        pspgu.clientBits |= 8u; break;
+        case GL_VERTEX_ARRAY:        pspgu.clientBits |= PSPGU_CS_VERTEX; break;
+        case GL_TEXTURE_COORD_ARRAY: pspgu.clientBits |= PSPGU_CS_TEXCOORD; break;
+        case GL_COLOR_ARRAY:         pspgu.clientBits |= PSPGU_CS_COLOR; break;
+        case GL_NORMAL_ARRAY:        pspgu.clientBits |= PSPGU_CS_NORMAL; break;
         default: break;
     }
 }
@@ -225,10 +227,10 @@ void glDisableClientState(GLenum array)
 {
     switch (array)
     {
-        case GL_VERTEX_ARRAY:        pspgu.clientBits &= ~1u; break;
-        case GL_TEXTURE_COORD_ARRAY: pspgu.clientBits &= ~2u; break;
-        case GL_COLOR_ARRAY:         pspgu.clientBits &= ~4u; break;
-        case GL_NORMAL_ARRAY:        pspgu.clientBits &= ~8u; break;
+        case GL_VERTEX_ARRAY:        pspgu.clientBits &= ~PSPGU_CS_VERTEX; break;
+        case GL_TEXTURE_COORD_ARRAY: pspgu.clientBits &= ~PSPGU_CS_TEXCOORD; break;
+        case GL_COLOR_ARRAY:         pspgu.clientBits &= ~PSPGU_CS_COLOR; break;
+        case GL_NORMAL_ARRAY:        pspgu.clientBits &= ~PSPGU_CS_NORMAL; break;
         default: break;
     }
 }

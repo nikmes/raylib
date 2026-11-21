@@ -62,6 +62,20 @@ static void pspguInitGu(void)
     sceGuDispBuffer(PSP_GU_WIDTH, PSP_GU_HEIGHT, pspgu.dispOffset, pspgu.stride);
 
     // 480 centred in a 512-wide buffer: the recipe in the phase page, with numbers
+    // GU's matrices are undefined after sceGuInit: samples always set all three. The view
+    // matrix in particular has to be identity or the MVP collapses every vertex to a point
+    // - which looks exactly like "the driver draws nothing", while the clear still works.
+    {
+        ScePspFMatrix4 identity = {
+            { 1.0f, 0.0f, 0.0f, 0.0f },
+            { 0.0f, 1.0f, 0.0f, 0.0f },
+            { 0.0f, 0.0f, 1.0f, 0.0f },
+            { 0.0f, 0.0f, 0.0f, 1.0f }
+        };
+        sceGuSetMatrix(GU_VIEW, &identity);
+        sceGuSetMatrix(GU_MODEL, &identity);
+    }
+
     sceGuOffset(2048 - PSP_GU_WIDTH/2, 2048 - PSP_GU_HEIGHT/2);
     sceGuViewport(2048, 2048, PSP_GU_WIDTH, PSP_GU_HEIGHT);
     sceGuScissor(0, 0, PSP_GU_WIDTH, PSP_GU_HEIGHT);
@@ -79,6 +93,7 @@ static void pspguInitGu(void)
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
 
+    pspguResetMatrices();
     pspgu.clearColor = 0xFF000000;      // opaque black, what rlglInit clears to
     pspgu.clearDepth = 1.0f;
     pspgu.vsync = 1;
@@ -191,6 +206,26 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     (void)dpy; (void)surface;
 
     if (!pspgu.current) return EGL_FALSE;
+
+#ifdef PSP_GU_SELFTEST
+    // Diagnostic: a green sprite covering the screen, drawn with raw GU. If this shows and
+    // raylib's geometry does not, the GU setup is fine and the data path is the problem.
+    {
+        typedef struct { unsigned int color; float x, y, z; } SelfTestVertex;
+        static SelfTestVertex quad[2] = {
+            { 0xFF00FF00, 0.0f, 0.0f, 0.0f },
+            { 0xFF00FF00, 480.0f, 272.0f, 0.0f }
+        };
+
+        sceGuDisable(GU_TEXTURE_2D);
+        sceGuDisable(GU_BLEND);
+        sceGuDisable(GU_CULL_FACE);     // is culling what makes everything invisible?
+        sceGuDisable(GU_DEPTH_TEST);
+        pspguWriteback(quad, sizeof(quad));
+        sceGuDrawArray(GU_SPRITES, GU_COLOR_8888 | GU_VERTEX_32BITF, 2, NULL, quad);
+        pspguLog("selftest: sprite at 0,0..480,272 issued");
+    }
+#endif
 
     pspguEndFrame();
 

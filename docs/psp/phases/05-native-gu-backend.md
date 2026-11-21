@@ -199,7 +199,7 @@ optimises.
 | 1 | **vertical slice**: the 52 symbols as logging stubs **plus** real egl init, two framebuffers, GU display setup and `glClear` | `done` — `tools/pspgu/{pspgu_internal.h,egl.c,gl_state.c,gl_stub.c}` + `tools/pspgu-build.sh`. Boot log: `GU up: 480x272 stride 512, fb 272 KiB x2, depth yes (272 KiB), textures from 816 KiB, list 256 KiB`; `psp-nm batch_check.elf \| grep -c pspgl_` = **0**; capture is a uniform `(240,244,240)`, the same RAYWHITE-through-5650 value a pspGL build produces |
 | 2 | **egl layer**: config, context, surface, `eglSwapBuffers` with the same vsync semantics as today, `eglSwapInterval` (compiled out of the 52 but needed by `PSP_DISABLE_VSYNC`), `eglGetError`; and the DEPTH bit of `glClear` handled explicitly (§0 finding 7) | `psp-tests/bunnymark` boots and reaches `DONE` with counters intact; `SPLIT ... swap=` non-zero; a `PSP_DISABLE_VSYNC=1` build still links |
 | 3 | **state mapping**: a table of every `glEnable`/`glDisable` bit the library uses, plus `glBlendFunc`, `glDepthFunc/Mask`, `glColorMask`, `glCullFace`, `glFrontFace`, `glScissor`, `glViewport`, `glShadeModel`, `glPolygonMode`, `glLineWidth` → GU commands, emitted only when the value changes | the state trace of one `batch_check` frame matches the 31 flush points the batcher has; no command re-emitted with the same value |
-| 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` over the VFPU (GUM or hand-written), kept in CPU/VFPU memory **and** pushed to the GE as float24, with `glGetFloatv` answering both matrix queries (§0 finding 8) | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling; `rlGetMatrixModelview()` returns a sane matrix |
+| 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` in CPU memory (scalar floats for now — VFPU is phase 10's concern), **and** pushed to the GE, with `glGetFloatv` answering both queries (§0 finding 8) — `TODO: done in `gl_matrix.c`; a full-screen self-test sprite now covers the display, which is the transform proof | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling; `rlGetMatrixModelview()` returns a sane matrix |
 | 5 | **vertex arrays**: the four `*Pointer` calls, `glEnable/DisableClientState`, `glDrawArrays`, `glDrawElements`, with the 24-byte layout as the native fast path (it already is pspGL's native GE layout) and per-attribute conversion for everything else. `GL_SPRITES_PSP` (mode 10) → `GU_SPRITES`; mode 1/4 for lines/triangles. **Verify the winding against the culling that is on from boot** (§0 finding 6) | `arrayVerts`/frame unchanged; the batch reaches the GE without a copy for our own vertices; one sprite renders — if culling is wrong the sprite is *invisible*, not distorted |
 | 6 | **textures**: `glGenTextures`, `glBindTexture`, `glTexImage2D`, `glTexSubImage2D`, `glTexParameteri`, `glPixelStorei`, `glDeleteTextures` — swizzling, format conversion, VRAM allocation and eviction | the same textures load; a swizzle bug shows as diagonal garbage, so compare a 32×32 and a 512×512 texture capture |
 | 7 | **readback**: `glReadPixels` expanding the `5650` framebuffer to RGBA8888 and flipping, plus `glGetString`. `scrshot` reads VRAM through PSPLink and proves nothing about this path (§0 finding 9) | `TakeScreenshot` produces a PNG whose pixels match a `scrshot` capture of the same frame within the 5-6-5 quantisation; `glGetString(GL_VERSION)` is non-NULL |
@@ -207,6 +207,34 @@ optimises.
 | 9 | **cache discipline**: `sceKernelDcacheWritebackRange()` over exactly the ranges the CPU wrote, then publish the pointer | a texture uploaded then drawn in the same frame is correct on hardware (this is the classic PSP-only corruption) |
 | 10 | **VRAM accounting at boot**: framebuffers, textures, free bytes, largest block | printed once at boot and matching the budget in §"What we already know" |
 | 11 | **the depth switch**: allocate the 16-bit depth buffer at 512 stride when `PSP_GU_DEPTH=1` (default), treat `GL_DEPTH_BUFFER_BIT` inside `glClear` as a no-op when it is 0, and report the choice in the boot VRAM line | both configurations build and boot; the 3D scene is depth-correct with the buffer and painter-ordered without it, and the boot line shows the 272 KiB either way |
+
+### Tasks 4-5 progress (2026-21) — five bugs, four of them invisible-until-drawn
+
+The matrix stack and the two draw paths (`gl_draw.c`: fast path for the batcher's interleaved
+24-byte vertices, converting path for `DrawMesh`'s separate arrays, plus `glDrawElements`) are
+written and reach the GE. Getting the first pixels on screen cost five bugs, and each one looked
+like "the driver draws nothing" while the clear kept working:
+
+1. **Framebuffer size computed before the struct was filled** (task 1) — both buffers at offset 0.
+   The boot log line caught it; a single-buffered driver still clears correctly, so it would
+   have shipped.
+2. **`glEnableClientState` recorded bits the draw path never read** — the fast path never
+   engaged and the format lost its colour and texture bits.
+3. **No data-cache writeback before the GE reads vertices.** `sceGuClear` carries its colour in
+   the command list and works; vertices are read from main RAM, so without
+   `sceKernelDcacheWritebackRange` the GE reads stale memory. This is task 9 in the list above
+   and it is **blocking**, not an optimisation (now in `pspguWriteback`).
+4. **GU's matrices are undefined after `sceGuInit`** — the view matrix has to be set to identity
+   explicitly. Samples always set all three; skipping one collapses every vertex.
+5. **`sceGuSetMatrix` wants the matrix in column-major memory order — no transpose.** Sending
+   the GL matrix transposed put the ortho's translation in a `w` row, so every vertex was
+   divided by it: geometry collapsed to a few pixels around the screen centre. This is the one
+   that looks like a projection bug and is not.
+
+State: with a raw self-test sprite the whole display fills (0,0,0)→(480,272) correctly. Through
+raylib, geometry now reaches the GE but the screen goes **black** once `GL_TEXTURE_2D` is
+enabled with no texture bound — the GE samples from an undefined address. That is task 6, and
+until it exists the driver is not usable.
 
 ### Task 1 in detail — where the code goes and what order
 
