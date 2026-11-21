@@ -55,6 +55,7 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
+  - Samples: samples/index.md
   - PSP:
       - Memory map & roadmap: psp/memory-map.md
       - Environment & toolchain: psp/environment.md
