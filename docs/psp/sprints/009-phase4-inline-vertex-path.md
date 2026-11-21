@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
-| Branch / base commit | `master` @ `17def498` |
+| Branch / base commit | `master` @ `ee3957a9` |
 | Started / closed | — / — |
 | Build number(s) | `b9` (sprint 008 reference, `04584553…`), `b10` (this sprint) |
 | Tasks | 0/6 done |
