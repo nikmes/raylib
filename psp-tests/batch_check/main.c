@@ -32,6 +32,51 @@ int main(int argc, char **argv)
     InitWindow(480, 272, "batch_check");
     SetTargetFPS(0);
 
+#ifdef TEAR_SCENE
+    // Sprint 014 T5 display probe: one full-height bar moving 5 px per frame. A torn
+    // frame shows the bar split horizontally into two x positions; a correct pipeline
+    // shows one clean vertical bar. 600 frames = 10 s at 60 fps.
+    for (int frame = 0; frame < 600; frame++)
+    {
+        BeginDrawing();
+            ClearBackground(BLACK);
+            DrawRectangle((frame*5) % 440, 0, 20, 272, WHITE);
+            DrawRectangle(0, 0, 20, 20, RED);              // orientation marker, top-left
+            DrawText(TextFormat("f %i", frame), 180, 120, 20, GREEN);
+        EndDrawing();
+    }
+    TraceLog(LOG_INFO, "DONE frames 600");
+    sceKernelSleepThread();
+#endif
+
+#ifdef DEPTH_SCENE
+    // Sprint 014 T8: two overlapping cubes. The NEAR cube is drawn first and the FAR
+    // cube second, so correct depth testing is the only way the near (red) cube keeps
+    // the overlap; with depth off the far (blue) cube paints over it.
+    {
+        Camera cam = { 0 };
+        cam.position = (Vector3){ 0.0f, 1.0f, 4.0f };
+        cam.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+        cam.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+        cam.fovy = 45.0f;
+        cam.projection = CAMERA_PERSPECTIVE;
+
+        for (int frame = 0; frame < 2; frame++)
+        {
+            BeginDrawing();
+                ClearBackground(BLACK);
+                BeginMode3D(cam);
+                    DrawCube((Vector3){ -0.30f, 0.0f,  0.55f }, 1.2f, 1.2f, 1.2f, RED);
+                    DrawCube((Vector3){  0.30f, 0.0f, -0.15f }, 1.2f, 1.2f, 1.2f, BLUE);
+                EndMode3D();
+            EndDrawing();
+        }
+
+        TraceLog(LOG_INFO, "DONE frames 2 depth-scene");
+        sceKernelSleepThread();
+    }
+#endif
+
     Texture2D tex = LoadTexture("host0:/textures/bunnymark/wabbit_alpha.png");
     Rectangle src = { 0.0f, 0.0f, (float)tex.width, (float)tex.height };
 
@@ -96,6 +141,15 @@ int main(int argc, char **argv)
 
         EndDrawing();
     }
+
+#ifdef SCREEN_READBACK
+    // Sprint 014 T4: glReadPixels through raylib's own path, after EndDrawing so the list
+    // is closed and the read is the frame the display last received.
+    // Relative: raylib prefixes CORE.Storage.basePath ("host0:"); a "host0:/..." name
+    // would become "host0:/host0:/...", which is what the first attempt did.
+    TakeScreenshot("readback.png");
+    TraceLog(LOG_INFO, "SCREENSHOT readback.png");
+#endif
 
     PspCountersDump("done", FRAMES);
     TraceLog(LOG_INFO, "DONE frames %i", FRAMES);

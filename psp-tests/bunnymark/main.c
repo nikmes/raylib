@@ -67,6 +67,13 @@ int main(void)
     InitWindow(480, 272, "bunnymark [counters]");
     SetTargetFPS(TARGET_FPS);
 
+#ifdef FIXED_SEED
+    // Deterministic A/B: same spawn positions and velocities on both drivers, so the
+    // final frame can be compared pixel for pixel. DrawFPS is skipped because it reports
+    // a different number when the two drivers have different frame rates.
+    SetRandomSeed(1234);
+#endif
+
     int count = BUNNY_COUNT;
     if (count > MAX_BUNNIES) count = MAX_BUNNIES;
 
@@ -115,6 +122,30 @@ int main(void)
 
     for (int frame = 0; frame < frames; frame++)
     {
+#ifdef FIXED_SEED
+        // The queued-submission driver shows a completed frame, which is one frame
+        // behind the just-drawn one. Freeze the last two frames so both drivers hold
+        // the same content at DONE and the captures can be compared byte for byte.
+        if (frame >= (frames - 2))
+        {
+            BeginDrawing();
+                ClearBackground(RAYWHITE);
+                for (int i = 0; i < count; i++)
+                {
+                    Rectangle dst = { bunnies[i].position.x, bunnies[i].position.y,
+                                      texBunny.width*(float)SPRITE_SCALE,
+                                      texBunny.height*(float)SPRITE_SCALE };
+                    DrawTexturePro(texBunny, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, bunnies[i].color);
+                }
+                DrawRectangle(0, 0, GetScreenWidth(), 40, BLACK);
+                DrawText(TextFormat("bunnies: %i", count), 120, 15, 10, GREEN);
+                DrawText(TextFormat("scale %ix", SPRITE_SCALE), 200, 15, 10, MAROON);
+            EndDrawing();
+            frameTimes[frame] = GetFrameTime();
+            sum += frameTimes[frame];
+            continue;
+        }
+#endif
         for (int i = 0; i < count; i++)
         {
             bunnies[i].position.x += bunnies[i].speed.x;
@@ -154,7 +185,9 @@ int main(void)
             DrawRectangle(0, 0, GetScreenWidth(), 40, BLACK);
             DrawText(TextFormat("bunnies: %i", count), 120, 15, 10, GREEN);
             DrawText(TextFormat("scale %ix", SPRITE_SCALE), 200, 15, 10, MAROON);
+#ifndef FIXED_SEED
             DrawFPS(10, 10);
+#endif
         EndDrawing();
 
         frameTimes[frame] = GetFrameTime();

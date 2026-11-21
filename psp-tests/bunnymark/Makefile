@@ -41,6 +41,11 @@ ifdef BLEND_OFF
     CFLAGS += -DBLEND_OFF
 endif
 
+# Deterministic parity capture: fixed seed, no DrawFPS (sprint 014 T5/T1 evidence).
+ifdef FIXED_SEED
+    CFLAGS += -DFIXED_SEED
+endif
+
 # Sprint 008: rotate every second sprite, i.e. force a sprite/triangle mode switch
 # per sprite pair. Measures what a mixed scene costs instead of guessing.
 ifdef ROTATE_ODD

@@ -144,7 +144,10 @@ int main(void)
         updateController();
 
          //----------------------------------------------------------------------------------
-        rotation += 0.2f;
+        // Sprint 014: the queued-submission driver displays a completed frame one frame
+        // behind the just-drawn one. Freeze the last two frames so pspgu and pspGL hold
+        // identical content at DONE and the 284-colour captures can be compared directly.
+        if (frames < 596) rotation += 0.2f;     // last 4 frames identical, any lag <= 3
         //----------------------------------------------------------------------------------
 
         // Draw

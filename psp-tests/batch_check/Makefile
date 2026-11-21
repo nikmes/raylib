@@ -34,6 +34,21 @@ ifdef MESH_SCENE
     CFLAGS += -DMESH_SCENE
 endif
 
+# One moving bar: the tear probe for sprint 014 T5's queued submission
+ifdef TEAR_SCENE
+    CFLAGS += -DTEAR_SCENE
+endif
+
+# Two overlapping cubes for sprint 014 T8's depth exit probe
+ifdef DEPTH_SCENE
+    CFLAGS += -DDEPTH_SCENE
+endif
+
+# Call TakeScreenshot (glReadPixels) after the last frame, for sprint 014 T4
+ifdef SCREEN_READBACK
+    CFLAGS += -DSCREEN_READBACK
+endif
+
 # -lpspgu: the pspgu driver talks to the GE through GU, where pspGL used libpspge
 # directly. The archive supplies the GL symbols; GU comes from the SDK.
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
