@@ -43,6 +43,12 @@ int main(int argc, char **argv)
         BeginDrawing();
             ClearBackground(BLACK);
 
+#ifdef DRAW_2D_FIRST
+            // Sprint 013 T1: the mesh scene draws 2D before 3D and is wrong; the probe draws
+            // 3D only and is right. This rectangle is the only difference.
+            DrawRectangle(0, 240, 120, 24, BLUE);
+#endif
+
             BeginMode3D(cam);
                 DrawTriangle3D((Vector3){ -0.5f, -0.5f, 0.0f },
                                (Vector3){  0.5f, -0.5f, 0.0f },

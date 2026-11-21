@@ -300,3 +300,29 @@ cached `sentProjection` still compares equal after the pop.
 
 That last sentence is a concrete, checkable defect in `upload()`'s memcmp cache, and it would explain why 2D-only and
 3D-only frames are both correct while a frame containing both is not.
+
+### And the composition hypothesis is rejected as well
+
+The probe with a 2D rectangle drawn **before** `BeginMode3D`, which is the mesh scene's shape:
+
+| | x | y |
+|---|---|---|
+| predicted | 201..279 | 96..174 |
+| **captured with 2D first** | **202..277** | **97..172** |
+
+Unchanged. So the projection switches correctly, the matrix cache in `upload()` is *not* stale after a 2D pass, and
+a frame containing both 2D and 3D is fine. `EndMode3D` was checked as well: it pops the projection, resets the
+modelview and calls `rlDisableDepthTest()`, so the 2D after the 3D is not left depth-tested either.
+
+**What that leaves is not the matrix path at all.** Five hypotheses have been eliminated (view-matrix transpose ×2,
+stale texture, upload transpose, viewport mapping, and now composition). The probe's one remaining difference from
+the failing scene is *which drawing call* is used:
+
+| in the probe (correct) | in the mesh scene (wrong) |
+|---|---|
+| `DrawTriangle3D` — 3 vertices, immediate | `DrawCube` — 36 vertices, immediate (quads expanded) |
+| — | `DrawMesh` — 36 indices, `glDrawElements` |
+
+So the next probe is the last cheap one: **draw the same cube at the same camera** and predict its bbox from the
+same arithmetic. If `DrawCube` is wrong the fault is in the quad expansion or in the 36-vertex run (buffer overflow at
+1,024 is not it, but the emit could be), and `glDrawElements` is a separate test after it.
