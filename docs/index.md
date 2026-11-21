@@ -34,19 +34,19 @@ Everything in the roadmap follows from closing that gap without changing raylib'
 
 | phase | goal | state |
 |---|---|---|
-| [0](psp/phases/00-baseline.md) | Repository baseline: fork, branch at 6.2, remotes | done |
-| [1](psp/phases/01-bring-up-6-2.md) | 6.2 boots on pspGL: platform file, 3 stubs, guards, Makefile | next |
-| [2](psp/phases/02-instrumentation.md) | Instrumentation and baseline numbers | |
-| [3](psp/phases/03-pspgl-upgrade.md) | pspGL upgrade A/B (11 ready-made commits) | |
-| [4](psp/phases/04-rlgl-batcher.md) | PSP fixed-function `rlgl` batcher over GL11 | |
-| [5](psp/phases/05-native-gu-backend.md) | Native GU backend, list rotation, no per-frame stall | |
-| [6](psp/phases/06-textures-vram.md) | Textures, swizzle, best-fit VRAM, residency | |
-| [7](psp/phases/07-2d-specialisation.md) | 2D specialisation: text, tile maps, shapes, particles | |
-| [8](psp/phases/08-input.md) | Input: pad mapping, nub calibration, edge detection | |
-| [9](psp/phases/09-audio.md) | Audio: `sceAudio` output on its own thread | |
-| [10](psp/phases/10-3d-advanced.md) | 3D and advanced: models, RTT, culling | |
+| [0](psp/phases/00-baseline/index.md) | Repository baseline: fork, branch at 6.2, remotes | done |
+| [1](psp/phases/01-bring-up-6-2/index.md) | 6.2 boots on pspGL: platform file, 3 stubs, guards, Makefile | next |
+| [2](psp/phases/02-instrumentation/index.md) | Instrumentation and baseline numbers | |
+| [3](psp/phases/03-pspgl-upgrade/index.md) | pspGL upgrade A/B (11 ready-made commits) | |
+| [4](psp/phases/04-rlgl-batcher/index.md) | PSP fixed-function `rlgl` batcher over GL11 | |
+| [5](psp/phases/05-native-gu-backend/index.md) | Native GU backend, list rotation, no per-frame stall | |
+| [6](psp/phases/06-textures-vram/index.md) | Textures, swizzle, best-fit VRAM, residency | |
+| [7](psp/phases/07-2d-specialisation/index.md) | 2D specialisation: text, tile maps, shapes, particles | |
+| [8](psp/phases/08-input/index.md) | Input: pad mapping, nub calibration, edge detection | |
+| [9](psp/phases/09-audio/index.md) | Audio: `sceAudio` output on its own thread | |
+| [10](psp/phases/10-3d-advanced/index.md) | 3D and advanced: models, RTT, culling | |
 | [11](psp/phases/11-general-optimisation.md) | General optimisation: compiler, memory, I/O, startup | |
-| [12](psp/phases/12-release-gate.md) | Release gate: four-configuration comparison | |
+| [12](psp/phases/12-release-gate/index.md) | Release gate: four-configuration comparison | |
 
 Each phase has its own page — tasks, preconditions and exit criteria — starting from the
 [phase index](psp/phases/index.md). A phase is not started before the previous one's criteria are met and

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
+| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
 | Branch / base commit | `master` @ `de61e4cf` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b16` (pspgu: 3 buffers, 2 lists + arenas, readback, no stubs) |
@@ -50,7 +50,7 @@ criterion.
 2. `tools/pspgu/pspgu_internal.h` — the context struct, the VRAM bump allocator, the compile switches.
 3. `tools/pspgu/gl_draw.c` and the batch buffer in `src/rlgl.h` — the vertex pointer is borrowed, not copied.
    Rotating lists therefore need per-list vertex arenas.
-4. [Phase 5](../phases/05-native-gu-backend.md) §0 findings and exit criteria — the no-full-wait, overlapping-cubes
+4. [Phase 5](../phases/05-native-gu-backend/index.md) §0 findings and exit criteria — the no-full-wait, overlapping-cubes
    depth and 2D→3D→2D parity requirements.
 5. [Baselines](../baselines.md) §"Scaling past the ceiling" — **three numbers that must not be confused**, because two
    of them belong to the old driver:

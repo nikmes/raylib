@@ -103,7 +103,7 @@ phase-5 feature: it adds a mid-run allocation and a stall on the first 3D frame.
 > being displayed is the one just submitted, so the swap needs a full GE wait. The shipped map is **3 × 272 KiB
 > colour + 272 KiB depth = 1,088 KiB**, leaving **913,344 B** free for textures (69,636 B used by the current
 > corpus); without depth it is 835,584 B used and 1,191,872 B free. The table above is the pre-T5 decision; the
-> measured lines are in [sprint 014 §9](../sprints/014-phase5-ceiling-vram-readback.md).
+> measured lines are in [sprint 014 §9](../../sprints/014-phase5-ceiling-vram-readback.md).
 
 **Finding 4: what the measured case is, after sprint 009.** The ceiling is 1,600 sprites at 60 fps, held there by
 `work (11.0 ms) + GE fill (~5.5 ms)` against a 16.683 ms period. A backend can move the *work* half only: it removes
@@ -263,8 +263,8 @@ history stays readable.
 | 4 | matrices in CPU memory + pushed to the GE, `glGetFloatv` for both queries | `done` | a raw full-screen self-test sprite fills the display: transform proven. 3D path still unverified |
 | 5 | vertex arrays: fast interleaved path, converting path, `glDrawElements`, modes 10/4/1 | `done` | sprites draw; the fast path engages (`fast=1` in the trace) |
 | 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `done` | **byte-identical to pspGL** (613 colours, 0 differing pixels) after the four fixes in sprint 012 |
-| 6b | texture parity: pattern test, swizzle recipe, alpha, dither | `done` | [sprint 012](../sprints/012-phase5-texture-parity.md) — the pattern test cut three deltas to one, and the last was our own LA-decode bug. **0 differing pixels** |
-| 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `done` | closed in phase 6, [sprint 015](../sprints/015-phase6-npot-and-vram.md) T1: both dimensions pad to powers of two, the padding is zeroed and swizzled, and TexScale is set per texture. 33×17 checkerboard **281/561 → 0/561** wrong cells; `batch_check` and `basic_shapes` unchanged. This also retires the "TexScale is identity" claim, which holds only for power-of-two textures |
+| 6b | texture parity: pattern test, swizzle recipe, alpha, dither | `done` | [sprint 012](../../sprints/012-phase5-texture-parity.md) — the pattern test cut three deltas to one, and the last was our own LA-decode bug. **0 differing pixels** |
+| 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `done` | closed in phase 6, [sprint 015](../../sprints/015-phase6-npot-and-vram.md) T1: both dimensions pad to powers of two, the padding is zeroed and swizzled, and TexScale is set per texture. 33×17 checkerboard **281/561 → 0/561** wrong cells; `batch_check` and `basic_shapes` unchanged. This also retires the "TexScale is identity" claim, which holds only for power-of-two textures |
 | 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `done` | stopped-frame PNG vs `scrshot`: max diff **7**, 0 pixels >8, two captures identical. The framebuffer is RGB565 and `scrshot` writes BGR, so the comparison swaps its channels |
 | 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `done` | **2,375 sprites**, queued submission, three framebuffers, per-list 128 KiB arenas; list high-water 1,456 B; targeted waits 18–26 µs; no full GE wait |
 | 9 | cache discipline before the GE reads vertices or texels | `done` | it was **blocking**, not an optimisation: without it the GE read stale vertices and drew nothing |
@@ -286,10 +286,10 @@ Four sprints, in order. 011 and 012 are done and written up; 013 is written out 
 
 | sprint | goal | state | exit |
 |---|---|---|---|
-| [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
-| [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
-| [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
-| [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **done** | **2,375 sprites** at 60 fps (pspGL 1,600); 2D gate 0; VRAM accounted in both depth configs; no full GE wait; no stubs; depth-correct cubes |
+| [011 — GE up and the vertex path](../../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
+| [012 — Texture parity](../../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
+| [013 — Corpus parity and the counter harness](../../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **done** — 3D split off | `batch_check` and `basic_shapes` **byte-identical**; `WRAP=1` links and runs; vsync switch works |
+| [014 — Ceiling, VRAM and readback](../../sprints/014-phase5-ceiling-vram-readback.md) | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | **done** | **2,375 sprites** at 60 fps (pspGL 1,600); 2D gate 0; VRAM accounted in both depth configs; no full GE wait; no stubs; depth-correct cubes |
 
 Where the phase stands in one paragraph: the driver is **byte-identical to pspGL on the 2D corpus** — `batch_check`
 and `basic_shapes` both to 0 differing pixels, textures, alpha, dither, swizzle and all — and it now **beats pspGL's
@@ -344,7 +344,7 @@ without any of this work, so it cannot certify it.
 
 ## Sprint index
 
-- [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) — **done**
-- [012 — Texture parity](../sprints/012-phase5-texture-parity.md) — **done**
-- [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) — **done**
-- [014 — Ceiling, VRAM and readback](../sprints/014-phase5-ceiling-vram-readback.md) — **done**
+- [011 — GE up and the vertex path](../../sprints/011-phase5-ge-up.md) — **done**
+- [012 — Texture parity](../../sprints/012-phase5-texture-parity.md) — **done**
+- [013 — Corpus parity and the counter harness](../../sprints/013-phase5-corpus-and-counters.md) — **done**
+- [014 — Ceiling, VRAM and readback](../../sprints/014-phase5-ceiling-vram-readback.md) — **done**

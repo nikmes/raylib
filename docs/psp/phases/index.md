@@ -9,19 +9,19 @@ in [sprints](../templates/sprint.md), and each sprint names the exit criterion i
 
 | phase | about | state |
 |---|---|---|
-| [0 — Baseline](00-baseline.md) | fork, branch at 6.2, remotes, docs site | **done** |
-| [1 — 6.2 boots on pspGL](01-bring-up-6-2.md) | the port's platform file, three stubs, four guards | **done** |
-| [2 — Instrumentation](02-instrumentation.md) | counters and baselines; nothing measurable yet exists | **done** |
-| [3 — pspGL upgrade A/B](03-pspgl-upgrade.md) | eleven ready-made commits, measured | **done** — fork `ae9a668` @ 8192 words |
-| [4 — rlgl batcher](04-rlgl-batcher.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
-| [5 — Native GU backend](05-native-gu-backend.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
-| [6 — Textures and VRAM](06-textures-vram.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
-| [7 — 2D specialisation](07-2d-specialisation.md) | text, tile maps, shapes, particles | **in progress** — 018–020 done; 021–023 written |
-| [8 — Input](08-input.md) | pad mapping, nub calibration, edge detection | not started |
-| [9 — Audio](09-audio.md) | `sceAudio` output without costing frame time | not started |
-| [10 — 3D and advanced](10-3d-advanced.md) | models, RTT, culling, ME options | not started |
+| [0 — Baseline](00-baseline/index.md) | fork, branch at 6.2, remotes, docs site | **done** |
+| [1 — 6.2 boots on pspGL](01-bring-up-6-2/index.md) | the port's platform file, three stubs, four guards | **done** |
+| [2 — Instrumentation](02-instrumentation/index.md) | counters and baselines; nothing measurable yet exists | **done** |
+| [3 — pspGL upgrade A/B](03-pspgl-upgrade/index.md) | eleven ready-made commits, measured | **done** — fork `ae9a668` @ 8192 words |
+| [4 — rlgl batcher](04-rlgl-batcher/index.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
+| [5 — Native GU backend](05-native-gu-backend/index.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
+| [6 — Textures and VRAM](06-textures-vram/index.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
+| [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **in progress** — 018–020 done; 021–023 written |
+| [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | not started |
+| [9 — Audio](09-audio/index.md) | `sceAudio` output without costing frame time | not started |
+| [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started |
-| [12 — Release gate](12-release-gate.md) | four configurations, one report | not started |
+| [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
 | [13 — Samples porting](13-samples-porting.md) | the upstream core/shapes/textures corpus as a gated regression suite | proposed — wave 0 needs no new capability |
 
 Notes on ordering that are easy to get wrong:

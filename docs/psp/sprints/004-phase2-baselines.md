@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation.md) |
+| Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation/index.md) |
 | Branch / base commit | `master` @ `52ee5b1a` (counters closed, 6.5-dev validated) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `t1`, `t2` |

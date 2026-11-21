@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
+| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
@@ -47,7 +47,7 @@ see-through or background.
 
 **Read before acting:**
 
-1. [Phase 5 §"Reference implementations"](../phases/05-native-gu-backend.md) — the file/line index for the four
+1. [Phase 5 §"Reference implementations"](../phases/05-native-gu-backend/index.md) — the file/line index for the four
    engines in `/home/psp/ref`. This sprint should not have to search them again.
 2. `tools/pspgu/gl_texture.c` — `applyTexture()` is the whole contract with the GE: mode, image, filter, wrap,
    scale/offset, flush.

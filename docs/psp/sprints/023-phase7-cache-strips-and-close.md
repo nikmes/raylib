@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
+| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Branch / base commit | `master` @ the sprint 022 close (this doc is written before 021/022 run) |
 | Started / closed | — / — |
 | Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
@@ -19,7 +19,7 @@ whole phase's regression and fills the exit table.
 
 **Read before acting**, in this order:
 
-1. `../phases/07-2d-specialisation.md` — R2 (strips), the exit criteria, the boot-budget and 512 tasks.
+1. `../phases/07-2d-specialisation/index.md` — R2 (strips), the exit criteria, the boot-budget and 512 tasks.
 2. `../sprints/018-phase7-corpus-and-budget.md` §7 — the corpus and the boot budget.
 3. `../sprints/019`–`022` — the text, window, sprite/shape and particle results this close depends on.
 4. `../memory-map.md` §4 — the 8 KiB cache and the band arithmetic; §5 — the phase roadmap.
@@ -149,7 +149,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
   | boot 2D VRAM map | 018: free/largest/floor |
   | no visual regression | 018–023 captures + gate + 284 colours |
 
-- Update `../phases/07-2d-specialisation.md` state to **done** (or record a named deferral), the sprint table, and
+- Update `../phases/07-2d-specialisation/index.md` state to **done** (or record a named deferral), the sprint table, and
   `../phases/index.md`. Name the next phase (8 — input, unless the recorded order changes).
 
 ## 6. Budgets

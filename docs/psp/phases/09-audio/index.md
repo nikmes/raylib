@@ -22,7 +22,7 @@ be written, not enabled, so the phase starts by choosing where it goes.
 
 - [ ] Choose the integration: miniaudio's custom backend (`MA_ENABLE_ONLY_SPECIFIC_BACKENDS` +
       `MA_ENABLE_CUSTOM`, the `ma_backend` vtable's `onDeviceInit`/`onDeviceStart`/`onDeviceStop`/`onDeviceUninit`)
-      versus driving `sceAudio` straight from `raudio.c` — [open question 6](../memory-map.md#12-open-questions)
+      versus driving `sceAudio` straight from `raudio.c` — [open question 6](../../memory-map.md#12-open-questions)
 - [ ] Define the device contract in one place: **44.1 kHz, s16, stereo**, and a period of N frames. raylib
       currently defaults to `ma_format_f32`, 2 channels, rate 0 (`src/raudio.c:285-292`); a PSP backend that reports
       s16/44100 lets miniaudio convert at load time instead of on the audio thread
@@ -63,7 +63,7 @@ be written, not enabled, so the phase starts by choosing where it goes.
 ## Audio-service facts
 
 Sources: PSPSDK `pspaudio.h` and `pspaudiolib.h`, Sony's Sound / Simple Audio / SAS overviews in the 6.6 SDK
-tree (reading aid only, [§11.4](../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)), and the local
+tree (reading aid only, [§11.4](../../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)), and the local
 psp-developer skill (`references/audio.md`, `references/media-engine.md`). Numbers measured elsewhere carry their
 hardware.
 
@@ -104,7 +104,7 @@ The references differ in where decoding and mixing happen, which is the actual d
 ## Media Engine: what it means for audio
 
 The hardware facts and the rules for running code on the ME are in
-[§10.2](../memory-map.md#102-media-engine-the-second-mips-core). For this phase, five consequences matter:
+[§10.2](../../memory-map.md#102-media-engine-the-second-mips-core). For this phase, five consequences matter:
 
 1. **The firmware already uses the ME for audio.** SAS (up to 32 voices, 44.1 kHz, ADPCM/PCM/ATRAC3) runs
    mainly on the ME, and `sceSasCoreWithMix` exists to let it mix and then hand the result to Simple Audio.
@@ -136,7 +136,7 @@ is cleverest.
 
 ## Candidate techniques — not recipes yet
 
-Per [§13](../memory-map.md#13-working-method-sprints-features-recipes) a recipe is written only after the
+Per [§13](../../memory-map.md#13-working-method-sprints-features-recipes) a recipe is written only after the
 technique worked on hardware. These are the candidates, each with the measurement that would promote it.
 
 | candidate | mechanism | promote when |
@@ -165,4 +165,4 @@ technique worked on hardware. These are the candidates, each with the measuremen
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+None yet. Use the [sprint template](../../templates/sprint.md).

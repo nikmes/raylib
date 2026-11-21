@@ -38,7 +38,7 @@ which is where all of this work lands, in the platform file, not in `rcore.c`.
 - [ ] Choose the sampling strategy (`sceCtrlSetSamplingCycle`, once per frame vs fixed rate) and justify it;
       document that `ReadBuffer*` blocks and `PeekBuffer*` does not
 - [ ] Decide whether to also fill `CORE.Input.Keyboard` from the pad (makes upstream examples run unmodified;
-      redefines `IsKeyDown` on this platform) — [open question 5](../memory-map.md#12-open-questions)
+      redefines `IsKeyDown` on this platform) — [open question 5](../../memory-map.md#12-open-questions)
 - [ ] Document the one-reader rule: `sceCtrlReadBuffer*` and `sceCtrlReadLatch` are global resources, so one
       thread reads them and every other thread peeks
 - [ ] Keep `SetGamepadVibration()` a documented no-op — there is no rumble
@@ -60,7 +60,7 @@ which is where all of this work lands, in the platform file, not in `rcore.c`.
 
 Sources: the public PSPSDK header `pspctrl.h`, and Sony's Controller Overview / Reference in the 6.6 SDK tree
 (`/home/psp/psp_sdk_660/.../document/html/peripheral/`). The Sony tree is a **reading aid only**
-([§11.4](../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)): a
+([§11.4](../../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)): a
 behaviour used in code must be reproduced from the public header or measured here, not copied from that tree.
 
 | fact | value | tag |
@@ -89,7 +89,7 @@ not appear in Sony's user-mode header. Treat them as undelivered until a device 
 ## What the reference implementations do
 
 All rows are code scans, not measurements on our console. Their licences are in
-[§7](../memory-map.md#7-reference-sources-read-only-outside-this-repo).
+[§7](../../memory-map.md#7-reference-sources-read-only-outside-this-repo).
 
 | source | poll | deadzone | edges | notable |
 |---|---|---|---|---|
@@ -131,7 +131,7 @@ Line references are `src/platforms/rcore_psp.c` at `37585003`.
 
 ## Candidate techniques — not recipes yet
 
-Per [§13](../memory-map.md#13-working-method-sprints-features-recipes) a recipe is written only after the
+Per [§13](../../memory-map.md#13-working-method-sprints-features-recipes) a recipe is written only after the
 technique worked on hardware. These are the candidates the sources
 suggest, each with the measurement that would promote it. Until then they belong here, not in `recipes/`.
 
@@ -161,4 +161,4 @@ suggest, each with the measurement that would promote it. Until then they belong
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+None yet. Use the [sprint template](../../templates/sprint.md).

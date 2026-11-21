@@ -29,7 +29,7 @@ Phase 5 deferred one criterion here rather than redefining it. In the `batch_che
 
 The rest of the starting point is measured, not assumed: the 60 fps ceiling is **2,375 sprites** on three
 framebuffers with two rotating lists and 64-byte per-list vertex arenas, and a steady frame has **no full GE wait**
-(only 18–26 µs targeted waits). See [sprint 014](../sprints/014-phase5-ceiling-vram-readback.md).
+(only 18–26 µs targeted waits). See [sprint 014](../../sprints/014-phase5-ceiling-vram-readback.md).
 
 ## What has to be true before starting
 
@@ -48,7 +48,7 @@ framebuffers with two rotating lists and 64-byte per-list vertex arenas, and a s
 - [ ] Static bounds and GE-side object culling for scenes with many objects
 - [ ] Tessellate large triangles on the CPU where the GE would drop them at the window edge
 - [ ] Optional: build display-list words or cull on the Media Engine — measured at 0 failures elsewhere, but a
-      second CPU with its own cache protocol ([§10.2](../memory-map.md#102-media-engine-the-second-mips-core))
+      second CPU with its own cache protocol ([§10.2](../../memory-map.md#102-media-engine-the-second-mips-core))
 
 ## What we already know
 
@@ -152,4 +152,4 @@ measured 58.3 µs/sprite.
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+None yet. Use the [sprint template](../../templates/sprint.md).

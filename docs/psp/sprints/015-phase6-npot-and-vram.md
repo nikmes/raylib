@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
+| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
 | Branch / base commit | `master` @ `c31afe31` (T1 landed in `719b037e`) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b16` baseline, `b17` T1, `b19` T3, `b20` T2, `b21` T4 |
@@ -20,7 +20,7 @@ build remains 8888 and all parity scenes are byte-identical.
 
 1. `../memory-map.md` §3 and §“VRAM: 2 MB is the whole budget” — the three-buffer map, the host-RAM lists/arenas,
    the 64-byte writeback rule, the NPOT padding note and the allocator/PSM facts.
-2. `../phases/06-textures-vram.md` — the phase tasks this sprint served; residency/eviction is sprint 016.
+2. `../phases/06-textures-vram/index.md` — the phase tasks this sprint served; residency/eviction is sprint 016.
 3. `tools/pspgu/gl_texture.c` — `uploadTexels`, `chooseFormat`, `applyTexture`, `glTexSubImage2D`; and
    `tools/pspgu/egl.c` — the block allocator and `pspguVramReport`.
 4. `../sprints/012-phase5-texture-parity.md` T2 and `../sprints/014-phase5-ceiling-vram-readback.md` §9 — the

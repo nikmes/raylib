@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
+| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend/index.md) |
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
@@ -394,7 +394,7 @@ That is where this sprint stops, by the rule agreed before the probe: **T1 is sp
 | split | state |
 |---|---|
 | **T1a — 2D corpus parity** | **met.** `batch_check` 2D byte-identical (0 differing pixels, 613 colours), `triangle_probe` matches prediction for a straight *and* a rotated camera, `DrawCube` matches to 1 px, and the immediate path matches pspGL to 1.9× better cost |
-| **T1b — 3D through `DrawMesh`** | **handed to [phase 10](../phases/10-3d-advanced.md).** `glDrawElements` emits and draws nothing; culling ruled out; the converting path (`PspGuVertex`, index rebasing) is the suspect. Everything the probe could prove about the matrix path is proven, so phase 10 inherits a narrow, well-instrumented problem rather than a suspicion |
+| **T1b — 3D through `DrawMesh`** | **handed to [phase 10](../phases/10-3d-advanced/index.md).** `glDrawElements` emits and draws nothing; culling ruled out; the converting path (`PspGuVertex`, index rebasing) is the suspect. Everything the probe could prove about the matrix path is proven, so phase 10 inherits a narrow, well-instrumented problem rather than a suspicion |
 
 **What this sprint proved about 3D, which is worth more than the failing case:** the frustum, a rotated view matrix,
 `sceGuSetMatrix` with the `w` row, viewport/offset, the perspective divide and the immediate quad path are all correct

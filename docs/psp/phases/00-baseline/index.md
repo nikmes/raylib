@@ -36,11 +36,11 @@ the clone has full history, moving to 6.5.0-dev later is a merge, not a rebuild.
 
 ## Carried forward
 
-- Open question 1 in [§12](../memory-map.md#12-open-questions): when to re-baseline on 6.5.0-dev.
+- Open question 1 in [§12](../../memory-map.md#12-open-questions): when to re-baseline on 6.5.0-dev.
 - The five regression samples live in `raylib4Psp/samples`, not in this tree — see
-  [§11.2](../memory-map.md#112-raylib-sources).
+  [§11.2](../../memory-map.md#112-raylib-sources).
 
 ## Sprints
 
-- [Sprint 000 — Repository baseline](../sprints/000-phase0-baseline.md) — **closed**, and doubles as the first
-  filled example of the [sprint template](../templates/sprint.md)
+- [Sprint 000 — Repository baseline](../../sprints/000-phase0-baseline.md) — **closed**, and doubles as the first
+  filled example of the [sprint template](../../templates/sprint.md)

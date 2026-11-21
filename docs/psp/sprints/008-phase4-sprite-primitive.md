@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
+| Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher/index.md) |
 | Branch / base commit | `master` @ `1bb0bea6` |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `b3` triangles `-O0` `2ee10d2a…`, `b4` sprites `-O0` (archive saved), `b5` unbatched `-O2`, `b6` triangles `-O2`, `b7` sprites `-O2`, `b8` no-sprites `-O2` |

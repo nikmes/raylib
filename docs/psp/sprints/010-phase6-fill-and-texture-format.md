@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
+| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
 | Branch / base commit | `master` @ `628a4611` |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b11` (sprint 009 default, `8d919899…`), `b12` (this sprint) |
@@ -43,7 +43,7 @@ where we are, with a worse-looking texture pipeline.
   5650 texture (2 KiB) can — this is the mechanism the first hypothesis depends on.
 
 **Read before acting:** [baselines §"Scaling past the ceiling"](../baselines.md) (the model and the 4× fill probe),
-[Phase 5 review](../phases/05-native-gu-backend.md) §0 (why this phase comes first), and
+[Phase 5 review](../phases/05-native-gu-backend/index.md) §0 (why this phase comes first), and
 `psp-tests/bunnymark/main.c` (the harness the probe extends).
 
 **First action.** Add `TEX_FMT` and `BLEND_OFF` to `psp-tests/bunnymark` — app-side only, no `src/` change — and run

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2.md) |
+| Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2/index.md) |
 | Branch / base commit | `master` @ `975ec47e` (6.5-dev + port, device-validated) |
 | Started / closed | — / — |
 | Build number(s) | `s1` … `s4`, one per sample |
@@ -19,7 +19,7 @@ tried. Your job: four samples run, each with an archived screenshot and a finger
 1. [Memory map](../memory-map.md) §6 — the measurement protocol. It contains four traps that cost sprint 001
    whole runs, and this sprint walks into all four if ignored.
 2. Sprint 001 §9 — what the first build actually needed.
-3. [Phase 1 page](../phases/01-bring-up-6-2.md), exit criteria.
+3. [Phase 1 page](../phases/01-bring-up-6-2/index.md), exit criteria.
 
 **Verified before this sprint started** (2026-11-20, this toolchain, staged 6.5-dev library
 `13506883…`, headers `RAYLIB_VERSION "6.5-dev"`):

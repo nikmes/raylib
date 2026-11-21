@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
+| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
 | Branch / base commit | `master` @ `a57b26d3` (sprint 016 closes; driver `b22`) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b23` driver (quiet-hook probe support); probe app builds |
@@ -19,7 +19,7 @@ implements it; otherwise phase 6 closes here.
 
 **Read before acting**, in this order:
 
-1. `../phases/06-textures-vram.md` — the CLUT/mipmap tasks and the exit criterion this sprint closes.
+1. `../phases/06-textures-vram/index.md` — the CLUT/mipmap tasks and the exit criterion this sprint closes.
 2. `../sprints/015-phase6-npot-and-vram.md` T2/T4 — the format/byte numbers and the direct upload path the matrix
    extends.
 3. `../sprints/016-phase6-residency-eviction.md` — the residency counters and the probe pattern (marker files).

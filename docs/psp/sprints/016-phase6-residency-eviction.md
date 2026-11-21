@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram.md) |
+| Roadmap phase | [Phase 6 — Textures and VRAM](../phases/06-textures-vram/index.md) |
 | Branch / base commit | `master` @ `ae4b098c` (sprint 015 closed) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b22` (metadata, shadow, eviction; probes run on it) |
@@ -21,7 +21,7 @@ change.
 
 1. `../memory-map.md` §3 and §“VRAM: 2 MB is the whole budget” — the 3-buffer map, the 512-byte block allocator,
    the host-RAM lists/arenas and the 32 KiB metadata.
-2. `../phases/06-textures-vram.md` — the residency task and the three exit criteria this sprint closes.
+2. `../phases/06-textures-vram/index.md` — the residency task and the three exit criteria this sprint closes.
 3. `tools/pspgu/gl_texture.c` — `uploadTexels`, `chooseFormat`, `glBindTexture`, `glTexImage2D`,
    `glDeleteTextures`; `tools/pspgu/egl.c` — `vramAllocRaw`, `vramFreeRaw`, `pspguVramReport`.
 4. `../sprints/015-phase6-npot-and-vram.md` T3 — the churn probe and the exact-return evidence the new policy must

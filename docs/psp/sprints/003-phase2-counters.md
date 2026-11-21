@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation.md) |
+| Roadmap phase | [Phase 2 — Instrumentation](../phases/02-instrumentation/index.md) |
 | Branch / base commit | `master` @ `252acee7` → closed at the sprint commit |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `c1`, `c2` |
@@ -30,7 +30,7 @@ correct against a workload whose answer is known in advance.
 
 1. [Memory map](../memory-map.md) §2 (why `rlBegin` *is* `glBegin` on this path), §4 (the two separate costs
    this instrumentation must later tell apart), §6 (measurement protocol — four traps, all paid for).
-2. [Phase 2 page](../phases/02-instrumentation.md).
+2. [Phase 2 page](../phases/02-instrumentation/index.md).
 3. Sprint 002 §9 — why a noisy capture is not evidence of anything.
 
 **Current state, verified 2026-11-20:** staged library `sha256 13506883…`, headers `RAYLIB_VERSION "6.5-dev"`,

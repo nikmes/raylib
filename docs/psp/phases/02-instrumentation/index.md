@@ -47,8 +47,8 @@ vertex traffic, texture binds, GE waits or frame CPU time, and the one counter t
 
 ## Sprints and features
 
-- [Sprint 003 — Backend counters that mean something](../sprints/003-phase2-counters.md) — **closed**: counters
+- [Sprint 003 — Backend counters that mean something](../../sprints/003-phase2-counters.md) — **closed**: counters
   validated against a known workload (1,030.9 ends/frame at 1,000 sprites, 4.000 vertices per end) and by
   mutation (31.0 ends/frame with the draws removed). `src/` untouched; counting lives in the harness via
   `-Wl,--wrap`. Measured cost today: **92.5 µs per sprite**, ~181 sprites in a 16.7 ms frame
-- [Sprint 004 — Timing, fixed-count runs, repeatability floor](../sprints/004-phase2-baselines.md)
+- [Sprint 004 — Timing, fixed-count runs, repeatability floor](../../sprints/004-phase2-baselines.md)

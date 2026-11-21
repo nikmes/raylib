@@ -13,7 +13,7 @@ backend, no optimisation: the goal is a working baseline whose numbers mean some
 
 The whole PSP delta of the 5.5 port is small enough to carry over almost verbatim — one new platform file,
 about fifteen additive lines in `rcore.c`, four guard lines in the renderer, and a Makefile block. The detail
-of that delta is in [§2](../memory-map.md#2-memory-map-where-the-work-happens).
+of that delta is in [§2](../../memory-map.md#2-memory-map-where-the-work-happens).
 
 ## What has to be true before starting
 
@@ -59,9 +59,9 @@ of that delta is in [§2](../memory-map.md#2-memory-map-where-the-work-happens).
 - [ ] five samples boot, render and exit cleanly
 - [ ] no import-stub warnings (`psp-fixup-imports` "stubs out of order" is a runtime bug, not cosmetic)
 - [ ] screenshots archived, named with build number
-- [ ] everything learned written back into [§2](../memory-map.md#2-memory-map-where-the-work-happens)
+- [ ] everything learned written back into [§2](../../memory-map.md#2-memory-map-where-the-work-happens)
 
 ## Sprints and features
 
-- [Sprint 001 — Import the platform layer, first build](../sprints/001-phase1-import-platform.md)
-- [Sprint 002 — All five samples green, screenshots archived](../sprints/002-phase1-samples-green.md)
+- [Sprint 001 — Import the platform layer, first build](../../sprints/001-phase1-import-platform.md)
+- [Sprint 002 — All five samples green, screenshots archived](../../sprints/002-phase1-samples-green.md)

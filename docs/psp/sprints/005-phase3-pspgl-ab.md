@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade.md) |
+| Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade/index.md) |
 | Branch / base commit | `master` @ `bb6da92c` (Phase 2 closed; baselines published) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g0` (control build), `g1` (fork build) |
@@ -23,7 +23,7 @@ with a control arm that proves the build recipe itself is not the variable.
 1. [Baseline numbers](../baselines.md) — the reference you are comparing against (median 90.29 ms at 1,000
    bunnies, repeatability floor 0.02 %, reportable threshold **0.1 %**).
 2. [Memory map](../memory-map.md) §6 (measurement protocol), §7 (pspGL provenance, and the licence table).
-3. [Phase 3 page](../phases/03-pspgl-upgrade.md).
+3. [Phase 3 page](../phases/03-pspgl-upgrade/index.md).
 
 **Verified facts about the build (both arms already built once, 2026-11-20):**
 

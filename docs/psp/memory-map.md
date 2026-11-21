@@ -633,7 +633,7 @@ written down.
 | `/home/psp/pspdev/psp/sdk/samples` | working examples, including `me/basic` (reset-vector takeover) |
 | `/home/psp/pspdev/psp/lib`, `.../sdk/lib` | shipped static libs: `libGL`, `libpspaudio`, `libpspaudiolib`, `libpspgu`, `libpspgum`, `libraylib` |
 | `/home/psp/psp_sdk_660` | Sony's official devkit SDK, kept as a reading aid — see below |
-| `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` | **not Sony material**: an AI-written map of that tree. **§16 is a renderer blueprint** (fixed constraints, VRAM map, 2D/3D paths, batching, levers, acceptance criteria) and §15 is a GU/VFPU symbol index. Summarised into [Phase 4](phases/04-rlgl-batcher.md) and [Phase 10](phases/10-3d-advanced.md) |
+| `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` | **not Sony material**: an AI-written map of that tree. **§16 is a renderer blueprint** (fixed constraints, VRAM map, 2D/3D paths, batching, levers, acceptance criteria) and §15 is a GU/VFPU symbol index. Summarised into [Phase 4](phases/04-rlgl-batcher/index.md) and [Phase 10](phases/10-3d-advanced/index.md) |
 | `/home/psp/.kimi-code/skills/psp-developer/references/` | the PSP skill: `rendering.md`, `textures-uv.md`, `ge-arithmetic.md`, `vfpu-math.md`, `media-engine.md`, `audio.md`, `memory-map.md`, `file-io-memory-stick.md`, `instrumentation.md`, `optimization-profiling.md`, `real-hw-gotchas.md`, `power-exit-sleep.md` |
 
 #### The Sony SDK: what it is for, and what it is not

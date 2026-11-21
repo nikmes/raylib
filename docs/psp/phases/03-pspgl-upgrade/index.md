@@ -43,7 +43,7 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 
 - [x] delta table with control and control-again, at more than one bunny count: N=1000 and N=5000, two runs per
       arm, control within 0.03 % of shipped
-- [x] decision recorded in [§8](../memory-map.md#8-decision-log) with its evidence
+- [x] decision recorded in [§8](../../memory-map.md#8-decision-log) with its evidence
 - [x] adopted, and the build is reproducible via `tools/pspgl-build.sh` (content hash `2ab7378e…`); licence BSD-3
 
 **Result: −31.8 % on 2D sprite work.** −10.0 % from the fork's 11 commits (90.29 → 81.24 ms at N=1000), then
@@ -52,11 +52,11 @@ accounting, cached texture-matrix adjustment, exposed raw depth range and presen
 
 ## Sprints and features
 
-- [Sprint 005 — pspGL from source, and an A/B that means something](../sprints/005-phase3-pspgl-ab.md) —
+- [Sprint 005 — pspGL from source, and an A/B that means something](../../sprints/005-phase3-pspgl-ab.md) —
   **closed**: fork HEAD is **10 % faster** (81.24 vs 90.30 ms at N=1000, 392.06 vs 436.43 at N=5000), control
   arm within 0.03 % of shipped so the recipe is neutral, symbol set a strict superset. Its profiler also showed
   257 submissions/frame and 2,725 µs/frame of command-list wait
-- [Sprint 006 — Adopt the fork, reproducibly](../sprints/006-phase3-decide.md) — the decision is taken by
+- [Sprint 006 — Adopt the fork, reproducibly](../../sprints/006-phase3-decide.md) — the decision is taken by
   sprint 005's data, so this sprint makes it durable: `tools/pspgl-build.sh` pinned by commit and sha256, the
   command-list size experiment the profiler motivated, the baseline re-published on the adopted library, and the
   restore path walked

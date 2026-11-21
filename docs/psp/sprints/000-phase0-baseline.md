@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 0 — Baseline](../phases/00-baseline.md) |
+| Roadmap phase | [Phase 0 — Baseline](../phases/00-baseline/index.md) |
 | Branch / base commit | `psp-6.2` @ `02566453` (tag `6.2`) |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | none — no raylib build in this sprint |
@@ -23,7 +23,7 @@ template. Do not redo it.
   record it in the task log rather than starting a new sprint for it.
 
 **Read instead:** [memory map](../memory-map.md) §1 (status), §11 (source index), and the
-[Phase 0 page](../phases/00-baseline.md).
+[Phase 0 page](../phases/00-baseline/index.md).
 
 ## 1. Objective
 

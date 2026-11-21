@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
+| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Branch / base commit | `master` @ the sprint 021 close (this doc is written before 021 runs) |
 | Started / closed | — / — |
 | Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
@@ -23,7 +23,7 @@ cost to justify promoting it, and records the cap/tearing boundary.
 2. `../sprints/019-phase7-text-work.md` §7 — the `api`/`direct` method and what it proved for a per-object loop.
 3. `psp-tests/scene_2d/main.c` — `MODE=particles`, `particlesUpdate`, the freeze frames.
 4. `src/rlgl.h:622-930` — the batcher: one bind per run, 2-vertex sprites, the 4,096 cap.
-5. `../phases/07-2d-specialisation.md` — the particle exit criterion.
+5. `../phases/07-2d-specialisation/index.md` — the particle exit criterion.
 
 **First action.** Add `PARTICLE_IMPL=api|direct` to `scene_2d`, where `direct` is one `rlSetTexture` +
 `rlBegin(RL_QUADS)` loop with the same geometry, and run `COUNT=500/2000` before any `src/` change.

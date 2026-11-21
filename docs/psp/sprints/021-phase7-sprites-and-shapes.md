@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
+| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Branch / base commit | `master` @ `9e34303d` (sprint 020 closed) |
 | Started / closed | — / — |
 | Build number(s) | pspgu `b24` (unchanged); `libraylib.a` with the batcher/rshapes changes |

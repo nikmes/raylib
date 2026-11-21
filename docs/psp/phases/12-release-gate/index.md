@@ -17,7 +17,7 @@ Proving the stack, not assembling it. Four configurations, same console, same wo
 
 That ordering is the whole point: it separates the library's contribution from ours, so a regression can be
 attributed instead of argued about. Compiler, linker and raylib config flags are held identical across all four
-configurations and printed with the report; [Phase 11](11-general-optimisation.md) chose them, this phase only
+configurations and printed with the report; [Phase 11](../11-general-optimisation.md) chose them, this phase only
 proves them on the release workload.
 
 ## Tasks
@@ -48,4 +48,4 @@ itself.
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md).
+None yet. Use the [sprint template](../../templates/sprint.md).

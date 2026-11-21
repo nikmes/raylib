@@ -56,7 +56,7 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
 
 ## VRAM facts that bind the 2D paths
 
-Allocator design belongs to [Phase 6](06-textures-vram.md). What follows is only what a text, sprite, tile-map
+Allocator design belongs to [Phase 6](../06-textures-vram/index.md). What follows is only what a text, sprite, tile-map
 or particle path has to assume about the memory it samples from. These facts come from the GE documentation,
 the PSPSDK headers and the local engines; none of them has been re-measured by our protocol yet.
 
@@ -80,7 +80,7 @@ been absorbed by pspGL, and a "cache-friendly" strip may only be moving the same
 ### Atlas budget for a 2D frame
 
 With 16-bit framebuffers and the depth buffer, **1,261,568 B** remain in VRAM. A native 2D backend has no use
-for depth (see [Phase 5](05-native-gu-backend.md)), so dropping it returns **278,528 B** and leaves
+for depth (see [Phase 5](../05-native-gu-backend/index.md)), so dropping it returns **278,528 B** and leaves
 **1,540,096 B** — the number a 2D-only layout should start from. All values below are POT, 16 bpp-equivalent
 sizes; allocator rounding (512-byte blocks) and any render targets are extra.
 
@@ -190,12 +190,12 @@ sprint's numbers are in hand (the fast paths depend on what the corpus measures)
 
 | sprint | scope | state |
 |---|---|---|
-| [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
-| [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
-| [020 — Tile maps and 512-pixel windowing](../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | **done** — swizzled windows proven, 1024 uploads, 2/4 window draws, byte-identical to the pre-sliced refs |
-| [021 — Sprites and shapes](../sprints/021-phase7-sprites-and-shapes.md) | offscreen rejection for axis-aligned quads; solid rectangles as one sprite; bind/run audit | written |
-| [022 — Particles](../sprints/022-phase7-particles.md) | one stream per texture run, api/direct probe, 2,048/4,000 cap boundary, tear audit | written |
-| [023 — Cache strips, regression, close](../sprints/023-phase7-cache-strips-and-close.md) | 16/32/64/128 px strip A/B on single and repeated draws; full regression; phase exit table | written |
+| [018 — Corpus, counters and boot budget](../../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
+| [019 — Text work: submission, lookup and the 512 atlas limit](../../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
+| [020 — Tile maps and 512-pixel windowing](../../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | **done** — swizzled windows proven, 1024 uploads, 2/4 window draws, byte-identical to the pre-sliced refs |
+| [021 — Sprites and shapes](../../sprints/021-phase7-sprites-and-shapes.md) | offscreen rejection for axis-aligned quads; solid rectangles as one sprite; bind/run audit | written |
+| [022 — Particles](../../sprints/022-phase7-particles.md) | one stream per texture run, api/direct probe, 2,048/4,000 cap boundary, tear audit | written |
+| [023 — Cache strips, regression, close](../../sprints/023-phase7-cache-strips-and-close.md) | 16/32/64/128 px strip A/B on single and repeated draws; full regression; phase exit table | written |
 
 The strip experiment may be a null result (R2 predicts it may be); the phase close and the full regression still
 run in 023, so it does not collapse into 022.

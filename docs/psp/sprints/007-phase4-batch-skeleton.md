@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
+| Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher/index.md) |
 | Branch / base commit | `master` @ `3bd7830b` |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `b1` unbatched `libraylib.a` sha256 `0b0a7aeb…`, `b2` batched `2ee10d2a…` |
@@ -22,7 +22,7 @@ faster" is not.
 
 **Read before acting:**
 
-1. [Phase 4 page](../phases/04-rlgl-batcher.md) — the nine ranked levers from four reference engines, and the
+1. [Phase 4 page](../phases/04-rlgl-batcher/index.md) — the nine ranked levers from four reference engines, and the
    note on what GL11 *cannot* reach (through mode, `GU_SPRITES`, compact formats: all phase 5).
 2. [Baselines](../baselines.md) — the unbatched numbers this sprint is measured against (61.63 ms at 1,000).
 3. [Memory map](../memory-map.md) §4B, §6, §14.

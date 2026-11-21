@@ -60,7 +60,7 @@ Source: `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` §16 (an AI-written blueprint t
 reference tree — it is **not** Sony documentation). Cross-checked against our own measurements below; where it
 disagrees, our numbers win.
 
-**What our toolchain actually offers** (headers checked, see [§14](../memory-map.md#14-what-pspdev-actually-provides-verified-2026-11-20)):
+**What our toolchain actually offers** (headers checked, see [§14](../../memory-map.md#14-what-pspdev-actually-provides-verified-2026-11-20)):
 `GU_SPRITES 6`, `GU_TRANSFORM_2D` ("passed directly to the rasterizer"), `sceGuScissor(x, y, w, h)`,
 `sceGuTexImage/TexMode/TexFlush/TexSync/ClutLoad`, `sceGuDepthRange/DepthOffset`, and `sceGumDrawArray` for the
 CPU-transform path. `libpspgum.a` is the default GUM; `libpspgum_vfpu.a` is opt-in and used by no sample.
@@ -87,7 +87,7 @@ work = frame_time - vblank_wait
 ```
 
 At 60 Hz, 37 ms and 45 ms of work both present as a 50 ms frame, so a change that "did not move the frame time"
-may have moved work inside the vsync bucket. We measured this the hard way: see [baselines](../baselines.md) —
+may have moved work inside the vsync bucket. We measured this the hard way: see [baselines](../../baselines.md) —
 the 100-bunny row is pacing, not cost. **Measure `work`, not frame time**, and remember sprint 005's finding that
 the wait is not in `eglSwapBuffers` but in command-list reuse.
 
@@ -197,19 +197,19 @@ frame from 16.68 to 50.05 ms with CPU work unchanged.
 That re-prices the rest of the phase. Compacting vertices and shaving the vertex path are now worth single-digit
 percent; the ceiling is pixels. Which lever matters next depends on one measurement that has not been taken: the
 `PSPRuntime` reference's claimed ~5,000 sprites at 60 fps, which would be 5.1 M texels per frame against our measured
-1.5 M. See [sprint 008 §10](../sprints/008-phase4-sprite-primitive.md).
+1.5 M. See [sprint 008 §10](../../sprints/008-phase4-sprite-primitive.md).
 
 ## Sprints and features## Sprints and features
 
-- [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../sprints/007-phase4-batch-skeleton.md)
+- [Sprint 007 — Batch skeleton, and the measurement that decides the phase](../../sprints/007-phase4-batch-skeleton.md)
   — **done**. The smallest batcher that separates submission cost from per-vertex cost, `PSP_BATCH=0/1` as two arms
   of one commit, and the pending-texture rule that makes batching work at all. 62.6 → 16.7 µs per sprite; the
   residual is linear in vertices and flat in pixels
-- [Sprint 008 — Two-vertex sprites: the last lever inside GL11](../sprints/008-phase4-sprite-primitive.md)
+- [Sprint 008 — Two-vertex sprites: the last lever inside GL11](../../sprints/008-phase4-sprite-primitive.md)
   — **done**. Axis-aligned quads as `GL_SPRITES_PSP` (2 vertices, pixel-identical), and the discovery that the
   library had never been compiled with optimisation: `-O2` took 1,000 sprites from 33.37 to **16.68 ms**. The
   residual is now blended fill, not submission
-- [Sprint 009 — The per-sprite CPU budget, and shipping the batch](../sprints/009-phase4-inline-vertex-path.md)
+- [Sprint 009 — The per-sprite CPU budget, and shipping the batch](../../sprints/009-phase4-inline-vertex-path.md)
   — the last sprint of this phase. `work = 0.98 ms + 7.08 µs × sprites` is what puts the 60 fps ceiling at 1,500:
   inline the vertex push path (it is cross-translation-unit call overhead, not arithmetic), add a texture-bind
   cache, give sprite and triangle runs their own buffers so a mixed scene stops flushing per sprite (83.4 ms today),

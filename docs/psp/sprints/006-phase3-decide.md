@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade.md) |
+| Roadmap phase | [Phase 3 — pspGL upgrade A/B](../phases/03-pspgl-upgrade/index.md) |
 | Branch / base commit | `master` @ `276ed105` |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `g2` (adopted library) |

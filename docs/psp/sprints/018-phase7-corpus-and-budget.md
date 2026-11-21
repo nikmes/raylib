@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
+| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Branch / base commit | `master` @ `01325cf8` (sprint 017 closed; phase 6 done) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b23` (driver unchanged; the sprint is a harness) |
@@ -19,7 +19,7 @@ so.
 
 **Read before acting**, in this order:
 
-1. `../phases/07-2d-specialisation.md` — the exit criterion ("text submissions scale with atlas runs, not glyph
+1. `../phases/07-2d-specialisation/index.md` — the exit criterion ("text submissions scale with atlas runs, not glyph
    count; tile maps with atlas runs, not tile count"), the four workloads, and the 512-pixel rule.
 2. `../memory-map.md` §3 and §“VRAM: 2 MB is the whole budget” — the framebuffer/list/arena map and the allocator
    the budget line is read from.

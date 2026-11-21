@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2.md) |
+| Roadmap phase | [Phase 1 — 6.2 boots on pspGL](../phases/01-bring-up-6-2/index.md) |
 | Branch / base commit | `psp-6.2` @ `02566453` + docs commits |
 | Started / closed | 2026-11-20 / 2026-11-20 |
 | Build number(s) | `r1` … `r7` (final: release library + `basic_shapes.prx`) |
@@ -26,7 +26,7 @@ and get one sample rendering on the console.
 **Read before acting** (still valid for a re-run):
 
 1. [Memory map](../memory-map.md) §2 (where the work happens), §3 (hardware limits), §9 (traps).
-2. [Phase 1 page](../phases/01-bring-up-6-2.md).
+2. [Phase 1 page](../phases/01-bring-up-6-2/index.md).
 3. The 5.5 platform file — the starting point, and the source of every 5.5→6.2 surprise:
    `git -C /home/psp/raylib-psp show consoles/raylib4Consoles:src/platforms/rcore_psp.c`
 

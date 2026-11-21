@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
+| Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Branch / base commit | `master` @ `8e0b0d8f` (sprint 018 closed) |
 | Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | pspgu `b23` (driver unchanged); `libraylib.a` rebuilt with the text path |
@@ -20,7 +20,7 @@ cost is per-glyph CPU work: about **12 µs/glyph**, and two code facts explain a
 **Read before acting**, in this order:
 
 1. `../sprints/018-phase7-corpus-and-budget.md` §7 — the text baseline, the counter table and the 512 audit.
-2. `../phases/07-2d-specialisation.md` — the text exit criterion and R3.
+2. `../phases/07-2d-specialisation/index.md` — the text exit criterion and R3.
 3. `src/rtext.c` — `DrawTextEx`, `DrawTextCodepoint`, `DrawTextCodepoints`, `GetGlyphIndex`, `LoadFontFromMemory`,
    `GenImageFontAtlas`.
 4. `src/rlgl.h:622-930` — the PSP batcher: `rlSetTexture` is deferred, `rlBegin`/`rlEnd` are cheap, a glyph quad
