@@ -218,25 +218,43 @@ Notes from reading them for task 6, in the order they were tried:
 - [ ] A worst-case display-list size measured from a real frame (N=5,000 bunnymark = 9 draws, 30,150 vertices), not
       guessed from the GL11 path's 1,025 submissions
 
-## Tasks
+## Tasks (reviewed 2026-11-21, after tasks 1/4/5/6 came back from the device)
 
-The deliverable is a **drop-in `libGL.a`-shaped implementation of the 52 symbols** that the library actually needs
-(§0), written over `sceGu`/`sceGum`, linked instead of pspGL. Tasks are ordered so the thing links, then draws, then
-optimises.
+State vocabulary: `done` · `doing` · `todo` · `dropped`. Numbers are stable; new work gets new numbers so the
+history stays readable.
 
-| # | task | verification |
+| # | task | state | what the device said |
+|---|---|---|---|
+| 1 | vertical slice: the 52 symbols, real egl init, two framebuffers, GU display, `glClear` | `done` | boots, clears to the pspGL value, **0 pspGL symbols** |
+| 2 | egl layer: config/context/surface/swap/interval, DEPTH bit of `glClear` | `doing` | initialises and swaps; the swap's vsync semantics have never been exercised under a batched frame because task 6 isn't right yet |
+| 3 | state map: every `glEnable` bit the library sets, blend/depth/cull/masks/shade/viewport/scissor | `done` | mapped; the library uses ten enable bits, not the twenty GL has |
+| 3b | **dither** — new. pspGL's captured background is a *pattern* of `(240,240,240)` and `(248,248,248)`; ours is flat `(240,244,240)`. Match it (`GU_DITHER`, and check `GU_FAST_CLEAR_BIT`) or record why not | `todo` | 62 % of the frame differs at least partly because of this |
+| 4 | matrices in CPU memory + pushed to the GE, `glGetFloatv` for both queries | `done` | a raw full-screen self-test sprite fills the display: transform proven. 3D path still unverified |
+| 5 | vertex arrays: fast interleaved path, converting path, `glDrawElements`, modes 10/4/1 | `done` | sprites draw; the fast path engages (`fast=1` in the trace) |
+| 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `doing` | uploads and draws (274 colours vs pspGL's 613) but three deltas documented below |
+| 6b | **texture parity** — new, and the next sprint's whole job: known-pattern texture, swizzle recipe from the references (`swizzle = 1`, `tbw` = padded pow2), alpha, dither | `doing` | see sprint 012 |
+| 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `todo` | `scrshot` bypasses GL, so nothing we own tests this |
+| 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `todo` | currently one list and a full sync per frame — correct but the slowest option |
+| 9 | cache discipline before the GE reads vertices or texels | `done` | it was **blocking**, not an optimisation: without it the GE read stale vertices and drew nothing |
+| 10 | VRAM accounting at boot: framebuffers, depth, textures, free | `todo` | the boot line has the numbers but not the texture total |
+| 11 | depth switch `PSP_GU_DEPTH`, DEPTH clear bit a no-op when 0 | `doing` | default build allocates 272 KiB; the `=0` build has not been booted |
+| 12 | **immediate-mode symbols** — new: `glBegin`/`glEnd`/`glVertex2i/2f/3f`/`glTexCoord2f`/`glColor4ub/3f/4f`/`glNormal3f`. Needed by the `--wrap` counter harness (it requires `__real_*` to exist) and by any `PSP_BATCH=0` library | `todo` | this is why `psp-tests/*` currently build with `WRAP=0` |
+| 13 | **remove the stubs** — new: once 6b/7/12 land, `gl_stub.c` should hold nothing; any remaining call logs once and asserts in a debug build instead of silently doing nothing | `todo` | a silent stub is how "the driver draws nothing" stays invisible |
+
+**Dropped:** nothing. Every original task survived the review; the list grew by four (3b, 6b, 12, 13) because
+doing the work found work.
+
+## Sprints
+
+Four sprints, in order. 011 is done and is written up for the record; 012 is written out in full because it is
+next; 013 and 014 are scoped here and get their own pages when they start.
+
+| sprint | goal | exit |
 |---|---|---|
-| 1 | **vertical slice**: the 52 symbols as logging stubs **plus** real egl init, two framebuffers, GU display setup and `glClear` | `done` — `tools/pspgu/{pspgu_internal.h,egl.c,gl_state.c,gl_stub.c}` + `tools/pspgu-build.sh`. Boot log: `GU up: 480x272 stride 512, fb 272 KiB x2, depth yes (272 KiB), textures from 816 KiB, list 256 KiB`; `psp-nm batch_check.elf \| grep -c pspgl_` = **0**; capture is a uniform `(240,244,240)`, the same RAYWHITE-through-5650 value a pspGL build produces |
-| 2 | **egl layer**: config, context, surface, `eglSwapBuffers` with the same vsync semantics as today, `eglSwapInterval` (compiled out of the 52 but needed by `PSP_DISABLE_VSYNC`), `eglGetError`; and the DEPTH bit of `glClear` handled explicitly (§0 finding 7) | `psp-tests/bunnymark` boots and reaches `DONE` with counters intact; `SPLIT ... swap=` non-zero; a `PSP_DISABLE_VSYNC=1` build still links |
-| 3 | **state mapping**: a table of every `glEnable`/`glDisable` bit the library uses, plus `glBlendFunc`, `glDepthFunc/Mask`, `glColorMask`, `glCullFace`, `glFrontFace`, `glScissor`, `glViewport`, `glShadeModel`, `glPolygonMode`, `glLineWidth` → GU commands, emitted only when the value changes | the state trace of one `batch_check` frame matches the 31 flush points the batcher has; no command re-emitted with the same value |
-| 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` in CPU memory (scalar floats for now — VFPU is phase 10's concern), **and** pushed to the GE, with `glGetFloatv` answering both queries (§0 finding 8) — `TODO: done in `gl_matrix.c`; a full-screen self-test sprite now covers the display, which is the transform proof | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling; `rlGetMatrixModelview()` returns a sane matrix |
-| 5 | **vertex arrays**: the four `*Pointer` calls, `glEnable/DisableClientState`, `glDrawArrays`, `glDrawElements`, with the 24-byte layout as the native fast path (it already is pspGL's native GE layout) and per-attribute conversion for everything else. `GL_SPRITES_PSP` (mode 10) → `GU_SPRITES`; mode 1/4 for lines/triangles. **Verify the winding against the culling that is on from boot** (§0 finding 6) | `arrayVerts`/frame unchanged; the batch reaches the GE without a copy for our own vertices; one sprite renders — if culling is wrong the sprite is *invisible*, not distorted |
-| 6 | **textures**: `glGenTextures`, `glBindTexture`, `glTexImage2D`, `glTexSubImage2D`, `glTexParameteri`, `glPixelStorei`, `glDeleteTextures` — swizzling, format conversion, VRAM allocation and eviction | the same textures load; a swizzle bug shows as diagonal garbage, so compare a 32×32 and a 512×512 texture capture |
-| 7 | **readback**: `glReadPixels` expanding the `5650` framebuffer to RGBA8888 and flipping, plus `glGetString`. `scrshot` reads VRAM through PSPLink and proves nothing about this path (§0 finding 9) | `TakeScreenshot` produces a PNG whose pixels match a `scrshot` capture of the same frame within the 5-6-5 quantisation; `glGetString(GL_VERSION)` is non-NULL |
-| 8 | **display lists**: two rotating, 16-byte aligned, sized from a measured worst case; submit frame N, sync frame N-1 (`GU_SYNC_WHAT_QUEUED`); never a per-frame `FINISH` | `SPLIT work/swap` shows no full wait in steady state; a deliberately undersized list asserts instead of overrunning |
-| 9 | **cache discipline**: `sceKernelDcacheWritebackRange()` over exactly the ranges the CPU wrote, then publish the pointer | a texture uploaded then drawn in the same frame is correct on hardware (this is the classic PSP-only corruption) |
-| 10 | **VRAM accounting at boot**: framebuffers, textures, free bytes, largest block | printed once at boot and matching the budget in §"What we already know" |
-| 11 | **the depth switch**: allocate the 16-bit depth buffer at 512 stride when `PSP_GU_DEPTH=1` (default), treat `GL_DEPTH_BUFFER_BIT` inside `glClear` as a no-op when it is 0, and report the choice in the boot VRAM line | both configurations build and boot; the 3D scene is depth-correct with the buffer and painter-ordered without it, and the boot line shows the 272 KiB either way |
+| [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | `done` — framebuffers, clear, matrices, draw paths, cache discipline | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
+| [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | one known-pattern texture, the references' swizzle recipe, dither | `batch_check` **byte-identical** to pspGL; a 2×2 pattern drawn 1:1 matches texel for texel |
+| 013 — Pixel parity and the counter harness | both `batch_check` scenes and `basic_shapes` identical; `bunnymark` runs with `WRAP=1` (task 12); `SPLIT` swap sane; `PSP_DISABLE_VSYNC` builds | every archived capture reproduced; counters work again |
+| 014 — Ceiling, VRAM and readback | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | 60 fps ceiling **> 1,600 sprites**, VRAM accounted, no stubs left, phase exit met |
 
 ### Tasks 4-5 progress (2026-21) — five bugs, four of them invisible-until-drawn
 

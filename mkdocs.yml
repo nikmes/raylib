@@ -85,6 +85,8 @@ nav:
           - psp/sprints/008-phase4-sprite-primitive.md
           - psp/sprints/009-phase4-inline-vertex-path.md
           - psp/sprints/010-phase6-fill-and-texture-format.md
+          - psp/sprints/011-phase5-ge-up.md
+          - psp/sprints/012-phase5-texture-parity.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

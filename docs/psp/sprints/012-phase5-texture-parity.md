@@ -1,0 +1,175 @@
+# Sprint 012 — Texture parity: right texels, right alpha, right dither
+
+| | |
+|---|---|
+| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
+| Branch / base commit | `master` @ `8843e652` |
+| Started / closed | — / — |
+| Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
+| Tasks | 0/5 done |
+
+## 0. Handover
+
+**Situation.** `tools/pspgu` is a GE driver that replaces pspGL and supplies the 52 GL/EGL symbols raylib's GL11
+path needs. It boots, clears, transforms and draws (`gl_matrix.c`, `gl_draw.c` proven by a full-screen self-test
+sprite). Textures upload and appear, but they disagree with pspGL and nobody has yet been able to say exactly why:
+three candidate causes were measured and two were ruled out.
+
+**The three deltas, measured on the same binary and scene (all at N=1 sprite grid, `batch_check`):**
+
+| where | pspgu | pspGL | candidate |
+|---|---|---|---|
+| background | flat `(240,244,240)` | `(240,240,240)` **and** `(248,248,248)` in a pattern | dithering (task 3b) |
+| inside a sprite | the tint colour | `(0,0,0)` | texture alpha not reaching the blend |
+| one sprite pixel | `(80,4,0)` | background | wrong texel — sampling the wrong address or stride |
+
+62.4 % of the frame differs. This is not rounding.
+
+**Already true, verified — do not re-derive:**
+
+- **The upload path exists and is exercised**: `gl_texture.c` implements gen/bind/delete/image/subimage/parameters,
+  a bump VRAM arena from 816 KiB, and a 1×1 white default so `bind(0)` cannot sample an undefined address.
+- **Ruled out by measurement: the texture coordinate transform.** `sceGuTexScale(1,1)` + `sceGuTexOffset(0,0)` were
+  added because PSPRuntime and PGE both set them; the capture changed by **exactly zero pixels**. GU's default is
+  already identity. The calls stay, the hypothesis is dead.
+- **What the references do and we do not**: PSPRuntime (`texturemanager.cpp:35`/`:175`, `gpumanager.cpp:1793`) and
+  PGE (`pgeTexture.c`, `pgeFont.c:878`) **pad to a power of two, row-copy with the padded stride, swizzle the
+  texels, and call `sceGuTexMode(psm, 0, 0, 1)`** — `swizzle = 1` — with `tbw` = the padded width. Ours uploads
+  **unswizzled** with `swizzle = 0`, and computes `tbw` with a redundant second `nextPow2` call.
+- **The five bugs of sprint 011 are fixed**, including the two that looked exactly like this one: missing dcache
+  writeback before the GE reads memory, and a transposed `sceGuSetMatrix`.
+- pspGL's archive is one command away (`tools/pspgu-build.sh --restore`, verified by `tools/pspgl-build.sh --check`
+  against content hash `2ab7378e`), and the reference capture of the current scene is
+  `/tmp/s3/ref_pspgl.raw` — regenerate it if absent.
+
+**Read before acting:**
+
+1. [Phase 5 §"Reference implementations"](../phases/05-native-gu-backend.md) — the file/line index for the four
+   engines in `/home/psp/ref`. This sprint should not have to search them again.
+2. `tools/pspgu/gl_texture.c` — `applyTexture()` is the whole contract with the GE: mode, image, filter, wrap,
+   scale/offset, flush.
+3. `/home/psp/ref/PSPRuntime/PSPBasicPlatformer/src/texturemanager.cpp` — `LoadTexture` and `SwizzleFast` are the
+   recipe to match, about 60 lines of it.
+
+**First action.** Build the known-pattern test (T1) **before** changing any driver code. A 4×4 texture with four
+distinct corner colours, drawn as one 64×64 sprite at a known position, is one capture that separates wrong-texel
+from wrong-alpha from wrong-blend — which three hypothesis runs have now failed to do.
+
+**Hard rules.**
+
+- **One variable per run.** Swizzle, dither, alpha and stride are four independent changes; measuring them together
+  is how the last three hypotheses died.
+- **`sceGuTexImage`'s `tbw` is in pixels, and the data must be laid out with that stride.** A `tbw` that disagrees
+  with the buffer layout samples the wrong rows — which is exactly what `(80,4,0)` looks like.
+- **Swizzle and layout are a pair.** If the data is swizzled, `swizzle = 1`; if not, `swizzle = 0`. A mismatch
+  gives diagonal garbage, which is easy to recognise, unlike a stride mismatch.
+- **The oracle is pspGL's capture of the same scene on the same binary**, not an impression of the image.
+- `reset` before each run, never `exit`, the app must not call `sceKernelExitGame`.
+- pspGL must be restorable at any point; never leave `$PSPDEV/psp/lib/libGL.a` in a state that needs a rebuild to
+  undo.
+
+**Commands.**
+
+```sh
+export PSPDEV=/home/psp/pspdev
+export PATH=$PATH:$PSPDEV/bin
+
+cd /home/psp/raylib-psp
+./tools/pspgu-build.sh                  # build + install over libGL.a
+./tools/pspgu-build.sh --check          # confirm which driver is installed
+./tools/pspgu-build.sh --restore        # put pspGL back
+
+cd psp-tests/batch_check && make WRAP=0 # WRAP=1 needs the immediate-mode symbols (task 12)
+( printf './batch_check.prx\n'; sleep 12 ) | pspsh
+pspsh -e "scrshot host0:/gu.raw"
+```
+
+**Do not touch.** `gl_matrix.c` and `gl_draw.c` (proven by the self-test), the batcher in `src/`, anything under
+`docs/` outside this sprint's record, and `psp-tests/bunnymark` (that is sprint 013's).
+
+**Done means** §8: `batch_check` byte-identical to pspGL, with the pattern test proving texel-by-texel sampling.
+
+## 1. Objective
+
+`psp-tests/batch_check` rendered by `tools/pspgu` is **byte-identical** to the same binary rendered by pspGL, and a
+4×4 known-pattern texture drawn 1:1 reproduces its four corner colours exactly — which fixes, in one sprint, the
+texel, alpha and dither deltas that are currently 62 % of the frame.
+
+## 2. Why now
+
+Everything else in phase 5 is downstream of this: the exit criterion is byte-identical captures, the counter harness
+needs a working 2D path, and the ceiling cannot be compared while the picture is wrong. It is also the point where
+the references become directly useful — both engines have the exact recipe, and we have already ruled out the one
+part of it we guessed at.
+
+## 3. Scope
+
+**In:** `gl_texture.c` (layout, swizzle, stride, alpha), dither in `gl_state.c`/`egl.c`, and one new test program
+for the pattern.
+
+**Out:** mipmaps (raylib uploads level 0), texture eviction and residency (phase 6), 4-bit glyph atlases
+(phase 6 memory decision), the `--wrap` harness and immediate mode (sprint 013), ceiling measurement (sprint 014).
+
+## 4. Preconditions
+
+- [ ] `pspsh` answers, USB device `054c:01c9`; `reset` per run
+- [ ] pspgu builds and installs; `./tools/pspgu-build.sh --check` says so
+- [ ] pspGL restorable in one command, and its capture of the current `batch_check` exists
+- [ ] `batch_check` builds with `WRAP=0` (task 12 owns `WRAP=1`)
+- [ ] The three deltas above reproduce: 62.4 % of pixels, background `(240,244,240)`, `(80,4,0)` at (130,60)
+
+## 5. Tasks
+
+| ID | task | status | verification | evidence |
+|---|---|---|---|---|
+| T1 | **the pattern test**: a new `psp-tests/texture_pattern` that builds a 4×4 image in code (four distinct corner colours, plus one fully transparent quadrant), uploads it, and draws it as a single 64×64 sprite at a known position, twice, then stops | `todo` | the four quadrants are the four colours, in the right corners, and the transparent quadrant shows the background → expected: any other result names the bug immediately | — |
+| T2 | **layout and stride**: `tbw` = padded power of two, rows written at that stride, the redundant second `nextPow2` removed, and a non-power-of-two texture (e.g. 33×17) drawn to prove the padding path | `todo` | the 33×17 texture samples correctly; `tbw` and the buffer stride agree by construction, asserted in code | — |
+| T3 | **swizzle**: adopt the references' recipe — swizzle the texels on upload (`SwizzleFast` equivalent) and pass `swizzle = 1` to `sceGuTexMode`. Keep the unswizzled path behind a switch so the two can be A/B'd | `todo` | swizzled vs unswizzled captures are **identical to each other** (same texels) — if they are not, one of the two layouts is wrong, which is the point | — |
+| T4 | **alpha and blend**: confirm the LA expansion puts the alpha in the right byte and that `GU_TFX_MODULATE` × `GU_SRC_ALPHA/ONE_MINUS_SRC_ALPHA` gives pspGL's result. The `(0,32,192)`-vs-`(0,0,0)` delta is the test | `todo` | inside a sprite, pspgu matches pspGL pixel for pixel; transparent texture areas show the background | — |
+| T5 | **dither**: make the background match pspGL's pattern (`GU_DITHER` / `GU_FAST_CLEAR_BIT`), or measure that pspGL's pattern comes from something else and record it | `todo` | the background region matches pspGL exactly, or the difference is explained with a capture of both | — |
+
+Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
+
+### Task log (append-only)
+
+- _(not started)_
+
+## 6. Budgets
+
+| budget | limit | measured | tag |
+|---|---|---|---|
+| differing pixels, `batch_check` | **0** | 81,470 (62.4 %) at start | |
+| corner colours in the pattern test | 4 of 4 correct | | |
+| texture VRAM for a 32×32 | 4 KiB at 8888 | | |
+| `src/` changes | 0 — the driver only | | |
+| per-frame allocation | 0 | | |
+
+## 7. Measurements
+
+| run | driver | scene | differing pixels vs pspGL | notes |
+|---|---|---|---|---|
+| control | pspGL | `batch_check` | 0 (it *is* the reference) | |
+| change | pspgu | `batch_check` | 81,470 (62.4 %) | flat background, tint instead of alpha, `(80,4,0)` |
+| change | pspgu | `texture_pattern` | | T1 |
+| change | pspgu | pattern, unswizzled vs swizzled | | T3 |
+
+## 8. Exit criteria
+
+- [ ] `batch_check` byte-identical to pspGL (md5 equality, `cmp -l` → 0)
+- [ ] the pattern test reproduces all four corner colours and the transparent quadrant
+- [ ] a non-power-of-two texture samples correctly
+- [ ] swizzled and unswizzled uploads are pixel-identical to each other
+- [ ] the background dither matches pspGL or the difference is explained with evidence
+- [ ] findings written back into the phase page and `memory-map.md` §9
+
+## 9. Result
+
+(To fill in on close. The valuable outcome is not "it matches" but *which* of the three deltas each change fixed:
+if swizzling alone fixes all 62 %, the layout path was never the problem and the stride was; if dither fixes the
+background and nothing else, the other two deltas are separate bugs in the alpha path and should be split out.)
+
+## 10. Follow-ups
+
+- Mipmaps and filtering policy if a sample needs them (raylib asks for `GL_LINEAR` mostly).
+- 4-bit glyph atlases (`GU_PSM_T4` + palette, as PGE and PSPRuntime do) — phase 6 memory work.
+- Texture residency and eviction: the arena is bump-only, so `glDeleteTextures` leaks by design (phase 6).
