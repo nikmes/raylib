@@ -47,6 +47,47 @@ Before this, at `-O0`, 1,000 sprites was already 30 fps in the batched arm. **Tr
 history**: they are still the record of what batching and the pspGL list size bought, but they are not what the code
 does today.
 
+## Scaling past the ceiling, and what "maximum at 60 fps" means
+
+Batched sprite arm at `-O2`, 32×32 RGBA8888 blended sprites, `TARGET_FPS=0`, two runs per point (agreement
+≤0.01 ms):
+
+| sprites | frame | periods | work | texels/frame |
+|---|---|---|---|---|
+| 100 | 16.683 | 1 | 1.69 ms | 0.10 M |
+| 1,000 | 16.683 | 1 | 8.06 ms | 1.02 M |
+| 1,500 | 16.684 | 1 | 11.50 ms | 1.54 M |
+| 1,700 | 33.367 | 2 | — | 1.74 M |
+| 2,000 | 33.367 | 2 | 14.97 ms | 2.05 M |
+| 2,500 | 33.367 | 2 | 18.84 ms | 2.56 M |
+| 4,000 | 50.050 | 3 | 29.20 ms | 4.10 M |
+| 5,000 | 66.733 | 4 | 36.41 ms | 5.12 M |
+| 8,000 | 83.417 | 5 | 57.62 ms | 8.19 M |
+
+**The CPU side is exactly linear: `work = 0.98 ms + 7.08 µs × sprites`.** That fit is within 1.1 % at all eight
+points, so it is a budget, not a trend. The frame is then quantised into 16.683 ms display periods, and
+`ceil((work + ~5 ms)/16.683)` predicts the period count at every point up to 4,000 — the model's predictions of
+1,511 sprites at 60 fps matches the measured bracket (1,500 passes, 1,700 fails) to within 1 %.
+
+| question | answer | how |
+|---|---|---|
+| max sprites at 60 fps **today** | **~1,500** (bracket 1,500–1,700) | bisection + the model above |
+| what a 60 fps frame costs per sprite | ≤11.7 ms of work, i.e. 7.08 µs is what we pay and ~11.7 ms is all there is | `16.683 − 5 ms fixed` |
+| to hold 3,000 sprites | **3.57 µs/sprite** | model |
+| to hold 5,000 sprites | **2.14 µs/sprite** | model |
+| where the fill ceiling is | **~4,000–5,000 sprites (4–5 M blended texels/frame)** | at 5,000 and 8,000 the frame is one period worse than the CPU model predicts, i.e. pixels have started to bind |
+
+Two independent limits therefore meet near **5,000**: the CPU needs 2.14 µs/sprite to get there, and the pixel
+budget runs out about the same place. That is also where `PSPRuntime`'s ~5,000-at-60-fps sits, which makes its
+number plausible rather than surprising — it is not a better API, it is a cheaper per-sprite CPU path that lets the
+console reach its own fill limit.
+
+**So the gap between 1,500 and 5,000 is entirely per-sprite CPU work in raylib's 2D path.** At 222 MHz, 7.08 µs is
+~1,570 cycles for what is ~30 float operations, four texture-coordinate stores, four vertex pushes and the quad
+staging copy — which points at call overhead, not arithmetic: `rlVertex2f`/`rlTexCoord2f` are real calls into a
+*different translation unit* (`platforms/rcore_psp.c`) with six float arguments passed on the stack under the o32
+ABI, so nothing inlines and each sprite pays for fifteen to twenty of them `[derived: 1,570 cycles/sprite]`.
+
 ## Adopted library (current reference)
 
 Since sprint 006 the project ships **pspGL from `TheMrIron2/pspgl` @ `ae9a668`, `PSPGL_DLIST_SIZE_WORDS=8192`**,
