@@ -571,6 +571,22 @@ Font LoadFontFromMemory(const char *fileType, const unsigned char *fileData, int
         font.glyphPadding = FONT_TTF_DEFAULT_CHARS_PADDING;
 
         Image imAtlas = GenImageFontAtlas(font.glyphs, &font.recs, font.glyphCount, font.baseSize, font.glyphPadding, 0);
+
+#if defined(PLATFORM_PSP)
+        // Sprint 019 T5: the GE samples at most 512x512, and pspgu silently skips the
+        // swizzled upload above that width. A font that cannot fit must fail here, with
+        // its glyph data released, rather than produce an uninitialised texture.
+        if ((imAtlas.width > 512) || (imAtlas.height > 512))
+        {
+            TRACELOG(LOG_ERROR, "FONT: atlas %ix%i exceeds the PSP 512x512 limit; use fewer glyphs or a smaller size",
+                     imAtlas.width, imAtlas.height);
+            UnloadImage(imAtlas);
+            UnloadFontData(font.glyphs, font.glyphCount);
+            RL_FREE(font.recs);
+            return GetFontDefault();
+        }
+#endif
+
         font.texture = LoadTextureFromImage(imAtlas);
 
         // Update glyphs[i].image to use alpha, required to be used on ImageDrawText()
@@ -1223,6 +1239,130 @@ void DrawText(const char *text, int posX, int posY, int fontSize, Color color)
     }
 }
 
+// Sprint 019 T3/T4: one run per DrawTextEx/DrawTextCodepoints call, with the per-glyph
+// source UVs and base-size metrics cached. The cache is invalidated by every field that
+// changes the mapping, including a font reload.
+typedef struct {
+    float u0, v0, u1, v1;       // Normalized source rectangle
+    float offX, offY;           // Glyph offset at font.baseSize
+    float recW, recH;           // Source width/height without padding
+    float advance;              // advanceX, or rec.width when advanceX == 0
+} RlTextGlyph;
+
+static RlTextGlyph *textGlyphCache = NULL;
+static int textGlyphCacheCount = 0;
+static const GlyphInfo *textGlyphCacheGlyphs = NULL;
+static const Rectangle *textGlyphCacheRecs = NULL;
+static int textGlyphCacheBaseSize = 0;
+static int textGlyphCachePadding = 0;
+static unsigned int textGlyphCacheTexture = 0;
+static int textGlyphCacheTexW = 0;
+static int textGlyphCacheTexH = 0;
+
+static void textGlyphCacheEnsure(Font font)
+{
+    if ((textGlyphCacheGlyphs == font.glyphs) && (textGlyphCacheRecs == font.recs) &&
+        (textGlyphCacheCount == font.glyphCount) && (textGlyphCacheBaseSize == font.baseSize) &&
+        (textGlyphCachePadding == font.glyphPadding) && (textGlyphCacheTexture == font.texture.id) &&
+        (textGlyphCacheTexW == font.texture.width) && (textGlyphCacheTexH == font.texture.height))
+    {
+        return;
+    }
+
+    if (textGlyphCache != NULL)
+    {
+        RL_FREE(textGlyphCache);
+        textGlyphCache = NULL;
+    }
+
+    textGlyphCacheCount = 0;
+    textGlyphCacheGlyphs = font.glyphs;
+    textGlyphCacheRecs = font.recs;
+    textGlyphCacheCount = font.glyphCount;
+    textGlyphCacheBaseSize = font.baseSize;
+    textGlyphCachePadding = font.glyphPadding;
+    textGlyphCacheTexture = font.texture.id;
+    textGlyphCacheTexW = font.texture.width;
+    textGlyphCacheTexH = font.texture.height;
+
+    if ((font.glyphCount <= 0) || (font.texture.width <= 0) || (font.texture.height <= 0))
+    {
+        textGlyphCacheCount = 0;
+        return;
+    }
+
+    textGlyphCache = (RlTextGlyph *)RL_MALLOC((size_t)font.glyphCount*sizeof(RlTextGlyph));
+    if (textGlyphCache == NULL)
+    {
+        textGlyphCacheCount = 0;
+        return;
+    }
+
+    float pad = (float)font.glyphPadding;
+    float texW = (float)font.texture.width;
+    float texH = (float)font.texture.height;
+
+    for (int i = 0; i < font.glyphCount; i++)
+    {
+        Rectangle rec = font.recs[i];
+
+        textGlyphCache[i].u0 = (rec.x - pad)/texW;
+        textGlyphCache[i].v0 = (rec.y - pad)/texH;
+        textGlyphCache[i].u1 = (rec.x + rec.width + pad)/texW;
+        textGlyphCache[i].v1 = (rec.y + rec.height + pad)/texH;
+        textGlyphCache[i].offX = font.glyphs[i].offsetX;
+        textGlyphCache[i].offY = font.glyphs[i].offsetY;
+        textGlyphCache[i].recW = rec.width;
+        textGlyphCache[i].recH = rec.height;
+        textGlyphCache[i].advance = (font.glyphs[i].advanceX != 0)? (float)font.glyphs[i].advanceX : rec.width;
+    }
+}
+
+// Emit one glyph quad in DrawTexturePro's corner order (TL, BL, BR, TR). The arithmetic
+// order matches the old DrawTexturePro path so the pixels do not move.
+static void drawGlyphQuad(Font font, int index, Vector2 position, float fontSize, Color tint)
+{
+    float scale = fontSize/(float)font.baseSize;
+    float pad = (float)font.glyphPadding;
+    float x, y, w, h, u0, v0, u1, v1;
+
+    if ((textGlyphCache != NULL) && (index >= 0) && (index < textGlyphCacheCount))
+    {
+        RlTextGlyph *g = &textGlyphCache[index];
+
+        x = position.x + g->offX*scale - pad*scale;
+        y = position.y + g->offY*scale - pad*scale;
+        w = (g->recW + 2.0f*pad)*scale;
+        h = (g->recH + 2.0f*pad)*scale;
+        u0 = g->u0;
+        v0 = g->v0;
+        u1 = g->u1;
+        v1 = g->v1;
+    }
+    else
+    {
+        Rectangle rec = font.recs[index];
+        float texW = (float)font.texture.width;
+        float texH = (float)font.texture.height;
+
+        x = position.x + font.glyphs[index].offsetX*scale - pad*scale;
+        y = position.y + font.glyphs[index].offsetY*scale - pad*scale;
+        w = (rec.width + 2.0f*pad)*scale;
+        h = (rec.height + 2.0f*pad)*scale;
+        u0 = (rec.x - pad)/texW;
+        v0 = (rec.y - pad)/texH;
+        u1 = (rec.x + rec.width + pad)/texW;
+        v1 = (rec.y + rec.height + pad)/texH;
+    }
+
+    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+
+    rlTexCoord2f(u0, v0); rlVertex2f(x, y);
+    rlTexCoord2f(u0, v1); rlVertex2f(x, y + h);
+    rlTexCoord2f(u1, v1); rlVertex2f(x + w, y + h);
+    rlTexCoord2f(u1, v0); rlVertex2f(x + w, y);
+}
+
 // Draw text using Font
 // NOTE: chars spacing is NOT proportional to fontSize
 void DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, float spacing, Color tint)
@@ -1235,6 +1375,11 @@ void DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, f
     float textOffsetX = 0.0f;       // Offset X to next character to draw
 
     float scaleFactor = fontSize/font.baseSize;         // Character quad scaling factor
+
+    textGlyphCacheEnsure(font);
+
+    rlSetTexture(font.texture.id);
+    rlBegin(RL_QUADS);
 
     for (int i = 0; i < size;)
     {
@@ -1253,15 +1398,22 @@ void DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, f
         {
             if ((codepoint != ' ') && (codepoint != '\t'))
             {
-                DrawTextCodepoint(font, codepoint, (Vector2){ position.x + textOffsetX, position.y + textOffsetY }, fontSize, tint);
+                drawGlyphQuad(font, index,
+                              (Vector2){ position.x + textOffsetX, position.y + textOffsetY },
+                              fontSize, tint);
             }
 
-            if (font.glyphs[index].advanceX == 0) textOffsetX += (font.recs[index].width*scaleFactor + spacing);
+            if ((textGlyphCache != NULL) && (index >= 0) && (index < textGlyphCacheCount))
+                textOffsetX += (textGlyphCache[index].advance*scaleFactor + spacing);
+            else if (font.glyphs[index].advanceX == 0) textOffsetX += (font.recs[index].width*scaleFactor + spacing);
             else textOffsetX += ((float)font.glyphs[index].advanceX*scaleFactor + spacing);
         }
 
         i += codepointByteCount;   // Move text bytes counter to next codepoint
     }
+
+    rlEnd();
+    rlSetTexture(0);
 }
 
 // Draw text using Font and pro parameters (rotation)
@@ -1281,34 +1433,33 @@ void DrawTextPro(Font font, const char *text, Vector2 position, Vector2 origin, 
 // Draw one character (codepoint)
 void DrawTextCodepoint(Font font, int codepoint, Vector2 position, float fontSize, Color tint)
 {
+    if ((font.texture.id == 0) || (font.texture.width <= 0) || (font.texture.height <= 0)) return;
+
     // Character index position in sprite font
     // NOTE: In case a codepoint is not available in the font, index returned points to '?'
     int index = GetGlyphIndex(font, codepoint);
-    float scaleFactor = fontSize/font.baseSize;     // Character quad scaling factor
 
-    // Character destination rectangle on screen
-    // NOTE: Considering glyph padding on drawing
-    Rectangle dstRec = { position.x + font.glyphs[index].offsetX*scaleFactor - (float)font.glyphPadding*scaleFactor,
-                      position.y + font.glyphs[index].offsetY*scaleFactor - (float)font.glyphPadding*scaleFactor,
-                      (font.recs[index].width + 2.0f*font.glyphPadding)*scaleFactor,
-                      (font.recs[index].height + 2.0f*font.glyphPadding)*scaleFactor };
-
-    // Character source rectangle from font texture atlas
-    // NOTE: Considering glyphs padding when drawing, it could be required for outline/glow shader effects
-    Rectangle srcRec = { font.recs[index].x - (float)font.glyphPadding, font.recs[index].y - (float)font.glyphPadding,
-                         font.recs[index].width + 2.0f*font.glyphPadding, font.recs[index].height + 2.0f*font.glyphPadding };
-
-    // Draw the character texture on the screen
-    DrawTexturePro(font.texture, srcRec, dstRec, (Vector2){ 0, 0 }, 0.0f, tint);
+    textGlyphCacheEnsure(font);
+    rlSetTexture(font.texture.id);
+    rlBegin(RL_QUADS);
+        drawGlyphQuad(font, index, position, fontSize, tint);
+    rlEnd();
+    rlSetTexture(0);
 }
 
 // Draw multiple characters (codepoints)
 void DrawTextCodepoints(Font font, const int *codepoints, int codepointCount, Vector2 position, float fontSize, float spacing, Color tint)
 {
+    if ((font.texture.id == 0) || (font.texture.width <= 0) || (font.texture.height <= 0)) return;
+
     float textOffsetY = 0;          // Offset between lines (on linebreak '\n')
     float textOffsetX = 0.0f;       // Offset X to next character to draw
 
     float scaleFactor = fontSize/font.baseSize;         // Character quad scaling factor
+
+    textGlyphCacheEnsure(font);
+    rlSetTexture(font.texture.id);
+    rlBegin(RL_QUADS);
 
     for (int i = 0; i < codepointCount; i++)
     {
@@ -1324,13 +1475,20 @@ void DrawTextCodepoints(Font font, const int *codepoints, int codepointCount, Ve
         {
             if ((codepoints[i] != ' ') && (codepoints[i] != '\t'))
             {
-                DrawTextCodepoint(font, codepoints[i], (Vector2){ position.x + textOffsetX, position.y + textOffsetY }, fontSize, tint);
+                drawGlyphQuad(font, index,
+                              (Vector2){ position.x + textOffsetX, position.y + textOffsetY },
+                              fontSize, tint);
             }
 
-            if (font.glyphs[index].advanceX == 0) textOffsetX += (font.recs[index].width*scaleFactor + spacing);
+            if ((textGlyphCache != NULL) && (index >= 0) && (index < textGlyphCacheCount))
+                textOffsetX += (textGlyphCache[index].advance*scaleFactor + spacing);
+            else if (font.glyphs[index].advanceX == 0) textOffsetX += (font.recs[index].width*scaleFactor + spacing);
             else textOffsetX += ((float)font.glyphs[index].advanceX*scaleFactor + spacing);
         }
     }
+
+    rlEnd();
+    rlSetTexture(0);
 }
 
 // Set vertical line spacing when drawing with line-breaks
@@ -1470,18 +1628,74 @@ Vector2 MeasureTextCodepoints(Font font, const int *codepoints, int length, floa
     return textSize;
 }
 
-// Get index position for a unicode character on font
-// NOTE: If codepoint is not found in the font it fallbacks to '?'
-int GetGlyphIndex(Font font, int codepoint)
+// Sprint 019 T2: the draw path looks a glyph up per character, and the original
+// unordered-charset scan is O(glyphCount). Most fonts are sequential ASCII/Latin-1;
+// the rest get a direct-mapped codepoint->index cache. A miss still runs the original
+// scan, so the returned index (including the '?' fallback) is unchanged.
+typedef struct {
+    const GlyphInfo *glyphs;
+    const Rectangle *recs;
+    int glyphCount;
+    int baseSize;
+    unsigned int textureId;
+    int sequential;
+    int firstValue;
+    int fallbackIndex;
+    int mapCodepoint[256];
+    int mapIndex[256];
+} RlGlyphIndexCache;
+
+static RlGlyphIndexCache glyphIndexCache = { 0 };
+
+static void glyphIndexCacheBuild(Font font)
 {
+    glyphIndexCache.glyphs = font.glyphs;
+    glyphIndexCache.recs = font.recs;
+    glyphIndexCache.glyphCount = font.glyphCount;
+    glyphIndexCache.baseSize = font.baseSize;
+    glyphIndexCache.textureId = font.texture.id;
+
+    glyphIndexCache.sequential = 1;
+    glyphIndexCache.firstValue = font.glyphs[0].value;
+    glyphIndexCache.fallbackIndex = 0;
+
+    for (int i = 0; i < font.glyphCount; i++)
+    {
+        if (font.glyphs[i].value == 63) glyphIndexCache.fallbackIndex = i;   // last '?' wins, as before
+        if (font.glyphs[i].value != (glyphIndexCache.firstValue + i)) glyphIndexCache.sequential = 0;
+    }
+
+    for (int i = 0; i < 256; i++)
+    {
+        glyphIndexCache.mapCodepoint[i] = -1;
+        glyphIndexCache.mapIndex[i] = 0;
+    }
+}
+
+static int getGlyphIndexFast(Font font, int codepoint)
+{
+    if (!IsFontValid(font)) return 0;
+
+    if ((glyphIndexCache.glyphs != font.glyphs) || (glyphIndexCache.recs != font.recs) ||
+        (glyphIndexCache.glyphCount != font.glyphCount) || (glyphIndexCache.baseSize != font.baseSize) ||
+        (glyphIndexCache.textureId != font.texture.id))
+    {
+        glyphIndexCacheBuild(font);
+    }
+
+    if (glyphIndexCache.sequential)
+    {
+        int index = codepoint - glyphIndexCache.firstValue;
+        if ((index >= 0) && (index < font.glyphCount)) return index;
+        return glyphIndexCache.fallbackIndex;
+    }
+
+    unsigned int slot = (((unsigned int)codepoint)*2654435761u) >> 24;
+    if (glyphIndexCache.mapCodepoint[slot] == codepoint) return glyphIndexCache.mapIndex[slot];
+
     int index = 0;
-    if (!IsFontValid(font)) return index;
+    int fallbackIndex = 0;
 
-#define SUPPORT_UNORDERED_CHARSET
-#if defined(SUPPORT_UNORDERED_CHARSET)
-    int fallbackIndex = 0;      // Get index of fallback glyph '?'
-
-    // Look for character index in the unordered charset
     for (int i = 0; i < font.glyphCount; i++)
     {
         if (font.glyphs[i].value == 63) fallbackIndex = i;
@@ -1494,11 +1708,18 @@ int GetGlyphIndex(Font font, int codepoint)
     }
 
     if ((index == 0) && (font.glyphs[0].value != codepoint)) index = fallbackIndex;
-#else
-    index = codepoint - 32;
-#endif
+
+    glyphIndexCache.mapCodepoint[slot] = codepoint;
+    glyphIndexCache.mapIndex[slot] = index;
 
     return index;
+}
+
+// Get index position for a unicode character on font
+// NOTE: If codepoint is not found in the font it fallbacks to '?'
+int GetGlyphIndex(Font font, int codepoint)
+{
+    return getGlyphIndexFast(font, codepoint);
 }
 
 // Get glyph font info data for a codepoint (unicode character)

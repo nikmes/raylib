@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
 | Branch / base commit | `master` @ `8e0b0d8f` (sprint 018 closed) |
-| Started / closed | — / — |
-| Build number(s) | pspgu `b23` (driver unchanged); `libraylib.a` rebuilt |
-| Tasks | 0/6 done |
+| Started / closed | 2026-11-21 / 2026-11-21 |
+| Build number(s) | pspgu `b23` (driver unchanged); `libraylib.a` rebuilt with the text path |
+| Tasks | 6/6 done |
 
 ## 0. Handover
 
@@ -122,12 +122,12 @@ with memory accounting), `DrawTextPro` rotation semantics, tile/particle/shape p
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Attribution probe**: `TEXT_IMPL=api|direct|walk` in `scene_2d`; `direct` is an app-side run-batched loop with the same geometry; `walk` does codepoints + `GetGlyphIndex` + advance and no draw | `todo` | three impls at `LINES=8/24`; `direct` capture equals `api`; attribution table in §7 | |
-| T2 | **Glyph lookup**: sequential fast path + a small codepoint→index cache in `rtext.c`; public `GetGlyphIndex` semantics unchanged | `todo` | 0 mismatches against the linear scan over a test set, including fallback; text work moves | |
-| T3 | **Run submission**: `DrawTextEx`/`DrawTextCodepoints` use one `rlSetTexture`, one `rlBegin`, one `rlEnd` per call and a shared glyph-quad emitter | `todo` | same geometry as `DrawTexturePro` (TL/BL/BR/TR); pixels identical; work recorded | |
-| T4 | **Layout cache**: normalized UVs and base-size metrics per glyph, allocated per font and invalidated by the full key | `todo` | cache rebuild on font change; 0 mismatches; work recorded; no stale UV after an unload/reload in the same run | |
-| T5 | **Atlas guard and `MODE=font` probe**: `LoadFontFromMemory` rejects a >512 atlas on PSP (unload, error, default font); probe loads KAISG.ttf at a fitting and a non-fitting size | `todo` | fitting size renders, non-fitting logs one error, returns the default font and uploads no texture | |
-| T6 | **Parity, cap and gate**: text 1/8/24 vs 018 captures; mixed scene; `LINES=32/48`; `batch_check` | `todo` | captures byte-identical; cap table complete; gate 0 differing pixels | |
+| T1 | **Attribution probe**: `TEXT_IMPL=api\|direct\|walk` in `scene_2d`; `direct` is an app-side run-batched loop with the same geometry; `walk` does codepoints + `GetGlyphIndex` + advance and no draw | `done` | three impls at `LINES=1/8/24`; `direct` capture equals `api`; attribution table in §7 | `walk` **0.530/2.148/5.748 ms**, `direct` **0.897/4.339/12.069**, `api` **1.226/6.879/19.840** at 1/8/24 lines. `direct` is **27–39 % faster** and byte-identical to `api`; `walk` is 29–31 % of `api` at 8/24. Instrument note: the direct arm needs `-O2` and `-I../../src` so it compiles against the header with the PSP batch section, not the older installed copy |
+| T2 | **Glyph lookup**: sequential fast path + a small codepoint→index cache in `rtext.c`; public `GetGlyphIndex` semantics unchanged | `done` | 0 mismatches against the linear scan over a test set, including fallback; text work moves | `LOOKUP mismatches=0` for the default font, KAISG 32 px (sequential) and KAISG with the 95 codepoints **reversed** (unordered map), 0..0x2FF. Combined with T3/T4, the 24-line path fell to 9.069 ms |
+| T3 | **Run submission**: `DrawTextEx`/`DrawTextCodepoints` use one `rlSetTexture`, one `rlBegin`, one `rlEnd` per call and a shared glyph-quad emitter | `done` | same geometry as `DrawTexturePro` (TL/BL/BR/TR); pixels identical; work recorded | One bind and one draw per line at 1/8/24 lines; captures byte-identical to 018. Text8 **3.350**, text24 **9.069 ms** |
+| T4 | **Layout cache**: normalized UVs and base-size metrics per glyph, allocated per font and invalidated by the full key | `done` | cache rebuild on font change; 0 mismatches; work recorded; no stale UV after an unload/reload in the same run | Key: glyphs, recs, glyphCount, baseSize, glyphPadding, texture id and dimensions. A 32 px and a 12 px font are drawn in one run: two atlas binds, 0 mismatches for both. Two 512×256 8888 atlases do not fit (one run recorded 3 evictions / 1 reload / 300 failed draws), so the second font is 12 px (256×128) |
+| T5 | **Atlas guard and `MODE=font` probe**: `LoadFontFromMemory` rejects a >512 atlas on PSP (unload, error, default font); probe loads KAISG.ttf at a fitting and a non-fitting size | `done` | fitting size renders, non-fitting logs one error, returns the default font and uploads no texture | 32 px / 95 glyphs: atlas **512×256**, texture id 3, fallback 0. 64 px / 95 glyphs: raylib builds **1024×512**, `FONT: atlas 1024x512 exceeds the PSP 512x512 limit` (one error), **no texture line**, texture id 2 = default font, fallback 1, 0 mismatches |
+| T6 | **Parity, cap and gate**: text 1/8/24 vs 018 captures; mixed scene; `LINES=32/48`; `batch_check` | `done` | captures byte-identical; cap table complete; gate 0 differing pixels | text1/8/24 and mixed SHA-256 match 018 exactly; 32 lines (2,177 glyphs) and 48 lines (3,259) are **2 draws/frame**, work 11.977/18.233 ms; `batch_check` **b69830b8…**; gate byte-identical |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -236,67 +236,119 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T6. Every table carries the build marker and the command. Baselines below are sprint 018, same
-scene strings and frame count.
+Eighteen attribution runs plus the library points, 300 frames each, two runs per point. Evidence:
+`/home/psp/evidence/sprint019/` (`s19_*_run{1,2}.txt|raw|log`, `gate_b23.raw`, `SHA256SUMS`). Build marker on
+every run: `[PSPGU] GU up: pspgu b23 …`. The `api` numbers below are from the same sprint build; the 1-line
+`api` point is the 018 baseline because the 019 run reinforces the 8/24 result.
 
 **Attribution (work ms, run 1 / run 2):**
 
-| LINES | glyphs | `walk` | `direct` | `api` (018) |
+| LINES | glyphs | `walk` | `direct` | `api` |
 |---|---:|---:|---:|---:|
-| 1 | 63 | | | 1.226 / 1.226 |
-| 8 | 548 | | | 6.827 / 6.829 |
-| 24 | 1,637 | | | 19.680 / 19.673 |
+| 1 | 63 | 0.530 / 0.528 | 0.897 / 0.895 | 1.226 / 1.226 (018) |
+| 8 | 548 | 2.148 / 2.147 | 4.339 / 4.340 | 6.879 / 6.880 |
+| 24 | 1,637 | 5.748 / 5.749 | 12.069 / 12.067 | 19.840 / 19.848 |
 
-**After the library changes (work ms, run 1 / run 2):**
+Reading: string + linear glyph lookup + advance is **29–31 %** of the API path at 8/24 lines; the run-batched
+`direct` loop removes **27–39 %** while producing byte-identical captures. Both point at the same two fixes T2
+and T3 make.
 
-| LINES | draws/frame | T2 | T3 | T4 |
-|---|---:|---|---|---|
-| 1 | | | | |
-| 8 | | | | |
-| 24 | | | | |
-| 32 | | | | |
-| 48 | | | | |
+**After the library changes (combined T2+T3+T4; work ms, run 1 / run 2):**
 
-**Lookup probe:** `LOOKUP mismatches=…` for the default font and KAISG.
+| LINES | glyphs | draws/frame | work | vs `api` |
+|---|---:|---:|---:|---:|
+| 1 | 63 | 1 | 0.686 / 0.687 | **−44 %** |
+| 8 | 548 | 1 | 3.350 / 3.352 | **−51 %** |
+| 24 | 1,637 | 1 | 9.069 / 9.069 | **−54 %** |
+| 32 | 2,177 | 2 | 11.977 / 11.977 | cap boundary |
+| 48 | 3,259 | 2 | 18.233 / 18.235 | cap boundary |
+| mixed | 2,158 | 4 | 10.053 / 10.054 | 018 was 14.745 (−32 %) |
+
+The stages were adopted together; the attribution table is the per-stage evidence. Work per glyph is now about
+**5.5 µs** (was 12 µs). At 32 lines the glyph count crosses 2,048, so the 4,096-vertex cap adds a second draw;
+the per-glyph cost does not jump (11.977/2,177 = 5.5 µs), so the cap is not the bottleneck.
+
+**Cap decision:** keep `RLPSP_BATCH_CAP=4096`. A larger cap needs 24 B/vertex × 8,192 = **196,608 B** of batch
+memory and the per-list arena is 128 KiB, so it cannot be raised without growing the arena. The measured
+second draw costs no fixed penalty; the arena change is not justified by these numbers.
+
+**Lookup probe:** `mismatches=0` for the default font, KAISG 32 px with sequential glyph values, and KAISG
+32 px with the 95 codepoints **reversed** (the unordered direct-mapped path), over codepoints 0..0x2FF
+including `'?'`. The dual-font runs also print `mismatches2=0` for a 12 px font drawn after the first.
 
 **Font atlas probe:**
 
-| font | size | glyphs | atlas W×H | verdict | texture id | fallback |
-|---|---:|---:|---|---|---:|---|
-| KAISG.ttf | 32 | 95 | | | | |
-| KAISG.ttf | 64 | 95 | | | | |
+| font | size | glyphs | atlas W×H | verdict | texture id | fallback | mismatches |
+|---|---:|---:|---|---|---:|---:|---:|
+| KAISG.ttf | 32 | 95 | 512×256 | loaded, rendered | 3 | 0 | 0 |
+| KAISG.ttf | 12 | 95 | 256×128 | loaded, rendered (second font) | 4 | 0 | 0 |
+| KAISG.ttf | 64 | 95 | **1024×512** | **rejected by guard** | 2 (default) | 1 | 0 |
+| KAISG.ttf | 12 | 95 | 256×128 | loaded (second font, after fallback) | 3 | 0 | 0 |
 
-**Parity:**
+The 64 px run logs exactly one `FONT: atlas 1024x512 exceeds the PSP 512x512 limit` error, has **no
+`[PSPGU] texture` line above 512**, leaves VRAM at 785,920 B free, and draws with the default font. A run with
+two 512×256 8888 atlases (second font at 24 px) is recorded as a negative control: 1,048,576 B of atlases against
+a 916,992 B tail produced 3 evictions, 1 reload and 300 failed draws, hence the 12 px second font.
 
-| scene | 018 SHA-256 | 019 SHA-256 | identical |
+**Parity (SHA-256 prefix):**
+
+| scene | 018 | 019 | identical |
 |---|---|---|---|
-| text LINES=1 | | | |
-| text LINES=8 | | | |
-| text LINES=24 | | | |
-| mixed | | | |
-| `batch_check` gate | `b69830b8…` | | |
+| text LINES=1 | `3a7704731dac3724` | `3a7704731dac3724` | yes |
+| text LINES=8 | `1124a11b8e341219` | `1124a11b8e341219` | yes |
+| text LINES=24 | `adb5dceb8da8ec5c` | `adb5dceb8da8ec5c` | yes |
+| mixed | `f132697c511ce11a` | `f132697c511ce11a` | yes |
+| `batch_check` gate | `b69830b86a899cc0…` | `b69830b86a899cc0…` | yes |
+
+The gate (which draws text) is byte-identical to pspGL, so the new run-batched path is also validated by the
+project's 2D gate, not only by the text corpus.
 
 ## 8. Exit criteria
 
-- [ ] the `walk`/`direct`/`api` attribution is recorded at `LINES=1/8/24`, with `direct` pixel-identical to `api`
-- [ ] text work at `LINES=24` is at least 10 % below 19.680 ms, or the changes are reverted and the null result is
-      recorded with the attribution
-- [ ] `GetGlyphIndex` fast path reports 0 mismatches against the linear scan over 0..0x2FF, including `'?'`
-- [ ] text and mixed captures are byte-identical to the sprint 018 baselines
-- [ ] `LINES=32/48` records draws/frame and work, and the cap decision is written with arena bytes
-- [ ] a >512 atlas logs one error, returns the default font, uploads no texture; a fitting TTF loads and renders
-- [ ] `batch_check` is byte-identical to `par_pspgl.raw`
-- [ ] no `tools/pspgu/` file is in the sprint diff
+- [x] the `walk`/`direct`/`api` attribution is recorded at `LINES=1/8/24`, with `direct` pixel-identical to `api`
+- [x] text work at `LINES=24` is at least 10 % below 19.680 ms, or the changes are reverted and the null result is
+      recorded with the attribution — **9.069 ms, −54 %**
+- [x] `GetGlyphIndex` fast path reports 0 mismatches against the linear scan over 0..0x2FF, including `'?'`
+- [x] text and mixed captures are byte-identical to the sprint 018 baselines
+- [x] `LINES=32/48` records draws/frame and work, and the cap decision is written with arena bytes — **cap stays
+      4,096; 32/48 lines are 2 draws, no fixed penalty**
+- [x] a >512 atlas logs one error, returns the default font, uploads no texture; a fitting TTF loads and renders
+- [x] `batch_check` is byte-identical to `par_pspgl.raw`
+- [x] no `tools/pspgu/` file is in the sprint diff
 
 ## 9. Result
 
-Not run yet.
+Sprint 019 closed 6/6. The text path now costs **0.686 / 3.350 / 9.069 ms** at 1/8/24 lines, down from
+1.226 / 6.879 / 19.840 — **−44 %, −51 %, −54 %** — with **byte-identical captures** at all three points and a
+byte-identical `batch_check` gate. Every change is in `src/rtext.c`; there is no public API change and no driver
+change.
+
+- **Attribution first.** `walk` (string + linear lookup + advance) was 29–31 % of the API path at 8/24 lines, and
+  the app-side `direct` loop (run-batched, same geometry) was 27–39 % faster with identical pixels. That is the
+  evidence the library changes are worth their risk.
+- **T2** replaces the per-character linear scan with a sequential fast path plus a 256-slot codepoint cache for
+  unordered fonts. The old scan remains the miss path; 0 mismatches over 0..0x2FF for the default font, a
+  sequential TTF and a reversed-codepoint TTF.
+- **T3** emits one run per `DrawTextEx`/`DrawTextCodepoints` call: one bind, one begin, one end, shared glyph quad
+  in `DrawTexturePro` corner order. `DrawTextCodepoint` shares the quad but keeps its single-glyph contract.
+- **T4** caches normalized UVs and base-size metrics per font, keyed by glyphs, recs, count, base size, padding,
+  texture id and dimensions. A 32 px and a 12 px font in one run rebuild the cache and both report 0 mismatches.
+- **Cap:** at 2,177 and 3,259 glyphs the 4,096-vertex cap adds a second draw but the per-glyph cost stays
+  ~5.5 µs. Raising the cap would need 196,608 B of batch memory and a larger per-list arena; recorded as not
+  justified and not done.
+- **T5:** KAISG at 32 px builds a 512×256 atlas and renders; at 64 px raylib builds 1024×512, the guard logs one
+  error, no texture is created, and the default font is returned. Two 512×256 8888 atlases do not fit VRAM and
+  were recorded as the negative control (3 evictions / 1 reload / 300 failed draws); the second probe font is
+  12 px.
+
+The mixed scene also improved, 14.745 → 10.053 ms (−32 %), with identical pixels. The general width > 512 upload
+case remains sprint 020's; this sprint closed the font-shaped half.
 
 ## 10. Follow-ups
 
 - **Sprint 020 — tile maps and 512-pixel windowing**: the general >512 upload fix (split at load or fail loudly),
-  then window slicing with full-stride `tbw`. If 019 finds the batch cap blocks a single-run text submission at
-  48 lines, the arena/cap question is handed to 020 with the measured bytes.
+  then window slicing with full-stride `tbw`, and the tile/background audit cases. The cap/arena question is
+  **not** handed to 020: text at 32/48 lines scales linearly with the second draw.
 - **Sprint 021 — sprites and shapes**: the 018 shape baseline (4 draws, 10,000 vertices, 1 bind + 1 unbind per
   frame) is the before/after.
 - Any text win that does not reproduce at 300 frames is a null result and is removed, not kept behind a switch.

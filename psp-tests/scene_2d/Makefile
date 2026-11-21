@@ -22,8 +22,34 @@ COUNT ?= 2000
 LINES ?= 8
 BUDGET_FLOOR_KB ?= 128
 
-CFLAGS = -Wall -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
-         -DSCENE_LINES=$(LINES) -DBUDGET_FLOOR_KB=$(BUDGET_FLOOR_KB)
+# Sprint 019: text implementation arm and the font-atlas probe.
+TEXT_IMPL ?= api
+FONT_PATH ?= host0:/fonts/KAISG.ttf
+FONT_SIZE ?= 32
+FONT_SIZE2 ?= 12
+FONT_GLYPHS ?= 95
+FONT_ORDER ?= default
+
+CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
+         -DSCENE_LINES=$(LINES) -DBUDGET_FLOOR_KB=$(BUDGET_FLOOR_KB) \
+         -DFONT_PATH="\"$(FONT_PATH)\"" -DFONT_SIZE=$(FONT_SIZE) -DFONT_SIZE2=$(FONT_SIZE2) -DFONT_GLYPHS=$(FONT_GLYPHS)
+
+ifeq ($(TEXT_IMPL),api)
+    CFLAGS += -DTEXT_IMPL_API
+else ifeq ($(TEXT_IMPL),walk)
+    CFLAGS += -DTEXT_IMPL_WALK
+else ifeq ($(TEXT_IMPL),direct)
+    # The app-side run-batched arm uses the same inline batcher as the library.
+    # ../../src comes first so the header with the PSP batch section wins over the
+    # installed copy, which predates it.
+    CFLAGS += -DTEXT_IMPL_DIRECT -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1 -I../../src
+else
+    $(error TEXT_IMPL must be api, walk or direct)
+endif
+
+ifeq ($(FONT_ORDER),reverse)
+    CFLAGS += -DFONT_ORDER_REVERSE
+endif
 
 ifeq ($(MODE),text)
     CFLAGS += -DMODE_TEXT
@@ -35,8 +61,10 @@ else ifeq ($(MODE),shapes)
     CFLAGS += -DMODE_SHAPES
 else ifeq ($(MODE),mixed)
     CFLAGS += -DMODE_MIXED
+else ifeq ($(MODE),font)
+    CFLAGS += -DMODE_FONT
 else
-    $(error MODE must be text, tiles, particles, shapes or mixed)
+    $(error MODE must be text, tiles, particles, shapes, mixed or font)
 endif
 
 ifdef SCROLL

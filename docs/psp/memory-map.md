@@ -887,6 +887,15 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   21.79 ms. Four textures in one frame (mixed) is 4 draws and 3 binds. Boot free 847,360–916,992 B, largest =
   free, 0 evictions/reloads/failures. Immediate `glBegin/glEnd` paths are fully bypassed by the batcher (sprint
   018).
+- **Text run path and font atlas guard (sprint 019, b23):** `DrawTextEx` now emits **one bind/begin/end per call**,
+  `GetGlyphIndex` is O(1) for sequential fonts and cached for unordered ones, and per-glyph UVs/metrics are cached
+  per font (keyed by glyphs, recs, count, base size, padding, texture id and dimensions). Work at 1/8/24 lines:
+  **0.686/3.350/9.069 ms** (was 1.226/6.827/19.680, **−44/−51/−54 %**), captures byte-identical, gate
+  `b69830b8…`. The 4,096-vertex cap gives 32/48 lines **2 draws** at 11.977/18.233 ms with no fixed penalty;
+  raising it would need 196,608 B of batch memory and a larger arena, so it stays 4,096. A generated font atlas
+  above 512 in either dimension is rejected in `LoadFontFromMemory` (one error, default font, no texture);
+  KAISG 32 px = 512×256, KAISG 64 px = 1024×512 rejected. Two 512×256 8888 atlases do not fit the ~917 KiB tail
+  (recorded: 3 evictions / 1 reload / 300 failed draws).
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

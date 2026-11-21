@@ -28,6 +28,10 @@
 #include "raylib.h"
 #include "psp_counters.h"
 
+#if defined(TEXT_IMPL_DIRECT)
+    #include "rlgl.h"       // the same inline PSP batcher the library uses
+#endif
+
 // The driver's test-facing symbols; the structs must match pspgu_internal.h.
 typedef struct {
     unsigned int reserved;
@@ -69,6 +73,18 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #endif
 #ifndef TARGET_FPS
     #define TARGET_FPS 0
+#endif
+#ifndef FONT_PATH
+    #define FONT_PATH "host0:/fonts/KAISG.ttf"
+#endif
+#ifndef FONT_SIZE
+    #define FONT_SIZE 32
+#endif
+#ifndef FONT_SIZE2
+    #define FONT_SIZE2 12
+#endif
+#ifndef FONT_GLYPHS
+    #define FONT_GLYPHS 95
 #endif
 
 #define MAX_FRAMES     2000
@@ -184,12 +200,125 @@ static void textInit(void)
     for (int l = 0; l < SCENE_LINES; l++) textGlyphs += countGlyphs(textLines[l]);
 }
 
-static void textDraw(void)
+#if !defined(TEXT_IMPL_WALK) && !defined(TEXT_IMPL_DIRECT)
+static void textApi(void)
 {
     Font font = GetFontDefault();
 
     for (int l = 0; l < SCENE_LINES; l++)
         DrawTextEx(font, textLines[l], (Vector2){ 4.0f, 4.0f + 10.0f*l }, 10.0f, 0.0f, RAYWHITE);
+}
+#endif
+
+#if defined(TEXT_IMPL_WALK)
+// Sprint 019 T1: the codepoint walk, glyph lookup and advance only.
+static void textWalk(void)
+{
+    Font font = GetFontDefault();
+    float scale = 10.0f/(float)font.baseSize;
+
+    for (int l = 0; l < SCENE_LINES; l++)
+    {
+        const char *s = textLines[l];
+        float offsetX = 0.0f;
+        int i = 0;
+
+        while (s[i] != 0)
+        {
+            int bytes = 0;
+            int cp = GetCodepointNext(&s[i], &bytes);
+            int index = GetGlyphIndex(font, cp);
+
+            if (cp == '\n') offsetX = 0.0f;
+            else
+            {
+                if ((cp != ' ') && (cp != '\t'))
+                {
+                    // Same layout arithmetic the draw path performs, no vertices.
+                    volatile float x = 4.0f + offsetX + font.glyphs[index].offsetX*scale;
+                    (void)x;
+                }
+
+                if (font.glyphs[index].advanceX == 0) offsetX += font.recs[index].width*scale;
+                else offsetX += (float)font.glyphs[index].advanceX*scale;
+            }
+
+            i += bytes;
+        }
+    }
+}
+#endif
+
+#if defined(TEXT_IMPL_DIRECT)
+// Sprint 019 T1: the app-side run-batched loop, same geometry as DrawTextEx.
+static void textDirect(void)
+{
+    Font font = GetFontDefault();
+    float scale = 10.0f/(float)font.baseSize;
+    float pad = (float)font.glyphPadding;
+    float texW = (float)font.texture.width;
+    float texH = (float)font.texture.height;
+
+    rlSetTexture(font.texture.id);
+    rlBegin(RL_QUADS);
+
+    for (int l = 0; l < SCENE_LINES; l++)
+    {
+        const char *s = textLines[l];
+        float offsetX = 0.0f;
+        int i = 0;
+
+        while (s[i] != 0)
+        {
+            int bytes = 0;
+            int cp = GetCodepointNext(&s[i], &bytes);
+            int index = GetGlyphIndex(font, cp);
+
+            if (cp == '\n') offsetX = 0.0f;
+            else
+            {
+                if ((cp != ' ') && (cp != '\t'))
+                {
+                    Rectangle rec = font.recs[index];
+                    float x = 4.0f + offsetX + font.glyphs[index].offsetX*scale - pad*scale;
+                    float y = 4.0f + 10.0f*l + font.glyphs[index].offsetY*scale - pad*scale;
+                    float w = (rec.width + 2.0f*pad)*scale;
+                    float h = (rec.height + 2.0f*pad)*scale;
+                    float u0 = (rec.x - pad)/texW;
+                    float v0 = (rec.y - pad)/texH;
+                    float u1 = (rec.x + rec.width + pad)/texW;
+                    float v1 = (rec.y + rec.height + pad)/texH;
+
+                    rlColor4ub(RAYWHITE.r, RAYWHITE.g, RAYWHITE.b, RAYWHITE.a);
+
+                    rlTexCoord2f(u0, v0); rlVertex2f(x, y);
+                    rlTexCoord2f(u0, v1); rlVertex2f(x, y + h);
+                    rlTexCoord2f(u1, v1); rlVertex2f(x + w, y + h);
+                    rlTexCoord2f(u1, v0); rlVertex2f(x + w, y);
+                }
+
+                if (font.glyphs[index].advanceX == 0) offsetX += font.recs[index].width*scale;
+                else offsetX += (float)font.glyphs[index].advanceX*scale;
+            }
+
+            i += bytes;
+        }
+    }
+
+    rlEnd();
+    rlSetTexture(0);
+}
+#endif
+
+static void textDraw(void)
+{
+#if defined(TEXT_IMPL_WALK)
+    textWalk();
+#elif defined(TEXT_IMPL_DIRECT)
+    textDirect();
+#else
+    textApi();
+#endif
 }
 #endif
 
@@ -359,6 +488,75 @@ static void shapesDraw(void)
 #endif
 
 // ---------------------------------------------------------------------------------
+// Font atlas probe (sprint 019 T5)
+// ---------------------------------------------------------------------------------
+#if defined(MODE_FONT)
+static Font probeFont;
+static Font probeFont2;
+static int probeFallback;
+static int probeMismatches;
+static int probeMismatches2;
+static const char *FONT_SAMPLE = "Sphinx of black quartz, judge my vow. 0123456789";
+
+// The reference is the linear scan GetGlyphIndex used before sprint 019, including
+// the '?' fallback. Any cached index must equal it.
+static int lookupMismatches(Font font)
+{
+    int bad = 0;
+
+    if ((font.glyphs == NULL) || (font.glyphCount <= 0)) return -1;
+
+    for (int cp = 0; cp <= 0x2FF; cp++)
+    {
+        int ref = 0;
+        int fallback = 0;
+
+        for (int i = 0; i < font.glyphCount; i++)
+        {
+            if (font.glyphs[i].value == 63) fallback = i;
+            if (font.glyphs[i].value == cp) { ref = i; break; }
+        }
+
+        if ((ref == 0) && (font.glyphs[0].value != cp)) ref = fallback;
+        if (GetGlyphIndex(font, cp) != ref) bad++;
+    }
+
+    return bad;
+}
+
+static void fontInit(void)
+{
+#if defined(FONT_ORDER_REVERSE)
+    // Exercise the unordered-glyph map in GetGlyphIndex: the same 95 codepoints, reversed.
+    static int codepoints[FONT_GLYPHS];
+    for (int i = 0; i < FONT_GLYPHS; i++) codepoints[i] = 32 + (FONT_GLYPHS - 1 - i);
+    probeFont = LoadFontEx(FONT_PATH, FONT_SIZE, codepoints, FONT_GLYPHS);
+#else
+    probeFont = LoadFontEx(FONT_PATH, FONT_SIZE, NULL, FONT_GLYPHS);
+#endif
+    probeFallback = (probeFont.texture.id == GetFontDefault().texture.id);
+    probeMismatches = lookupMismatches(probeFont);
+
+    // A second size forces the glyph-index and layout caches to rebuild inside one run.
+    probeFont2 = LoadFontEx(FONT_PATH, FONT_SIZE2, NULL, FONT_GLYPHS);
+    probeMismatches2 = lookupMismatches(probeFont2);
+
+    TraceLog(LOG_INFO, "FONT probe path=%s size=%i glyphs=%i tex=%ix%i id=%u fallback=%i mismatches=%i",
+             FONT_PATH, FONT_SIZE, probeFont.glyphCount, probeFont.texture.width,
+             probeFont.texture.height, probeFont.texture.id, probeFallback, probeMismatches);
+    TraceLog(LOG_INFO, "FONT probe2 path=%s size=%i glyphs=%i tex=%ix%i id=%u mismatches=%i",
+             FONT_PATH, FONT_SIZE2, probeFont2.glyphCount, probeFont2.texture.width,
+             probeFont2.texture.height, probeFont2.texture.id, probeMismatches2);
+}
+
+static void fontDraw(void)
+{
+    DrawTextEx(probeFont, FONT_SAMPLE, (Vector2){ 4.0f, 4.0f }, (float)FONT_SIZE, 1.0f, RAYWHITE);
+    DrawTextEx(probeFont2, FONT_SAMPLE, (Vector2){ 4.0f, 8.0f + (float)FONT_SIZE }, (float)FONT_SIZE2, 1.0f, RAYWHITE);
+}
+#endif
+
+// ---------------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------------
 static int sceneObjects(void)
@@ -371,6 +569,8 @@ static int sceneObjects(void)
     return particleCount;
 #elif defined(MODE_SHAPES)
     return SCENE_COUNT*3;
+#elif defined(MODE_FONT)
+    return TextLength(FONT_SAMPLE);
 #else
     return textGlyphs + TILES_X*TILES_Y + ((SCENE_COUNT < 500)? SCENE_COUNT : 500) + 200*3;
 #endif
@@ -378,7 +578,8 @@ static int sceneObjects(void)
 
 static int sceneRuns(void)
 {
-#if defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_PARTICLES) || defined(MODE_SHAPES)
+#if defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_PARTICLES) || \
+    defined(MODE_SHAPES) || defined(MODE_FONT)
     return 1;
 #else
     return 4;
@@ -395,6 +596,8 @@ static void sceneInit(void)
     particlesInit();
 #elif defined(MODE_SHAPES)
     // No assets; the default white texture is the only texture.
+#elif defined(MODE_FONT)
+    fontInit();
 #else
     textInit();
     tilesInit();
@@ -407,7 +610,7 @@ static void sceneUpdate(void)
 {
 #if defined(MODE_PARTICLES)
     particlesUpdate();
-#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES)
+#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT)
     // stationary
 #else
     particlesUpdate();
@@ -434,6 +637,8 @@ static void sceneDraw(void)
     particlesDraw();
 #elif defined(MODE_SHAPES)
     shapesDraw();
+#elif defined(MODE_FONT)
+    fontDraw();
 #else
     tilesDraw();
     particlesDraw();
@@ -467,6 +672,8 @@ static const char *sceneName(void)
     return "particles";
 #elif defined(MODE_SHAPES)
     return "shapes";
+#elif defined(MODE_FONT)
+    return "font";
 #else
     return "mixed";
 #endif
@@ -569,14 +776,24 @@ int main(void)
     }
 
     const char *verdict = (budgetOk && !residencyMoved)? "PASS" : "FAIL";
+
+    char fontExtra[160] = "";
+#if defined(MODE_FONT)
+    snprintf(fontExtra, sizeof(fontExtra),
+             " fontsize=%d fontglyphs=%d tex=%dx%d fallback=%d mismatches=%d tex2=%dx%d mismatches2=%d",
+             FONT_SIZE, probeFont.glyphCount, probeFont.texture.width, probeFont.texture.height,
+             probeFallback, probeMismatches, probeFont2.texture.width, probeFont2.texture.height,
+             probeMismatches2);
+#endif
+
     SaveFileText("scene2d_done.txt",
-                 TextFormat("DONE mode=%s objects=%i runs=%i frames=%i begins=%u ends=%u draws=%u binds=%u unbinds=%u verts=%u work=%.3f swap=%.3f sim=%.3f median=%.3f p95=%.3f free=%u largest=%u evict=%u reload=%u failed=%u verdict=%s\n",
+                 TextFormat("DONE mode=%s objects=%i runs=%i frames=%i begins=%u ends=%u draws=%u binds=%u unbinds=%u verts=%u work=%.3f swap=%.3f sim=%.3f median=%.3f p95=%.3f free=%u largest=%u evict=%u reload=%u failed=%u verdict=%s%s\n",
                             sceneName(), sceneObjects(), sceneRuns(), frames,
                             cBegins, cEnds, cDraws, cBinds, cUnbinds, cVerts,
                             workAvg, swapAvg, simAvg, median*1000.0f, p95*1000.0f,
                             vram.free, vram.largest,
                             resAfter.evictions, resAfter.reloads, resAfter.failed,
-                            verdict));
+                            verdict, fontExtra));
 
     TraceLog(LOG_INFO, "DONE scene=%s objects=%i runs=%i frames=%i %s", sceneName(),
              sceneObjects(), sceneRuns(), frames, verdict);

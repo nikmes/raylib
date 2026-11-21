@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprint 018 done (corpus, counters, boot budget); 019–023 planned |
+| State | **in progress** — sprints 018 and 019 done; 020–023 planned |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
@@ -43,8 +43,10 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
 
 - `rtext.c` draws every glyph through `DrawTexturePro`; at the API level that is one bind/unbind pair per glyph.
   **Sprint 018 measured the PSP boundary:** the batcher defers `rlSetTexture`, so 63/548/1,637 glyphs each produce
-  **one draw and one bind per run**, not per glyph. The text cost is vertex generation (1.226/6.827/19.680 ms
-  work), not submissions, until the 4,096-vertex cap is crossed at about 2,048 glyphs.
+  **one draw and one bind per run**, not per glyph. Sprint 019 then removed the per-glyph CPU cost: run-batched
+  `DrawTextEx`, an O(1) glyph lookup and a keyed layout cache cut 1/8/24 lines from 1.226/6.827/19.680 to
+  **0.686/3.350/9.069 ms**. The remaining cost scales at ~5.5 µs/glyph and the 4,096-vertex cap adds a second
+  draw only above ~2,048 glyphs (32 lines: 2 draws, 11.977 ms).
 - `rshapes.c` is already forced off the shapes-quads path on PSP in the 5.5 port; that guard has a reason and
   must be understood before it is removed
 - Text and sprites both need the **unsigned 16-bit TEXCOORD** rule respected: negative or zero-centred UVs wrap
@@ -167,7 +169,8 @@ copy, and do not invalidate the whole D-cache in a steady frame.
 
 ## Exit criteria
 
-- [ ] text: submissions proportional to atlas runs, measured on short labels and paragraphs
+- [x] text: submissions proportional to atlas runs, measured on short labels and paragraphs — 018 baseline
+      already 1 draw/run at 63/548/1,637 glyphs; 019 kept that and cut work 44–54 %
 - [ ] tile map: submissions proportional to atlas runs on a map large enough to matter
 - [ ] particles: one submission per compatible system, CPU simulation cost measured separately
 - [ ] every 2D path that can exceed 512×512 renders correctly through window slicing, seams included
@@ -185,7 +188,7 @@ sprint's numbers are in hand (the fast paths depend on what the corpus measures)
 | sprint | scope | state |
 |---|---|---|
 | [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
-| [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | written |
+| [019 — Text work: submission, lookup and the 512 atlas limit](../sprints/019-phase7-text-work.md) | `walk`/`direct`/`api` attribution, glyph lookup cache, run-batched `DrawTextEx`, layout cache, PSP atlas guard, cap boundary | **done** — text −44/−51/−54 %, pixels identical, gate 0, >512 font atlas rejected |
 | 020 — Tile maps and 512-pixel windowing | per-atlas-run tiles, scrolled traversal, window slicing with full-stride `tbw`, seam screenshots | planned |
 | 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
 | 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |
