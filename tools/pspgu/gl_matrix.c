@@ -85,6 +85,13 @@ static void upload(PspGuMatrix *m, PspGuMatrix *sent, int *valid, int guType)
 static PspGuMatrix *currentProjection(void) { return &stackProjection[depthProjection]; }
 static PspGuMatrix *currentModelview(void)  { return &stackModelview[depthModelview]; }
 
+// m[11] of the current projection: 0 for ortho, -1 for a frustum. The cheapest way to tell
+// which projection a draw is actually using, which is the whole question in sprint 013 T1.
+float pspguProjectionW(void)
+{
+    return stackProjection[depthProjection].m[11];
+}
+
 // Called once when the GE comes up: both stacks start as identity, which zeroed statics
 // are not. A zeroed matrix would collapse every vertex onto the origin.
 void pspguResetMatrices(void)

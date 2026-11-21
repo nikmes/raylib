@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `f0cec42a` |
 | Started / closed | — / — |
 | Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
-| Tasks | 3/6 done, T1: two depth bugs fixed, parity not reached |
+| Tasks | 4/6 done; T1 split — 2D corpus parity met, 3D handed to phase 10 |
 
 ## 0. Handover
 
@@ -379,3 +379,28 @@ proven template to copy: known vertices, predicted bbox, one capture.
 **Process note worth keeping:** two of the three "the cube is not drawn" results were my own instrument lying — a
 grep missing the `]` in `[PSPGU]` once, and a Makefile ignoring `EXTRA_CFLAGS` twice. The trace line that made the
 difference possible (`count=3` where 36 was expected) cost four lines of code and would have saved three runs.
+
+### T1 split — `DrawMesh` fires and draws nothing; 3D goes to phase 10
+
+The last untested call, probed exactly like the cube: `GenMeshCube` + `DrawMesh` with an identity transform at the
+verified camera. Predicted bbox **x 193..287, y 92..189**.
+
+Result: `drawElements count=36 tex2d=0 fmt=0x1e3` reaches the driver, and **no pixels appear**. Culling was ruled out
+by disabling `GL_CULL_FACE` for the draw — still nothing — so the call is emitted, the format carries normals and
+colour, and the GE produces nothing from the converted vertices and rebased indices.
+
+That is where this sprint stops, by the rule agreed before the probe: **T1 is split.**
+
+| split | state |
+|---|---|
+| **T1a — 2D corpus parity** | **met.** `batch_check` 2D byte-identical (0 differing pixels, 613 colours), `triangle_probe` matches prediction for a straight *and* a rotated camera, `DrawCube` matches to 1 px, and the immediate path matches pspGL to 1.9× better cost |
+| **T1b — 3D through `DrawMesh`** | **handed to [phase 10](../phases/10-3d-advanced.md).** `glDrawElements` emits and draws nothing; culling ruled out; the converting path (`PspGuVertex`, index rebasing) is the suspect. Everything the probe could prove about the matrix path is proven, so phase 10 inherits a narrow, well-instrumented problem rather than a suspicion |
+
+**What this sprint proved about 3D, which is worth more than the failing case:** the frustum, a rotated view matrix,
+`sceGuSetMatrix` with the `w` row, viewport/offset, the perspective divide and the immediate quad path are all correct
+within a pixel. Six hypotheses were eliminated with evidence (§9c, §9d and above), and two real defects were fixed on
+the way: the depth **clear** value, and the depth **comparison inversion** — both from pspGL's own source, both of
+which would have corrupted every 3D scene.
+
+**Still open in this sprint, both cheap:** T2 (`basic_shapes` against its 284-colour fingerprint) and T5
+(`PSP_DISABLE_VSYNC` build). Neither depends on 3D.

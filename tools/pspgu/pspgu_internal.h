@@ -112,6 +112,7 @@ void pspguInitTextures(void);
 void pspguResetMatrices(void);
 void pspguUploadMatrices(void);
 void glGetFloatvMatrices(GLenum pname, GLfloat *params);
+float pspguProjectionW(void);       // m[11]: 0 for ortho, -1 for a frustum
 
 // glEnableClientState bits: one source of truth, set in gl_state.c, read in gl_draw.c
 #define PSPGU_CS_VERTEX 1u
