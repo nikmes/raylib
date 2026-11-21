@@ -400,6 +400,34 @@ void SetMouseCursor(int cursor)
     TRACELOG(LOG_WARNING, "SetMouseCursor() not implemented on target platform");
 }
 
+// Sprint 041 (P8-S1): one platform-neutral gamepad contract.
+#ifndef PSP_PAD_STRICT
+    #define PSP_PAD_STRICT 1
+#endif
+#ifndef PSP_PAD_FAIL
+    #define PSP_PAD_FAIL 0
+#endif
+
+static const struct {
+    unsigned int psp;
+    int raylib;
+} pspButtonMap[] = {
+    { PSP_CTRL_CROSS, GAMEPAD_BUTTON_RIGHT_FACE_DOWN },
+    { PSP_CTRL_CIRCLE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT },
+    { PSP_CTRL_SQUARE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT },
+    { PSP_CTRL_TRIANGLE, GAMEPAD_BUTTON_RIGHT_FACE_UP },
+    { PSP_CTRL_UP, GAMEPAD_BUTTON_LEFT_FACE_UP },
+    { PSP_CTRL_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT },
+    { PSP_CTRL_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN },
+    { PSP_CTRL_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT },
+    { PSP_CTRL_LTRIGGER, GAMEPAD_BUTTON_LEFT_TRIGGER_1 },
+    { PSP_CTRL_RTRIGGER, GAMEPAD_BUTTON_RIGHT_TRIGGER_1 },
+    { PSP_CTRL_SELECT, GAMEPAD_BUTTON_MIDDLE_LEFT },
+    { PSP_CTRL_START, GAMEPAD_BUTTON_MIDDLE_RIGHT },
+};
+
+#define PSP_BUTTON_MAP_COUNT ((int)(sizeof(pspButtonMap)/sizeof(pspButtonMap[0])))
+
 // Register all input events
 void PollInputEvents(void)
 {
@@ -441,55 +469,65 @@ void PollInputEvents(void)
     //    CORE.Input.Keyboard.keyRepeatInFrame[i] = 0;
     //}
 
-    // Poll input events for PSP
-    SceCtrlData pad;
-    sceCtrlReadBufferPositive(&pad, 1); // Read PSP controller input
+    // Poll input events for PSP (sprint 041, P8-S1)
+    SceCtrlData pad = { 0 };
+    int read = 1;
 
-    // Map PSP buttons to raylib gamepad buttons
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_RIGHT_FACE_DOWN] = (pad.Buttons & PSP_CTRL_CROSS) ? 1 : 0;    // Cross button
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_RIGHT_FACE_RIGHT] = (pad.Buttons & PSP_CTRL_CIRCLE) ? 1 : 0;  // Circle button
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_RIGHT_FACE_LEFT] = (pad.Buttons & PSP_CTRL_SQUARE) ? 1 : 0;   // Square button
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_RIGHT_FACE_UP] = (pad.Buttons & PSP_CTRL_TRIANGLE) ? 1 : 0;   // Triangle button
+#if PSP_PAD_FAIL
+    // Test-only: fail the read after 60 successful polls, with a button held.
+    static int pspPollCount = 0;
+    if (pspPollCount < 60)
+    {
+        read = sceCtrlReadBufferPositive(&pad, 1);
+        if (read > 0) pspPollCount++;
+    }
+    else read = -1;
+#else
+    read = sceCtrlReadBufferPositive(&pad, 1);
+#endif
 
-    // DPAD
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_LEFT_FACE_UP] = (pad.Buttons & PSP_CTRL_UP) ? 1 : 0;
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_LEFT_FACE_RIGHT] = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : 0;
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_LEFT_FACE_DOWN] = (pad.Buttons & PSP_CTRL_DOWN) ? 1 : 0;
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_LEFT_FACE_LEFT] = (pad.Buttons & PSP_CTRL_LEFT) ? 1 : 0;
+#if PSP_PAD_STRICT
+    static int pspLastRead = 1;
+    if (read <= 0)
+    {
+        if (pspLastRead > 0) TRACELOG(LOG_WARNING, "PAD read failed ret=%d", read);
+        pspLastRead = read;
+        return;
+    }
+    if (pspLastRead <= 0) TRACELOG(LOG_INFO, "PAD read recovered");
+    pspLastRead = read;
+#else
+    (void)read;
+#endif
 
-    // Other buttons
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_LEFT_TRIGGER_1] = (pad.Buttons & PSP_CTRL_LTRIGGER) ? 1 : 0;
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_RIGHT_TRIGGER_1] = (pad.Buttons & PSP_CTRL_RTRIGGER) ? 1 : 0;
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_MIDDLE_LEFT] = (pad.Buttons & PSP_CTRL_SELECT) ? 1 : 0;      // Select button
-    CORE.Input.Gamepad.currentButtonState[0][GAMEPAD_BUTTON_MIDDLE_RIGHT] = (pad.Buttons & PSP_CTRL_START) ? 1 : 0;      // Start button
+    // Map the controller through one table into raylib's positional enum.
+    memset(CORE.Input.Gamepad.currentButtonState[0], 0, sizeof(CORE.Input.Gamepad.currentButtonState[0]));
+    for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
+    {
+        if ((pad.Buttons & pspButtonMap[i].psp) != 0) CORE.Input.Gamepad.currentButtonState[0][pspButtonMap[i].raylib] = 1;
+    }
 
-    // Set analog stick values
-    CORE.Input.Gamepad.axisCount[0] = 2;
-    CORE.Input.Gamepad.axisCount[1] = 2; // Available on PSP Go with DualShock 3
-    
-    // Normalize analog values from [0..255] to [-1..1]
+    // Normalize the nub; sprint 043 replaces this with calibrated values.
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = ((float)pad.Lx - 128.0f)/128.0f;
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = ((float)pad.Ly - 128.0f)/128.0f;
-    
-    // Apply deadzone to analog stick input (values in range [-0.2..0.2] are discarded)
+
     float deadZone = 0.2f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] < deadZone) && 
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] < deadZone) &&
         (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = 0.0f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] < deadZone) && 
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] < deadZone) &&
         (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = 0.0f;
 
-    // Normalize right analog values from [0..255] to [-1..1]
-    // NOTE: Right analog stick is not available on PSP, but it is apparently available on PSP Go with DualShock 3
+#if !PSP_PAD_STRICT
+    // Control arm: keep the old right-stick bytes and their deadzone.
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] = ((float)pad.Rsrv[0] - 128.0f)/128.0f;
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = ((float)pad.Rsrv[1] - 128.0f)/128.0f;
-
-    // Apply deadzone to right analog stick input (values in range [-0.2..0.2] are discarded)
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] < deadZone) && 
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] < deadZone) &&
         (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] = 0.0f;
     if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] < deadZone) &&
         (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = 0.0f;
-    
-    // Check if any button was pressed for the first time this frame
+#endif
+
+    // Report only the first newly pressed button; raylib's API is single-value.
     for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
     {
         if (CORE.Input.Gamepad.currentButtonState[0][i] && !CORE.Input.Gamepad.previousButtonState[0][i])
@@ -591,11 +629,23 @@ int InitPlatform(void)
     sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
-    // Mark the first gamepad as ready
+    // Mark the first gamepad as ready and advertise exactly one pad.
     CORE.Input.Gamepad.ready[0] = true;
-    
+    CORE.Input.Gamepad.axisCount[0] = 2;
+    CORE.Input.Gamepad.axisCount[1] = 0;
+    CORE.Input.Gamepad.ready[1] = false;
+    CORE.Input.Gamepad.name[1][0] = '\0';
+
     // Set PSP controller name
     strcpy(CORE.Input.Gamepad.name[0], "PSP Controller");
+
+    // Fill every axis with a platform-neutral default once (sprint 041).
+    memset(CORE.Input.Gamepad.axisState[0], 0, sizeof(CORE.Input.Gamepad.axisState[0]));
+#if PSP_PAD_STRICT
+    CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_TRIGGER] = -1.0f;
+    CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
+#endif
+    TRACELOG(LOG_INFO, "PAD contract=%d fail=%d", PSP_PAD_STRICT, PSP_PAD_FAIL);
 
     // NOTE: 6.2 has no CORE.Window.fullscreen member; fullscreen is a flag only.
     CORE.Window.flags |= FLAG_FULLSCREEN_MODE;
@@ -760,6 +810,9 @@ int InitPlatform(void)
 
     // Initialize base path for storage
     CORE.Storage.basePath = GetWorkingDirectory();
+#if defined(PSP_CULL) && defined(PSP_TRI_FAST)
+    TRACELOG(LOG_INFO, "RLGL: PSP_CULL=%d PSP_TRI_FAST=%d", PSP_CULL, PSP_TRI_FAST);
+#endif
     TRACELOG(LOG_INFO, "PLATFORM: Initialized");
 
     return 0;

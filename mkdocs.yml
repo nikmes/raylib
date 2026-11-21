@@ -103,6 +103,10 @@ nav:
               - P7-S6 — Cache strips and close: psp/sprints/023-phase7-cache-strips-and-close.md
           - 8 — Input:
               - psp/phases/08-input/index.md
+              - P8-S1 — Gamepad contract: psp/sprints/041-phase8-gamepad-contract.md
+              - P8-S2 — Sampling and edges: psp/sprints/042-phase8-sampling-and-edges.md
+              - P8-S3 — Nub calibration: psp/sprints/043-phase8-nub-calibration.md
+              - P8-S4 — Decisions and close: psp/sprints/044-phase8-decisions-and-close.md
           - 9 — Audio:
               - psp/phases/09-audio/index.md
               - P9-S1 — Enable raudio: psp/sprints/045-phase9-enable-raudio.md

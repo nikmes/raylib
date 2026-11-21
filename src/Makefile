@@ -571,6 +571,11 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     CUSTOM_CFLAGS += -DPSP_CULL=$(PSP_CULL)
     PSP_TRI_FAST ?= 1
     CUSTOM_CFLAGS += -DPSP_TRI_FAST=$(PSP_TRI_FAST)
+    # Sprint 041 (P8-S1): the gamepad contract, plus a test-only failure hook.
+    PSP_PAD_STRICT ?= 1
+    CUSTOM_CFLAGS += -DPSP_PAD_STRICT=$(PSP_PAD_STRICT)
+    PSP_PAD_FAIL ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_FAIL=$(PSP_PAD_FAIL)
     # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
     # the only way to see what the batch actually submitted when a frame looks wrong.
     ifdef PSP_BATCH_TRACE
