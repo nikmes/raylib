@@ -181,6 +181,10 @@ typedef struct tagBITMAPINFOHEADER {
 #include <stdio.h>                      // Required for: FILE, fopen(), fclose(), fread()
 #include <string.h>                     // Required for: strcmp() [Used in IsFileExtension(), LoadWaveFromMemory(), LoadMusicStreamFromMemory()]
 
+#if defined(PLATFORM_PSP)
+    #include "platforms/raudio_psp.c"   // Sprint 045: silent PSP backend (P9-S1)
+#endif
+
 #if defined(RAUDIO_STANDALONE)
     #ifndef TRACELOG
         #define TRACELOG(level, ...)    printf(__VA_ARGS__)
@@ -469,12 +473,31 @@ void InitAudioDevice(void)
     ma_context_config ctxConfig = ma_context_config_init();
     ma_log_callback_init(OnLog, NULL);
 
-    ma_result result = ma_context_init(NULL, 0, &ctxConfig, &AUDIO.System.context);
+    ma_result result;
+#if defined(PLATFORM_PSP)
+    ma_backend pspBackends[] = { ma_backend_custom };
+    ctxConfig.custom = *raudio_psp_get_backend_callbacks();
+    ctxConfig.threadPriority = ma_thread_priority_normal;
+    ctxConfig.threadStackSize = 128*1024;
+    result = ma_context_init(pspBackends, 1, &ctxConfig, &AUDIO.System.context);
+    if (result == MA_SUCCESS) TRACELOG(LOG_INFO, "AUDIO: PSP backend=%d", (int)AUDIO.System.context.backend);
+#else
+    result = ma_context_init(NULL, 0, &ctxConfig, &AUDIO.System.context);
+#endif
     if (result != MA_SUCCESS)
     {
         TRACELOG(LOG_WARNING, "AUDIO: Failed to initialize context");
         return;
     }
+
+#if defined(PLATFORM_PSP)
+    if (AUDIO.System.context.backend != ma_backend_custom)
+    {
+        TRACELOG(LOG_ERROR, "AUDIO: PSP custom backend was not selected");
+        ma_context_uninit(&AUDIO.System.context);
+        return;
+    }
+#endif
 
     // Init audio device
     // NOTE: Using the default device. Format is floating point because it simplifies mixing
@@ -490,6 +513,17 @@ void InitAudioDevice(void)
     config.noFixedSizedCallback = true;         // raylib does not require fixed sized callback guarantees. This bypasses an internal intermediary buffer
 
     result = ma_device_init(&AUDIO.System.context, &config, &AUDIO.System.device);
+#if defined(PLATFORM_PSP)
+    TRACELOG(LOG_INFO, "AUDIO: PSP device init result=%d", (int)result);
+    if (result != MA_SUCCESS)
+    {
+        TRACELOG(LOG_WARNING, "AUDIO: PSP device init failed, retrying default thread priority");
+        AUDIO.System.context.threadPriority = ma_thread_priority_normal;
+        AUDIO.System.context.threadStackSize = 128*1024;
+        result = ma_device_init(&AUDIO.System.context, &config, &AUDIO.System.device);
+        TRACELOG(LOG_INFO, "AUDIO: PSP device init retry result=%d", (int)result);
+    }
+#endif
     if (result != MA_SUCCESS)
     {
         TRACELOG(LOG_WARNING, "AUDIO: Failed to initialize playback device");
@@ -511,6 +545,9 @@ void InitAudioDevice(void)
     // Keep the device running the whole time. May want to consider doing something a bit smarter and only have the device running
     // while there's at least one sound being played
     result = ma_device_start(&AUDIO.System.device);
+#if defined(PLATFORM_PSP)
+    TRACELOG(LOG_INFO, "AUDIO: PSP device start result=%d", (int)result);
+#endif
     if (result != MA_SUCCESS)
     {
         TRACELOG(LOG_WARNING, "AUDIO: Failed to start playback device");
@@ -534,6 +571,9 @@ void CloseAudioDevice(void)
 {
     if (AUDIO.System.isReady)
     {
+#if defined(PLATFORM_PSP)
+        raudio_psp_log_stats();
+#endif
         // Stop the device first (joins the callback thread) before destroying the mutex it locks
         ma_device_uninit(&AUDIO.System.device);
         ma_mutex_uninit(&AUDIO.System.lock);

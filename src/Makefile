@@ -553,11 +553,14 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     # GCC 14+ promotes incompatible-pointer-types to an error by default, and
     # external/m3d.h trips it. The 5.5 port carried the same suppression.
     CUSTOM_CFLAGS += -Wno-incompatible-pointer-types
-    # Audio is phase 9. miniaudio has no PSP backend and pulls <dlfcn.h> for
-    # runtime linking, which this toolchain does not have. raudio is compiled out
-    # (config.h guards the whole module) so the renderer bring-up does not depend
-    # on it; the 5.5 port shipped the same way ("raudio: not loaded").
-    CUSTOM_CFLAGS += -DSUPPORT_MODULE_RAUDIO=0
+    # Audio (phase 9): miniaudio has no PSP backend and includes <dlfcn.h> for
+    # runtime linking, which this toolchain does not have. Build only the custom
+    # backend with runtime linking disabled; raudio then uses miniaudio's normal
+    # device path. P9-S1 installs a silent backend, P9-S2 the real output.
+    CUSTOM_CFLAGS += -DMA_NO_RUNTIME_LINKING
+    CUSTOM_CFLAGS += -DMA_ENABLE_ONLY_SPECIFIC_BACKENDS
+    CUSTOM_CFLAGS += -DMA_ENABLE_CUSTOM
+    CUSTOM_CFLAGS += -DAUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024
     ifdef PSP_DISABLE_VSYNC
         CUSTOM_CFLAGS += -DPSP_DISABLE_VSYNC
     endif
@@ -940,7 +943,7 @@ rmodels.o : rmodels.c raylib.h rlgl.h raymath.h
 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
 
 # Compile audio module
-raudio.o : raudio.c raylib.h
+raudio.o : raudio.c raylib.h external/miniaudio.h platforms/raudio_psp.c
 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
 
 # Compile raygui module

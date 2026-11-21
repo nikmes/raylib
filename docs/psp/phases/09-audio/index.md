@@ -23,11 +23,11 @@ audio module.
 
 ## Tasks
 
-- [ ] Choose the integration: route A is miniaudio's custom backend (`MA_ENABLE_ONLY_SPECIFIC_BACKENDS` +
+- [x] Choose the integration: route A is miniaudio's custom backend (`MA_ENABLE_ONLY_SPECIFIC_BACKENDS` +
       `MA_ENABLE_CUSTOM` + `MA_NO_RUNTIME_LINKING`; `ma_backend_callbacks`' init/start/stop/uninit **and
       `onDeviceWrite`/`onDeviceDataLoop`**) versus driving `sceAudio` straight from `raudio.c`. Routes B/C are
       P9-S6/S7 and do not replace route A until measured — [open question 6](../../memory-map.md#12-open-questions)
-- [ ] Keep the application/mixer contract **f32, stereo, rate from the backend**; the PSP backend reports
+- [x] Keep the application/mixer contract **f32, stereo, rate from the backend**; the PSP backend reports
       **s16, 44100, stereo** as its internal format and a **1024-frame** period. Do not set
       `AUDIO_DEVICE_FORMAT` to s16 — raylib's mixer writes `float` (`src/raudio.c:2468-2645`); measure the
       f32→s16 conversion miniaudio performs on the audio thread
@@ -39,7 +39,7 @@ audio module.
       miniaudio's; `onDeviceWrite()` is where the blocking call belongs
 - [ ] Use at least a double buffer; the blocking call returns when the block is accepted, not when it has finished
       playing
-- [ ] Copy miniaudio's frames into a static 64-byte-aligned PCM buffer before the output call: the pointer
+- [x] Copy miniaudio's frames into a static 64-byte-aligned PCM buffer before the output call: the pointer
       `onDeviceWrite()` receives is a stack buffer (`src/external/miniaudio.h:20742`)
 - [ ] Split decoder/reader from feeder **only if the measurement needs it**: low-priority decoder + card reader,
       high-priority feeder that only copies from a PCM ring and calls the blocking output. Route A's miniaudio
@@ -96,7 +96,9 @@ hardware.
 | Music decode cost | Vorbis decode measured at ~5–6 ms of main-CPU time per frame even with clean I/O | `[measured: PSP-3000, large 3D port, via skill]` |
 | Mixer cost | a software mixer for an emulated sound chip measured 7.5 ms/frame on the game thread plus ~2 ms feeder time-stretch; moving it to the ME saved 5.8 ms/frame | `[measured: PSP-3000, large 3D port, via skill]` |
 | miniaudio hooks | custom backends use `ma_backend_callbacks`: context/device init/start/stop/uninit **and `onDeviceWrite`/`onDeviceDataLoop`**; select with `MA_ENABLE_ONLY_SPECIFIC_BACKENDS` + `MA_ENABLE_CUSTOM` + `MA_NO_RUNTIME_LINKING`, pass `{ ma_backend_custom }` and `ctxConfig.custom` | `[public: src/external/miniaudio.h]` |
-| PSP link line | `libraylib.a` is static: the app links `-lpspaudio -lpthread -latomic`; `libatomic.a` supplies miniaudio's 64-bit atomics; no `dlfcn` with `MA_NO_RUNTIME_LINKING` | `[measured: compile/link probe, 2026-11-21]` |
+| PSP link line | `libraylib.a` is static: append `-lpspaudio -lpthread -latomic` **after** `build.mak`; do not add `-lpspuser`; `libatomic.a` supplies miniaudio's 64-bit atomics; no `dlfcn` with `MA_NO_RUNTIME_LINKING` | `[measured: P9-S1, 2026-11-21]` |
+| PSP silent backend (P9-S1) | custom backend; client f32 -> internal s16; 44100; 1024-frame period x2; 128 KiB worker stack; 418 callbacks in 10.03 s (41/s); `raudio.o` text 422,129 B; app ELF text 1,245,592 B | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
+| PSP worker thread | default/32 KiB stack entered the audio loop and died before playback; `ma_device_init` waited on `stopEvent` forever; 128 KiB fixed it. Priority retained: `ma_thread_priority_normal` | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
 
 ## What the reference implementations do
 
@@ -185,8 +187,8 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 
 | sprint | file | scope | state |
 |---|---|---|---|
-| P9-S1 — Enable raudio and the silent backend | [045](../../sprints/045-phase9-enable-raudio.md) | build flags, `dlfcn`/atomics/pthread, silent custom backend, link line | written |
-| P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, 64-byte buffer, `onDeviceWrite`, one sound | written |
+| P9-S1 — Enable raudio and the silent backend | [045](../../sprints/045-phase9-enable-raudio.md) | build flags, `dlfcn`/atomics/pthread, silent custom backend, link line | **done** — 418 callbacks/41 per s; gate `cf43ce6d…` |
+| P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, 64-byte buffer, `onDeviceWrite`, one sound | next |
 | P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | written |
 | P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread decision, 5-minute soak | written |
 | P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | written |
