@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); sprint 016 is residency/eviction |
+| State | **in progress** — sprint 015 done (NPOT, per-texture PSM, block allocator, direct band upload); sprint 016 (residency/eviction) is next, sprint 017 (format/size matrix and gated decisions) written; 018 is conditional on 017 |
 | Depends on | Phase 5 (a backend that owns the upload path) |
 | Exit criterion | no eviction when the working set fits in VRAM, upload benchmarks by format, fragmentation bounded under load/unload churn |
 
@@ -15,9 +15,9 @@ re-uploaded mid-frame costs more than the draw it feeds.
 ## What has to be true before starting
 
 - [x] Phase 5 backend uploads textures and passes the samples — pspgu, 2D corpus byte-identical
-- [x] Boot-time VRAM accounting exists **for the free tail** — sprint 014 reports used/free/peak from the
-      allocation counter. The **largest block** does not exist yet: the allocator is a bump arena. It arrives
-      with T3 of sprint 015, and until then no “largest free block” may be quoted
+- [x] Boot-time VRAM accounting exists — sprint 014 reported the free tail; sprint 015 T3 replaced the bump arena
+      with a 512-byte block allocator, so **used/free/largest/internal/allocs/frees** are real (largest 916,992 B in
+      the churn). No largest-block number was quoted before it existed
 - [x] Upload/eviction counters exist — sprint 015 T3 counts allocations, frees, failures, requested bytes, used,
       free and largest block. Eviction still does not exist; sprint 016 adds it
 
@@ -30,16 +30,18 @@ re-uploaded mid-frame costs more than the draw it feeds.
       pad to powers of two, the padding is zeroed and swizzled, and `sceGuTexScale` restores the logical size.
       33×17 → 64×32 = 8,192 B (logical 2,244 B); the 33×17 checkerboard went from 281/561 wrong cells to 0/561,
       and the parity scenes stayed byte-identical
-- [ ] CLUT path for glyph atlases (T4/T8) only if measured to pay
+- [ ] CLUT path for glyph atlases (T4/T8) only if measured to pay — **decision in sprint 017**; implementation is
+      sprint 018 only if the probe says it pays
 - [x] Best-fit allocator over 512-byte blocks, coalescing on free, free bytes and largest block tracked
       separately — one allocator for framebuffers *and* textures — **sprint 015 T3**: 4,096 blocks over 2 MiB,
       32 KiB metadata, framebuffers/depth as fixed 8 KiB-aligned reservations, live `requested` and `internal`.
       Churn 100 × 16 textures: free and largest return exactly (916,992 → 916,992 B), 1,600 frees, 0 failures
 - [ ] Residency: priority-aware eviction where application priority is a strong weight; usage that ages per
-      frame, never accumulating forever
+      frame, never accumulating forever — **sprint 016**: `glPrioritizeTextures`, victim by priority then age,
+      pin the last 2 frames, CPU shadow reload, coalesce-by-eviction
 - [x] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame — one
       `pspguWriteback(base, tbw*padH*bpp)` per upload; no invalidate
-- [ ] No mipmaps unless a measurement says they pay
+- [ ] No mipmaps unless a measurement says they pay — **decision in sprint 017**; 3D minification is phase 10
 - [x] Per-texture PSM, not a global swizzle mode — **sprint 015 T2**: default 8888 for parity; `PSP_GU_TEXFMT=auto`
       chooses 5650 for `GL_RGB` and 4444 for `GL_RGBA`/`GL_LUMINANCE_ALPHA` with binary alpha, else 8888. 32×32
       `GL_RGB` 4,096 → 2,048 B; the 128×128 LA font 65,536 → 32,768 B; texture VRAM 69,636 → 34,820 B. The `auto`
@@ -57,10 +59,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
 
 ## Exit criteria
 
-- [ ] no eviction or compaction in a workload whose working set fits
-- [ ] upload/swizzle benchmarked by pixel format and size
-- [ ] fragmentation bounded across repeated load/unload
-- [ ] priority changes demonstrably alter eviction order
+- [ ] no eviction or compaction in a workload whose working set fits — **sprint 016** fit probe
+- [ ] upload/swizzle benchmarked by pixel format and size — **sprint 017** matrix
+- [ ] fragmentation bounded across repeated load/unload — **sprint 016** mixed-size/eviction churn
+- [ ] priority changes demonstrably alter eviction order — **sprint 016** A/B victim ids
 
 ## Sprints and features
 
@@ -71,5 +73,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
   `4444` for sprites and `5650` for opaque — the speed case for them is dead.
 - [Sprint 015 — NPOT textures, per-texture format and the VRAM allocator](../sprints/015-phase6-npot-and-vram.md)
   — **done 4/4.** NPOT padding; 512-byte block allocator with free/coalesce and a real largest block; per-texture
-  PSM (default 8888, `auto` 5650/4444); direct 8-row-band upload with no full-image scratch. Residency/eviction
-  remains sprint 016.
+  PSM (default 8888, `auto` 5650/4444); direct 8-row-band upload with no full-image scratch.
+- [Sprint 016 — Texture residency and eviction](../sprints/016-phase6-residency-eviction.md) — **written, next.**
+  CPU shadow, `glPrioritizeTextures`, victim by priority then age, last-2-frames pinning, reload on bind,
+  coalesce-by-eviction, and the fit/over/priority/frag probes. Closes exits 1, 3 and 4.
+- [Sprint 017 — Upload/swizzle matrix and the gated texture features](../sprints/017-phase6-format-matrix-and-gated-features.md)
+  — **written.** Format/size matrix; CLUT T4 glyph probe; mipmap probe; the two decisions recorded. Closes exit 2.
+  018 is the CLUT implementation only if 017 measures that it pays; otherwise phase 6 closes at 017.
