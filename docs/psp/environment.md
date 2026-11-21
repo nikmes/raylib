@@ -139,16 +139,16 @@ for h in raylib.h rlgl.h raymath.h rcamera.h; do cp src/$h $PSPDEV/psp/include/$
 | switch | effect |
 |---|---|
 | `PSP_OPT` | optimisation level, **default `-O2`**. Empty or `-O0` reproduces the sprint 001–007 measurements — those were all taken with an unoptimised library, because the Makefile's `RELEASE` block covers desktop/web/android only. `-O2` alone took 1,000 sprites from 33.37 to 16.68 ms |
-| `PSP_BATCH=0` / `1` | `0` is the immediate GL11 path (default): one `glBegin`/`glEnd` per primitive. `1` accumulates vertices in one static 4,096-vertex buffer and submits one `glDrawArrays` per texture run |
+| `PSP_BATCH=1` / `0` | **`1` is the default since sprint 009**: one static 4,096-vertex buffer, one `glDrawArrays` per texture run, 2-vertex sprites for axis-aligned quads. `0` is the immediate GL11 path — one `glBegin`/`glEnd` per primitive — kept as the reference arm |
 | `PSP_BATCH_NO_SPRITES=1` | forces the two-triangle quad path inside the batch, so the `GL_SPRITES_PSP` primitive can be A/B'd at one optimisation level |
 | `PSP_BATCH_TRACE=1` | logs every `rlPspBatchFlush` (texture, mode, vertex count, sprites emitted) and every deferred texture switch — the only way to see what a wrong frame actually submitted |
 | `PSP_BATCH_LOCK=1` | wraps each batched draw in `glLockArraysEXT`/`glUnlockArraysEXT`. Measured: no effect on pspGL `ae9a668` (sprint 007 T5) |
 
 ```sh
-make PLATFORM=PLATFORM_PSP PSP_BATCH=1        # batched library, -O2, 2-vertex sprites
-make PLATFORM=PLATFORM_PSP PSP_BATCH=1 PSP_BATCH_NO_SPRITES=1   # batched, triangles only
-make PLATFORM=PLATFORM_PSP PSP_BATCH=0        # reference library (immediate mode)
-make PLATFORM=PLATFORM_PSP PSP_OPT=-O0        # reproduce the pre-sprint-008 numbers
+make PLATFORM=PLATFORM_PSP                                    # batched, -O2, 2-vertex sprites (default)
+make PLATFORM=PLATFORM_PSP PSP_BATCH=1 PSP_BATCH_NO_SPRITES=1 # batched, triangles only
+make PLATFORM=PLATFORM_PSP PSP_BATCH=0                        # reference library (immediate mode)
+make PLATFORM=PLATFORM_PSP PSP_OPT=-O0                        # reproduce the pre-sprint-008 numbers
 ```
 
 `PSP_BATCH=1` is a **2D** mode: `rlNormal3f` is dropped, so lit 3D is unaffected only because the PSP build

@@ -210,6 +210,10 @@ out of `psp-gcc` at **`-O0`**, while pspGL itself is built `-Os`. `PSP_OPT` now 
 
 - **1,000 sprites at 60 fps**, byte-identical picture (`batch_check` md5 unchanged between `-O0` and `-O2`). The
   batched/unbatched ratio widened from 2.0× to 3.0×.
+- After sprint 009 the batcher is the **default** build and the vertex push path is inlined:
+  `work = 0.87 ms + 6.35 µs × sprites`, 60 fps up to **1,600** sprites, and a mixed rotated/unrotated scene costs
+  16.683 ms instead of 83.417. Of the 6.35 µs, 2.35 µs is the application's own per-object loop — the drawing path
+  is 4.95 µs, and inlining it bought only 10 %: the cost is arithmetic and staging, not calls `[measured: sprint 009]`.
 - **60 fps ceiling**, measured by bisection at `-O2`: triangles fall to 30 fps between **1,200 and 1,300** sprites,
   sprites between **1,500 and 1,700**. Below 1,000 the `-O0` arm was already out of budget.
 - **Per-draw cost is what batching removed, and it is large**: 48.8 ms of work for 1,025 submissions at N=1,000 is

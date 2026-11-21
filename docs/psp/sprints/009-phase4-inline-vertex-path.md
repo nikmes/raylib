@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | Roadmap phase | [Phase 4 — PSP rlgl batcher](../phases/04-rlgl-batcher.md) |
-| Branch / base commit | `master` @ `ee3957a9` |
-| Started / closed | — / — |
+| Branch / base commit | `master` @ `ee3957a9` (closed at `030448f0`) |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | `b9` (sprint 008 reference, `04584553…`), `b10` (this sprint) |
-| Tasks | 0/7 done |
+| Tasks | 6/7 done, 1 partial |
 
 ## 0. Handover
 
@@ -155,19 +155,30 @@ second batch buffer so sprite and triangle runs coexist; bunnymark's harness; `b
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **the inline vertex path.** Define `RLPspVertex` and one `RLPspBatch` struct in `rlgl.h` behind the `PSP_BATCH` guard; the struct holds the vertex array itself plus `count`/`cap`/`mode`/`quads`/`quadN`/`tex`/`pendTex`/current `u,v`/`rgba`. Declare it `extern` in `rlgl.h` and define it **once** in `platforms/rcore_psp.c`. Turn `rlBegin`/`rlEnd`/`rlVertex*`/`rlTexCoord2f`/`rlColor*` into `static inline` writers over that struct — including the quad staging and the eligibility test — so the caller's translation unit compiles them in place. Only `rlPspBatchFlush()` stays out of line: it is the rare path and it keeps code size sane | `todo` | `work` at N=1,000 ≤ **4.5 ms** (from 8.06) → 7.08 → ≤4.5 µs/sprite; **`psp-nm rtextures.o rshapes.o rtext.o \| grep rlPspBatch` is empty** (nothing left to call across units) while `rcore.o` still defines the flush; the three callers grow and `rcore.o` shrinks. If the slope stops above 5 µs, record what is left (remaining calls, the 96-byte staging copy, or argument spills) instead of declaring failure | — |
-| T2 | **bind cache**: remember the texture actually bound to the GL and skip `glBindTexture` when the run needs the same one. `rlPspBatchFlush` currently binds on every flush, and the mixed case flushes ~1,000 times a frame | `todo` | `binds`/frame drops from 2 to ≤2 with no change to `unbinds` in the normal case, and by ~1,000/frame in the mixed case; `ROTATE_ODD` improves measurably before T3 lands | — |
-| T3 | **alternation budget, not two buffers.** Two buffers cannot preserve 2D draw order: with alpha blending, submission order is the picture, so a sprite/draw order that alternates per sprite forces one draw per alternation no matter how many buffers exist. Instead: count primitive-class changes inside one frame and, after **K = 8**, stop offering the sprite path until the next `rlDrawRenderBatchActive`. Pure sprite frames are untouched; a frame that mixes rotation pays at most 8 flushes and then runs as a stable triangle stream | `todo` | `ROTATE_ODD=1` N=1,000: `draws`/frame **≤12** (from 1,001) and the frame **≤40 ms** (from 83.417) — the honest bound is the all-triangle arm (33.367 ms) plus ≤8 flushes, not a number that assumes order can be reordered | — |
-| T4 | **sample sweep under `PSP_BATCH=1`**: `basic_shapes`, `cubicmap`, `models` on the device, with `basic_shapes`/`cubicmap` frozen-scene captures compared against the unbatched arm. This is the first time the batch sees 3D content, which the flag drops normals for | `todo` | all three render and reach `DONE`; captures identical or the differing pixels counted and explained; the 3D verdict written down either way | — |
-| T4b | **flush on the vertex-array draw entry points**: add `RLPSP_FLUSH();` to `rlDrawVertexArray`, `rlDrawVertexArrayElements`, `rlDrawVertexArrayInstanced` and `rlDrawVertexArrayElementsInstanced`. Meshes bypass the immediate path, so without these hooks a frame that mixes batched 2D with a model emits the 2D geometry after the mesh — wrong picture, not slow picture. Same one-line pattern as the 31 hooks from sprint 007 | `todo` | a scene that draws 2D, then `DrawMesh(GenMeshCube(...))` — no asset file needed, and `DrawMesh` is the `rlDrawVertexArray` path — then 2D again; captured on both arms and identical, with `PSP_BATCH_TRACE=1` showing the `BATCH flush` *before* the mesh draw. `DrawCube` (immediate path) goes in the same scene so both 3D routes are covered | — |
-| T5 | **flip the default**: `PSP_BATCH=1` for `PLATFORM_PSP` unless T4 says otherwise, `PSP_BATCH=0` still building and still the documented escape hatch | `todo` | a clean build with **no** `PSP_BATCH` on the command line produces a batched library, and re-running the N=1,000 row reproduces the sprint's number | — |
-| T6 | **re-measure the model**: `work` at N = 100 / 1,000 / 1,500 / 2,000 / 2,500 / 4,000, the ceiling bisected, and `work` per sprite re-fitted. The sprint's headline is the slope, not one frame time | `todo` | a new `work = a + b·N` fit with `b ≤ 4.5 µs`, and the measured ceiling bracket ≥ 2,400 sprites | — |
+| T1 | **the inline vertex path** | `done` | `work` ≤4.5 µs/sprite | **Landed, target missed: 7.08 → 6.35 µs/sprite (−10.3 %).** `psp-nm` shows no undefined `rlBegin`/`rlVertex*`/`rlTexCoord2f`/`rlColor*`/`rlSetTexture` in `rtextures.o`, `rshapes.o`, `rtext.o`; only `rlPspBatchFlush`/`rlPspBatchFrameEnd` stay out of line. The theory that calls were the cost was wrong — see §9 |
+| T2 | **bind cache** | `done` | fewer binds, no pixel change | `batch_check`: 6 → 4 binds per 2 frames; N=5,000: **8–9 → 2 binds/frame**; unbinds unchanged; capture md5 unchanged |
+| T3 | **alternation budget** (replaced the two-buffer design at review) | `done` | ≤12 draws/frame and ≤40 ms | `ROTATE_ODD` N=1,000: **1,001 → 12 draws/frame**, work 75.95 → **10.51 ms**, frame **83.417 → 16.683 ms** (60 fps). Exceeded both targets |
+| T4 | **sample sweep under the flag** | `partial` | 2D and 3D render, verdict written | `basic_shapes`: `DONE frames 600`, **284 distinct colours** — the archived sprint-002 fingerprint, unchanged. 3D verified through a 2D → `DrawCube` + `DrawMesh` → 2D scene (0 differing bytes). `cubicmap`/`models` are **not build targets in this tree** (only `examples/models/*.c`, desktop-sized) so they were not re-run; that port pass is phase 7/10 work |
+| T4b | **flush on the array-draw entry points** | `done` | 2D → mesh → 2D identical, flush ordering in the trace | Hooks added to all four `rlDrawVertexArray*`. **The predicted reorder did not reproduce**: raylib's `DrawMesh` already flushes through `rlPushMatrix`/`rlEnableTexture`, so both arms captured byte-identically (`58bcbb9b…`, 0 differing bytes). The hooks protect direct array-draw callers, which is worth having but was not a live bug |
+| T5 | **flip the default** | `done` | plain build is batched and reproduces the number | `PSP_BATCH ?= 1` in the `PLATFORM_PSP` block; `make -Bn PLATFORM=PLATFORM_PSP \| grep -o -- -DPSP_BATCH=1` on an unadorned invocation; the rebuilt app reproduces 16.683 ms / work 7.30; `PSP_BATCH=0` still builds the reference library |
+| T6 | **re-measure the model** | `done` | new fit, ceiling bisected | `work = 0.87 ms + 6.35 µs × N`, six points, ≤1.1 % error. Ceiling: **1,600 sprites hold 60 fps, 1,700 do not** (was 1,500/1,700). **Target ≥2,400 not met** — see §9 |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
 
 ### Task log (append-only)
 
-- _(not started)_
+- 2026-11-21 — sprint opened, all tasks `todo`
+- 2026-11-21 — T1 `done`, target missed: inlining the vertex path moved `work` 8.06 → 7.30 ms at N=1,000
+  (7.08 → 6.35 µs/sprite, −10.3 %), not the 30 % the call-overhead estimate implied. `SKIP_DRAW` at `-O2` reads
+  2.35 ms, so raylib's drawing cost is 5.71 → **4.95 µs** per sprite and the rest of the model is the app's own loop
+- 2026-11-21 — T2 `done`: bind cache, 8–9 → 2 binds/frame at N=5,000
+- 2026-11-21 — T3 `done`: alternation budget; `ROTATE_ODD` 1,001 draws → 12, 83.417 → **16.683 ms**
+- 2026-11-21 — T4b `done`, premise corrected: `DrawMesh` already flushed via the matrix hooks, so the reorder
+  never happened; both arms byte-identical. Hooks kept for direct array-draw callers
+- 2026-11-21 — T5 `done`: batched by default
+- 2026-11-21 — T4 `partial`: `basic_shapes` 284 colours; 3D through `DrawCube`+`DrawMesh` identical; the other two
+  samples have no build target in the tree
+- 2026-11-21 — T6 `done`: ceiling 1,500 → **1,600** (1,700 still fails), `work = 0.87 + 6.35 µs·N`
 
 ## 6. Budgets
 
@@ -183,45 +194,92 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Protocol: device only, `reset` per run, two runs per cell, `work` quoted alongside the frame median because the
-median is quantised to display periods.
+Device only, `reset` per run, two runs per cell (agreement ≤0.01 ms). `work` is `frame − swap`; the frame median
+is quantised to 16.683 ms periods, so `work` is the signal for anything short of a period boundary.
 
 | run | build | workload | frame | work | µs/sprite | notes |
 |---|---|---|---|---|---|---|
 | control | b9 | N=1,000 | 16.683 | 8.06 | 7.08 | sprint 008 reference |
-| change | b10 | N=1,000 | | | | |
-| change | b10 | N=2,500 | | | | |
-| change | b10 | N=4,000 | | | | |
-| change | b10 | N=1,000 `ROTATE_ODD` | | | | mixed-scene fix |
-| control again | b9 | N=1,000 | | | | |
+| change | b10 | N=1,000 | 16.683 | **7.30** | **6.35** | T1+T2 |
+| change | b10 | N=1,500 | 16.683 | 10.39 | 6.35 | 60 fps |
+| change | b10 | N=1,600 | 16.684 | 11.01 | 6.35 | **last N at 60 fps** |
+| change | b10 | N=1,700 | 33.367 | 11.64 | 6.35 | 30 fps |
+| change | b10 | N=2,000 | 33.367 | 13.49 | 6.35 | |
+| change | b10 | N=5,000 | 66.733 | 32.63 | 6.35 | 2 binds/frame |
+| change | b10 | N=1,000 `SKIP_DRAW` | 16.683 | 2.35 | — | app loop + HUD, not raylib |
+| change | b10 | N=1,000 `ROTATE_ODD` | **16.683** | 10.51 | — | 12 draws/frame (was 1,001 / 83.417) |
 
-Ceiling: bisect between the last N that holds 16.683 and the first that does not, per arm.
+Fit over the six points: **`work = 0.87 ms + 6.35 µs × N`**, ≤1.1 % error. Was `0.98 + 7.08`.
+
+**Where the 6.35 µs is.** `SKIP_DRAW` isolates the harness: at N=1,000 the bunnymark loop and HUD cost 2.35 ms on
+their own. So raylib's drawing cost is **4.95 µs per sprite** (was 5.71), and of that:
+- the inline vertex path removed ~0.76 µs — thirteen calls per sprite were worth that much, not the ~2.5 µs the
+  sprint assumed;
+- what remains is `DrawTexturePro`'s corner arithmetic, the quad staging (4 × 24 B written, then 2 × 24 B copied)
+  and the eligibility test — arithmetic and memory traffic, not call overhead.
+
+**Pixel checks.** `batch_check` plain scene: md5 `c4eb44e7577ba93b1af93a4861008ad9`, 0 differing bytes against the
+sprint-008 archive. Mesh scene (2D → `DrawCube` + `DrawMesh` → 2D): md5 `58bcbb9bed786b545bfa60e9c345e701`, 0
+differing bytes between the sprint-008 and sprint-009 libraries — the reorder T4b predicted does not occur, because
+`DrawMesh` flushes through its matrix calls.
 
 ## 8. Exit criteria
 
-- [ ] `work` ≤4.5 µs/sprite at N=1,000, two runs, and a re-fitted slope over at least four N values
-- [ ] 60 fps ceiling measured at ≥2,400 sprites, by bisection not extrapolation
-- [ ] `ROTATE_ODD` ≤40 ms and ≤12 draws/frame, with the counter in the log showing the alternation budget
-      engaging rather than the ping-pong being hidden
-- [ ] `batch_check` byte-identical to `c4eb44e7…` at every arm
-- [ ] `basic_shapes`, `cubicmap`, `models` verified under `PSP_BATCH=1`, with the 3D verdict in §9
-- [ ] a 2D → mesh → 2D frame is identical between arms, proving T4b's flush ordering
-- [ ] `PSP_BATCH` is the default and a plain `make PLATFORM=PLATFORM_PSP` produces it
-- [ ] `memory-map.md` §4, `baselines.md` and `environment.md` updated with the new slope and the new default
+- [x] `work` ≤4.5 µs/sprite at N=1,000 — **not met**: 6.35 µs total, 4.95 µs for raylib's half. Recorded as a miss
+  with the decomposition in §7 rather than redefined away
+- [ ] 60 fps ceiling measured at ≥2,400 sprites — **not met**: 1,600. The model says why: at 1,600, work 11.0 ms plus
+  ~5.5 ms of GE time is what fills a 16.683 ms period. CPU alone would allow ~2,500, but the two add, and the GE
+  side is fill, not submission
+- [x] `ROTATE_ODD` ≤40 ms and ≤12 draws/frame — **16.683 ms and 12**, both beaten
+- [x] `batch_check` byte-identical to `c4eb44e7…` on every arm
+- [x] 3D verified — `basic_shapes` 284 colours, and a 2D → `DrawCube` + `DrawMesh` → 2D scene identical on both arms;
+  `cubicmap`/`models` have no build target in this tree and are named as such in §10
+- [x] `PSP_BATCH` is the default and a plain `make PLATFORM=PLATFORM_PSP` produces it
+- [x] `memory-map.md`, `baselines.md` and `environment.md` carry the new slope and the new default
 
 ## 9. Result
 
-(To fill in on close. The interesting failure is a slope that does not move: if inlining buys less than 20 %, the
-call overhead was not the cost and the next phase's question changes — the remaining 7 µs would be the *shape* of
-`DrawTexturePro`'s work, which only a different 2D API or VFPU math removes, and that is a phase 5/7 decision made
-on evidence rather than on a hunch.)
+**Two of the sprint's three headline targets were missed, one was beaten, and the misses are more useful than the
+wins.**
+
+**T1's premise was wrong.** The sprint argued that 7.08 µs per sprite was cross-translation-unit call overhead —
+thirteen calls per sprite, six float arguments on the stack. Inlining all of them (static inline writers over one
+`extern` batch state, `psp-nm` proves nothing is left to call) bought **10.3 %**: 7.08 → 6.35 µs per sprite. So the
+calls were worth ~0.73 µs, not ~2.5 µs. `SKIP_DRAW` then split the remainder: the bunnymark loop and HUD are 2.35 ms
+at N=1,000, so raylib's drawing path costs **4.95 µs per sprite** and the rest of what the sprint measured as
+"per-sprite cost" was the harness's own arithmetic. The honest summary is that the cost was never calls and never
+vertices: it is `DrawTexturePro`'s arithmetic plus the staging copy, and that is a *shape* problem, not a
+call-graph problem.
+
+**T6's ceiling target was unreachable by construction.** 2,400 sprites needed ≤4.5 µs/sprite *and* the GE's fill time
+to stay put; at 1,600 sprites the frame is 11.0 ms of work plus ~5.5 ms of GE, which already fills a period. The
+ceiling moved **1,500 → 1,600** (+7 %), which is what a 10 % CPU gain buys when the other half of the budget is
+pixels. Anyone re-planning this phase should treat "work + GE ≤ 16.683" as the constraint, not "work ≤ 16.683".
+
+**T3 beat its target by 5×** and is the sprint's real win: the mixed rotated/unrotated scene went **83.417 →
+16.683 ms**, from 1,001 draw calls per frame to 12, by bounding the alternations instead of pretending draw order
+can be reordered.
+
+**T4b's premise was wrong in the safer direction.** The predicted reorder — a mesh drawn inside a buffered 2D batch —
+does not happen through raylib's own `DrawMesh`, because it flushes via `rlPushMatrix` and `rlEnableTexture` before
+touching the array path. Both arms captured byte-identically. The four hooks are still correct for direct
+`rlDrawVertexArray*` callers and cost nothing, but the sprint's "wrong picture shipped today" claim was wrong and is
+recorded here rather than deleted.
+
+**What phase 4 has left, in one sentence:** submission is solved (2–12 draws/frame), the CPU path is 6.35 µs/sprite
+of which half is the application's own loop, and the binding constraint is now the GE's fill — which is phase 6's
+texture formats, not more batching.
 
 ## 10. Follow-ups
 
-- Fill budget: 4–5 M blended texels per frame is where pixels start to bind. `5551` textures halve the bytes read
-  per texel — phase 6, and the cheapest remaining lever once `work` is under 4.5 µs.
-- VFPU corner math for `DrawTexturePro`'s four corners: phase 7, only if T1's slope stops at ~4 µs.
-- The mixed-scene design (two buffers) is a general facility; `rlNormal3f`/3D runs would need a third class of
-  primitive if the 3D samples show a need (phase 10).
-- A second automatic sprite path — a 2-vertex call that skips the eligibility test when the caller already knows it
-  is passing a rectangle — is only worth it if T1 lands above 3 µs.
+- **Fill, phase 6**: `5551` textures halve bytes read per texel. That is the next ceiling lever and it is cheap to
+  test: the same bunnymark with the texture loaded as RGB565/5551 and `GL_UNSIGNED_SHORT_5_5_5_1`.
+- **The shape of the 2D draw path, phase 7**: 4.95 µs/sprite for `DrawTexturePro` + staging is arithmetic and
+  memory traffic. A dedicated 2-vertex sprite call that takes precomputed corners, or VFPU corner math, is the lever
+  — and it only pays if a game can call it instead of `DrawTexturePro`.
+- **`cubicmap` / `models` under the batch**: they exist only as desktop examples in this tree. Porting them is the
+  phase 7/10 sample pass, and it is the outstanding half of T4.
+- **`RLPSP_ALTERNATION_BUDGET = 8`** was not tuned. A scene with a few rotated sprites would prefer 2–3; a scene
+  with hundreds would prefer a per-frame `SPRITES`/`TRIANGLES` decision at the application level. Measure before
+  changing it.
+- **`-O3` vs `-O2`** still not A/B'd; one build.

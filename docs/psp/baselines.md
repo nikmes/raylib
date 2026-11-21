@@ -88,6 +88,30 @@ staging copy — which points at call overhead, not arithmetic: `rlVertex2f`/`rl
 *different translation unit* (`platforms/rcore_psp.c`) with six float arguments passed on the stack under the o32
 ABI, so nothing inlines and each sprite pays for fifteen to twenty of them `[derived: 1,570 cycles/sprite]`.
 
+### After sprint 009 (current default)
+
+The batcher is the default build now, and the vertex push path is inlined. The fit, six points, ≤1.1 % error:
+
+```
+work (ms)  = 0.87 + 6.35 µs x sprites        (was 0.98 + 7.08 before sprint 009)
+frame (ms) = ceil((work + ~5.5)/16.683) periods
+```
+
+| sprites | frame | work | note |
+|---|---|---|---|
+| 1,000 | 16.683 | 7.30 ms | 60 fps |
+| 1,500 | 16.683 | 10.39 ms | 60 fps |
+| **1,600** | **16.684** | 11.01 ms | **last N at 60 fps** |
+| 1,700 | 33.367 | 11.64 ms | 30 fps |
+| 5,000 | 66.733 | 32.63 ms | 2 binds/frame |
+
+`work` is not all raylib: at N=1,000 the bunnymark loop and HUD cost 2.35 ms on their own (`SKIP_DRAW`), so the
+drawing path is **4.95 µs per sprite** (5.71 before). The ceiling being 1,600 rather than the ~2,500 the CPU model
+alone would allow is the GE: at 1,600 sprites its fill takes ~5.5 ms, and work + GE is what must fit a period.
+
+Mixed rotated/unrotated scenes: an alternation budget caps primitive-class changes at 8 per frame, so the worst case
+is 12 draws/frame and a 16.683 ms frame, against 1,001 draws and 83.417 ms before it.
+
 ## Adopted library (current reference)
 
 Since sprint 006 the project ships **pspGL from `TheMrIron2/pspgl` @ `ae9a668`, `PSPGL_DLIST_SIZE_WORDS=8192`**,
