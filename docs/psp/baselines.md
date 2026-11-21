@@ -47,6 +47,10 @@ Before this, at `-O0`, 1,000 sprites was already 30 fps in the batched arm. **Tr
 history**: they are still the record of what batching and the pspGL list size bought, but they are not what the code
 does today.
 
+The `1,500–1,700` column is the **model's bracket**, not a measured pair: the measured last pass is **1,600** and
+the first measured failure is **1,700** (sprint 008; the table at the end of this section). Both statements are
+true; do not quote "1,500 last pass" without saying it is the model's lower bracket.
+
 ## Scaling past the ceiling, and what "maximum at 60 fps" means
 
 Batched sprite arm at `-O2`, 32×32 RGBA8888 blended sprites, `TARGET_FPS=0`, two runs per point (agreement
@@ -111,6 +115,22 @@ alone would allow is the GE: at 1,600 sprites its fill takes ~5.5 ms, and work +
 
 Mixed rotated/unrotated scenes: an alternation budget caps primitive-class changes at 8 per frame, so the worst case
 is 12 draws/frame and a 16.683 ms frame, against 1,001 draws and 83.417 ms before it.
+
+### The driver arm (sprint 014) — a new ceiling, and why the old cost model stops here
+
+The numbers above are **pspGL, one display list, a full sync per frame**. pspgu replaces it with two rotating lists,
+per-list vertex arenas and a three-framebuffer display, and the ceiling moves:
+
+| configuration | last 60 fps pass | first failure | work at the last pass | texels/frame |
+|---|---|---|---|---|
+| pspGL (sprint 008) | **1,600** | 1,700 | 11.01 ms | 1.64 M |
+| pspgu, one list + full sync | **1,895** | 1,896 | 11.77 ms | 1.94 M |
+| pspgu, final (queued, 3 buffers) | **2,375** | 2,376 | 16.55 ms | 2.43 M |
+
+The final `work` is **not** comparable to the old model: the app-level `work` now includes copying vertices into the
+per-list arena and overlaps the GE, so `work = 0.87 + 6.35 µs × N` is the pspGL/one-list arm only. Use the measured
+row; the frame is still quantised to 16.683 ms periods. The cost of the tear-free display is 272 KiB of VRAM: three
+colour buffers plus one depth buffer = 1,088 KiB, leaving 913,344 B for textures (sprint 014 §9).
 
 ## The pixel budget (sprint 010)
 

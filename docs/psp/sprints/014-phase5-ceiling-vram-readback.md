@@ -311,4 +311,10 @@ that phase 5 did own is met.
 - `glReadPixels` mid-frame (a list still open) finishes and waits for that list; that is a diagnostic path, not a
   per-frame one. Document it before any sample uses it in a loop.
 - The pspgu backup/restore test was fixed here after it silently replaced the pspGL archive with pspgu; `--restore`
-  now refuses a backup containing `pspguBeginFrame`.
+  now refuses a backup containing `pspguBeginFrame`. The boot line carries a `pspgu bNN` marker and
+  `tools/pspgu-build.sh --verify-install` compares installed object bytes with a fresh build, because the symbol
+  content hash does not change when code does.
+- Canonical corrections that outlive this sprint: the driver/capture and `scrshot`-is-BGR notes in
+  [environment](../environment.md), the three-buffer VRAM map and the host-RAM lists/arenas in
+  [memory-map §3 and §"VRAM"](../memory-map.md), and the final-driver row plus the cost-model caveat in
+  [baselines](../baselines.md).

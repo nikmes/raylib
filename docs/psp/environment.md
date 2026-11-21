@@ -110,6 +110,28 @@ pspsh -e "reset"
 - Verified end to end: two consecutive `run → DONE → reset → run` cycles both logged `DONE frames 600  fps 30`
   with PSPLink enumerated throughout.
 
+### Driver switching and capture (sprint 014 corrections)
+
+- `tools/pspgu-build.sh` installs pspgu over `$PSPDEV/psp/lib/libGL.a`; `--restore` puts pspGL back, and
+  `--check` reports which is installed. Leave **pspGL** installed when you stop, so the toolchain is in its
+  shipped state; `tools/pspgl-build.sh --check` must report content hash `2ab7378e`.
+- The backup test was broken until sprint 014: it piped `grep -c pspguBeginFrame` (output `0`/`1`) into
+  `grep -q pspgu`, so every pspgu install overwrote the pspGL backup with pspgu. An A/B could then measure
+  pspgu against itself. `--restore` now refuses an archive containing `pspguBeginFrame`; rebuild pspGL from
+  its pinned commit with `tools/pspgl-build.sh`.
+- **Check the build marker before trusting a run.** The boot line is
+  `[PSPGU] GU up: pspgu bNN, ...`. If it is not the build you just made, the archive is stale:
+  `tools/pspgu-build.sh --verify-install` compares the installed object bytes with a fresh build. The content
+  hash in `--check` covers symbols only, so it does **not** change when code changes.
+- **`scrshot` writes its BMP in BGR byte order.** When comparing it with a `glReadPixels` PNG of the same
+  frame, swap the capture's channels first; the two then agree within one 5-6-5 step (measured max 7).
+- **`glReadPixels` reads the last completed frame** when called after `EndDrawing`, which is the frame the
+  display received. Called while a list is open, it finishes and waits for that list and reads the current
+  draw buffer. It is a diagnostic path, not a per-frame call.
+- The display uses **three framebuffers** and switches with `PSP_DISPLAY_SETBUF_NEXTHSYNC` after the vblank
+  wait. `NEXTFRAME` delays the switch by a full vblank, which makes the display read the buffer the next frame
+  is drawing: the symptom is a torn horizontal band, visible only while the app is moving.
+
 ## Building
 
 ```sh

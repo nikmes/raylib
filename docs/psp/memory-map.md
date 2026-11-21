@@ -91,9 +91,10 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | RAM | 32 MB total on a 1000; user partition 2 is 25,165,824 B, 25,149,440 free idle | `[measured]` |
 | Free memory a program sees with a declared 1 MB heap | 23,128 KB (1 MB heap + 256 KB main stack + 4 KB) | `[measured]` |
 | EDRAM for GE | 2 MiB, at `0x04000000` | `[public: pspgu/pspge]` |
-| Framebuffers (5551, 512x272 stride x2) + depth | 816 KiB, of which 272 KiB is depth | `[derived]` |
-| Textures left after the above | ~1.26 MiB | `[derived]` |
-| VRAM layout, 16-bit (blueprint's map) | draw `0x00000`, display `0x44000`, depth `0x88000` — 835,584 B used (`0xCC000`), **1,261,568 B free** | `[external: blueprint §16.3]` |
+| Framebuffers (pspgu: 5650, 512x272 stride **x3**) + 16-bit depth | **1,088 KiB**, of which 272 KiB is depth | `[measured: sprint 014]` |
+| Textures left after the above | **913,344 B** with depth; **1,191,872 B** without | `[measured: sprint 014]` |
+| VRAM layout, pspgu b16 | colour `0x00000`, `0x44000`, `0x88000`; depth `0xCC000`; textures from `0x110000` (1,114,112) — 1,183,808 B used with the corpus' textures, **913,344 B free** | `[measured: sprint 014]` |
+| Two-buffer layout (superseded) | two 512x272 buffers + depth = 816 KiB, textures from `0xCC000` | `[derived, before sprint 014]` |
 | VRAM layout, 32-bit | three buffers at 557,056 + 557,056 + 278,528 = **1,392,640 B used**, only 704,512 B free | `[external: blueprint §16.3]` |
 | GE texture cache | **8 KiB**, coherent with nothing; only `sceGuTexFlush` empties it. A T8 128x128 texture (16 KiB) already misses within one triangle | `[external: blueprint §16.7]` |
 | Max texture the GE samples | **512 x 512**; larger images must be drawn as 512-wide windows | `[external: blueprint §16.7]` |
@@ -838,7 +839,13 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
 - `sceGeEdramGetAddr()` returns the base (`0x04000000`), `sceGeEdramGetSize()` the size.
 - `sceGeEdramSetSize(int size)` takes `0x200000` or `0x400000`, and the header states **0x400000 returns an
   error on the PSP FAT** — our PSP-1000. So the "upper 2 MB" the blueprint mentions as opt-in is not available
-  to us at all; 2 MB is the budget, of which framebuffers and depth already take 816 KiB.
+  to us at all; 2 MB is the budget, of which the pspgu display (three framebuffers) and depth take **1,088 KiB**.
+- **The command lists and vertex arenas are host RAM, not EDRAM.** pspgu keeps two 240 KiB display lists and
+  two 128 KiB per-list vertex arenas in main memory; only framebuffers, depth and textures belong in the 2 MiB
+  sum. A budget that adds the lists to VRAM double-counts memory in the wrong partition.
+- Per-draw vertex allocations are **64-byte aligned** because the GE reads them after a D-cache writeback. With
+  16-byte starts a draw could share a dirty cache line with its neighbour; `basic_shapes` then differed from
+  pspGL by 26–71 edge pixels. The alignment made it byte-identical (sprint 014 T7).
 
 ### Samples worth reading
 

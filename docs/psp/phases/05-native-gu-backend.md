@@ -33,6 +33,12 @@ Two design points changed under measurement, and they supersede the two-buffer b
 `sceGeListSync(qid, PSP_GE_LIST_DONE)` on the list being reused, using the qid `ge_list_executed[0]` exposes after
 `sceGuStart`. Both waits (reused list and displayed frame) measure 18–26 µs in a steady frame.
 
+**What "no full GE wait" means here.** It means no wait on the frame just submitted. The driver still waits on
+**older** frames — the list whose memory is being reused (two frames old) and the frame about to be displayed (one
+frame old) — because both must be complete before that memory or that buffer is used. Those waits are targeted and
+counted; the removed operation is the `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` that waited for the current
+frame inside `eglSwapBuffers`. A later reader should not equate "no full wait" with "no blocking call at all".
+
 ## 0. Review findings (2026-11-21) — the shape is decided and it is not the one written below
 
 **Finding 1: there are two ways to do this and the page only described the harder one.** The page (below) proposes
