@@ -40,6 +40,11 @@
 // console the same way the application's own TRACELOG does.
 #define pspguLog(...) do { printf("[PSPGU] "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while (0)
 
+// Bump when the driver's observable behaviour changes. Printed in the boot line so a
+// stale archive on the device is visible before a measurement is believed; sprint 014
+// lost runs to archives that had not rebuilt.
+#define PSPGU_BUILD "b16"
+
 #ifndef PSP_GU_DEPTH
     #define PSP_GU_DEPTH 1              // 16-bit depth buffer, 272 KiB at 512 stride
 #endif

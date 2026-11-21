@@ -177,8 +177,9 @@ static void pspguInitGu(void)
     pspgu.vsync = 1;
     pspgu.current = 1;
 
-    pspguLog("GU up: %dx%d stride %d, fb %u KiB x%d, depth %s (%u KiB), lists 2 x %u KiB, arenas 2 x %u KiB",
-                 pspgu.width, pspgu.height, pspgu.stride, pspgu.fbBytes/1024, PSP_GU_FB_COUNT,
+    pspguLog("GU up: pspgu %s, %dx%d stride %d, fb %u KiB x%d, depth %s (%u KiB), lists 2 x %u KiB, arenas 2 x %u KiB",
+                 PSPGU_BUILD, pspgu.width, pspgu.height, pspgu.stride,
+                 pspgu.fbBytes/1024, PSP_GU_FB_COUNT,
                  (pspgu.depthOffset != NULL)? "yes":"no",
                  (pspgu.depthOffset != NULL)? (pspgu.fbBytes/1024) : 0,
                  pspgu.listBytes/1024, pspgu.arenaBytes/1024);

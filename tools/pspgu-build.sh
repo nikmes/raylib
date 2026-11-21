@@ -7,6 +7,7 @@
 #   tools/pspgu-build.sh --check         # is the installed libGL.a a pspgu build, and which?
 #   tools/pspgu-build.sh --restore       # put pspGL back (rebuilds it from /home/psp/ref)
 #   tools/pspgu-build.sh --verify-repeat # build twice, require the same content hash
+#   tools/pspgu-build.sh --verify-install # do the installed objects match a fresh build?
 #
 # The archive's own sha256 is not stable (pspGL embeds __DATE__ in two objects); pspgu has
 # no such timestamp, so a content hash over the object files is the reproducible contract.
@@ -75,6 +76,29 @@ case "${1---install}" in
         build || exit 1
         b=$(content_hash "$SRC")
         if [ "$a" = "$b" ]; then echo "reproducible: $(echo "$a" | sha256sum | cut -d' ' -f1)"; else echo "NOT reproducible"; exit 1; fi
+        ;;
+    --verify-install)
+        # A stale archive on the device has produced wrong measurements more than once.
+        # Compare object bytes, not the symbol-list content hash: a code change does not
+        # alter the symbols, which is exactly how a stale install goes unnoticed.
+        if ! psp-nm "$LIB" 2>/dev/null | grep -q pspguBeginFrame; then
+            echo "installed libGL.a is not a pspgu build"; exit 1
+        fi
+        build || exit 1
+        tmp="$(mktemp -d)"
+        ( cd "$tmp" && psp-ar x "$LIB" ) || { rm -rf "$tmp"; exit 1; }
+        bad=0
+        for o in $(cd "$SRC" && ls *.o); do
+            a="$(sha256sum "$SRC/$o" | cut -d' ' -f1)"
+            b="$(sha256sum "$tmp/$o" 2>/dev/null | cut -d' ' -f1)"
+            if [ "$a" != "$b" ]; then echo "DIFF $o"; bad=1; fi
+        done
+        rm -rf "$tmp"
+        if [ "$bad" = "0" ]; then
+            echo "installed pspgu matches a fresh build"
+        else
+            echo "installed pspgu is STALE; run $0"; exit 1
+        fi
         ;;
     --depth=*)
         build "${1#--depth=}" || exit 1
