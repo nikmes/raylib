@@ -1,0 +1,168 @@
+# Sprint 013 — Pixel parity across the corpus, and the counter harness back
+
+| | |
+|---|---|
+| Roadmap phase | [Phase 5 — Native GU backend](../phases/05-native-gu-backend.md) |
+| Branch / base commit | `master` @ `f0cec42a` |
+| Started / closed | — / — |
+| Build number(s) | `b14` (pspgu, parity on `batch_check`, swizzled) |
+| Tasks | 0/5 done |
+
+## 0. Handover
+
+**Situation.** Sprint 012 reached **byte-identical output on `batch_check`'s 2D scene**: pspgu and pspGL render the
+same binary to the same bytes (0 differing pixels, 613 colours), with swizzled textures. What has never been
+rendered by the new driver is the rest of the corpus — the 2D→3D→2D scene, `basic_shapes`, `bunnymark` — and the
+`--wrap` counter harness cannot link against it at all.
+
+**Why the counters do not link, and why that is this sprint's job.** `psp-tests/*` interpose GL calls with
+`-Wl,--wrap=glBegin`, `--wrap=glEnd`, `--wrap=glVertex2f`, `--wrap=glVertex2i`. `--wrap` requires the **real**
+symbol to exist at link time, and under `PSP_BATCH=1` neither the library nor pspgu defines the immediate-mode
+entry points — the batcher calls array draws only. Every test therefore builds `WRAP=0` today, which means no
+counter, no `arrayVerts`, no `SPLIT` from `bunnymark`. That is phase-5 **task 12**, and it is a prerequisite for
+sprint 014's ceiling measurement.
+
+**Already true, verified — do not re-derive:**
+
+- `batch_check` 2D scene: **byte-identical** to pspGL (`cmp -l` → 0). Keep that as the regression gate; any change
+  in this sprint that breaks it is a bug, not a trade-off.
+- The texture path is complete for power-of-two textures: swizzled upload, `GU_TCC_RGBA` alpha, `GU_DITHER`
+  background, LUMINANCE_ALPHA decoded as grey+alpha (not RGB565 — that was the last 32.6 %).
+- Non-power-of-two textures are **known broken** (sprint 012 T2): the swizzle needs `height % 8 == 0` and a
+  power-of-two width, so such textures currently fall back to linear and still sample wrong. Out of scope here;
+  no test in this sprint uses one.
+- `batch_check` has a `MESH_SCENE=1` build that draws 2D → `DrawCube` + `DrawMesh(GenMeshCube)` → 2D. That is the
+  only 3D in the corpus, and it exercises `glDrawElements` and the converting vertex path.
+- pspGL's capture of the mesh scene exists (`/tmp/s3/mesh_b10.raw` in an earlier session; regenerate if absent).
+
+**Read before acting:**
+
+1. [Sprint 012](012-phase5-texture-parity.md) §9a — the four fixes that produced parity, and the pattern test that
+   found them.
+2. `tools/pspgu/gl_draw.c` — the two draw paths and where an immediate-mode implementation would feed them.
+3. `psp-tests/bunnymark/Makefile` — the `--wrap` list; those five symbols are the contract for T3.
+
+**First action.** Build `batch_check` with `MESH_SCENE=1` against pspgu and against pspGL and compare the captures.
+That is the cheapest new information in the sprint and it decides whether T2 is a fix or a report.
+
+**Hard rules.**
+
+- **`batch_check`'s 2D scene stays byte-identical throughout.** It is the only regression gate the phase has.
+- **Immediate mode must feed the same path as arrays.** `glBegin`/`glVertex*` should accumulate into the same 24-byte
+  layout the batcher uses, not a second parallel implementation — otherwise the two paths diverge and one of them is
+  untested.
+- **`WRAP=1` and `WRAP=0` builds must produce the same picture.** The counters only add symbols; if the picture
+  changes, the wrapper is changing behaviour.
+- pspGL must stay restorable in one command (`tools/pspgu-build.sh --restore`), verified with
+  `tools/pspgl-build.sh --check` against content hash `2ab7378e`.
+- `reset` before each run, never `exit`, no `sceKernelExitGame` in the app.
+
+**Commands.**
+
+```sh
+export PSPDEV=/home/psp/pspdev
+export PATH=$PATH:$PSPDEV/bin
+
+cd /home/psp/raylib-psp
+./tools/pspgu-build.sh                       # install pspgu
+./tools/pspgu-build.sh --restore             # back to pspGL for the reference capture
+
+cd psp-tests/batch_check && make MESH_SCENE=1 WRAP=0
+cd ../bunnymark          && make BUNNY_COUNT=1000 FRAMES=200 TARGET_FPS=0   # WRAP=1 once T3 lands
+( printf './app.prx\n'; sleep 20 ) | pspsh
+pspsh -e "scrshot host0:/out.raw"
+```
+
+**Do not touch.** `gl_texture.c`'s upload path, the batcher in `src/`, `psp-tests/texture_pattern` (it is a finished
+diagnostic), and anything under `docs/` outside this sprint's record.
+
+**Done means** §8: the mesh scene and `basic_shapes` match pspGL, `bunnymark` runs with `WRAP=1` and logs counters,
+and the 2D gate is still 0 differing pixels.
+
+## 1. Objective
+
+The corpus matches pspGL beyond the 2D scene — the 2D→3D→2D mesh scene and `basic_shapes` byte-identical, or the
+differing pixels counted and explained — **and** `bunnymark` links and runs with `WRAP=1`, so the counters that every
+measurement in phases 2–4 depended on work against the new driver.
+
+## 2. Why now
+
+Two reasons, both blocking. First, the parity claim currently rests on one scene; a driver is not proven by a scene
+that only uses sprites, textures and text. Second, sprint 014 measures a 60 fps ceiling, and a ceiling cannot be
+measured without the counters — `arrayVerts`, `draws`, `SPLIT` are exactly the numbers that comparison needs, and
+they are link-time wrappers that do not exist yet.
+
+## 3. Scope
+
+**In:** the mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` compatibility, and the
+`PSP_DISABLE_VSYNC` build.
+
+**Out:** non-power-of-two textures (sprint 012 T2, diagnosed), list rotation and VRAM accounting (014),
+`glReadPixels` (014), the texture-format memory decisions (phase 6), 4-bit glyph atlases (phase 6).
+
+## 4. Preconditions
+
+- [ ] `pspsh` answers, USB device `054c:01c9`; `reset` per run
+- [ ] pspgu installed and `--check` agrees; pspGL restorable and verified
+- [ ] `batch_check` 2D scene reproduces **0 differing pixels** before anything changes
+- [ ] pspGL captures of the mesh scene and of `basic_shapes` taken **this session** (the archived ones may be from a
+      different library)
+- [ ] `basic_shapes`' archived fingerprint to beat: **284 distinct colours**
+
+## 5. Tasks
+
+| ID | task | status | verification | evidence |
+|---|---|---|---|---|
+| T1 | **the mesh scene**: `batch_check MESH_SCENE=1` (2D → `DrawCube` + `DrawMesh` → 2D) on both drivers, captured this session | `todo` | identical, or the differing pixels counted and localised; this is the first test of `glDrawElements` and the converting path under 3D | — |
+| T2 | **`basic_shapes`** on both drivers | `todo` | identical, or the difference explained; at minimum the 284-colour fingerprint holds | — |
+| T3 | **immediate-mode symbols** (task 12): `glBegin`, `glEnd`, `glVertex2i/2f/3f`, `glTexCoord2f`, `glColor4ub/3f/4f`, `glNormal3f`, accumulating into the same 24-byte layout the array path uses | `todo` | `psp-tests/*` link with `WRAP=1`; `bunnymark` logs `COUNT ... verts=` non-zero in a `PSP_BATCH=0` build, and the picture is unchanged | — |
+| T4 | **counters under the new driver**: `bunnymark` at N=1,000 with `WRAP=1`, both `PSP_BATCH=1` (arrays) and a `PSP_BATCH=0` build (immediate) | `todo` | `COUNT` shows `arrayVerts` for the array path and `verts` for the immediate path, and `SPLIT swap=` is non-zero | — |
+| T5 | **`PSP_DISABLE_VSYNC`** build links and runs (`eglSwapInterval` is compiled out of the 52-symbol list) | `todo` | the build links, the app runs, and the counter's swap figure changes versus the vsync build | — |
+
+Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable — never renumber.
+
+### Task log (append-only)
+
+- _(not started)_
+
+## 6. Budgets
+
+| budget | limit | measured | tag |
+|---|---|---|---|
+| `batch_check` 2D, differing pixels | 0 (regression gate) | 0 at sprint start | |
+| mesh scene, differing pixels | 0, or counted and explained | | |
+| `basic_shapes` colours | ≥ 284 | | |
+| `bunnymark` N=1,000 with `WRAP=1` | logs `COUNT` and `SPLIT` | | |
+| `src/` changes | 0 — the driver and the tests only | | |
+
+## 7. Measurements
+
+| run | driver | build | scene | result |
+|---|---|---|---|---|
+| gate | pspgu | `WRAP=0` | `batch_check` 2D | 0 differing pixels (from sprint 012) |
+| test | pspgu | `MESH_SCENE=1` | 2D → 3D → 2D | |
+| test | pspgu | `basic_shapes` | shapes + text | |
+| test | pspgu | `WRAP=1` | `bunnymark` N=1,000 | |
+| reference | pspGL | same builds | same scenes | |
+
+## 8. Exit criteria
+
+- [ ] the mesh scene matches pspGL, or every differing pixel is counted and explained
+- [ ] `basic_shapes` matches, or the difference is explained, with its colour count recorded
+- [ ] `psp-tests/*` link with `WRAP=1` and the counters report non-zero for both draw paths
+- [ ] `WRAP=1` and `WRAP=0` produce the same picture
+- [ ] `PSP_DISABLE_VSYNC=1` builds and runs
+- [ ] the 2D `batch_check` gate is still 0 differing pixels
+- [ ] findings written back into the phase page and `memory-map.md` §9
+
+## 9. Result
+
+(To fill in on close. The interesting failure would be the mesh scene: `DrawMesh` exercises `glDrawElements`, index
+rebasing and the converting vertex path, none of which the 2D scene touches — so a difference there is a different
+bug from the texture ones, and the count will say whether it is ordering, indices or attributes.)
+
+## 10. Follow-ups
+
+- Non-power-of-two textures: pad the height and correct with `sceGuTexScale` (012 T2).
+- 3D depth and camera behaviour beyond one cube — phase 10.
+- `glGetFloatv` for `GL_LINE_WIDTH`/`GL_POINT_SIZE` is still answered from constants; fine until something reads them.

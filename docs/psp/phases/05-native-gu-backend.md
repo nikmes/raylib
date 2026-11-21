@@ -226,13 +226,14 @@ history stays readable.
 | # | task | state | what the device said |
 |---|---|---|---|
 | 1 | vertical slice: the 52 symbols, real egl init, two framebuffers, GU display, `glClear` | `done` | boots, clears to the pspGL value, **0 pspGL symbols** |
-| 2 | egl layer: config/context/surface/swap/interval, DEPTH bit of `glClear` | `doing` | initialises and swaps; the swap's vsync semantics have never been exercised under a batched frame because task 6 isn't right yet |
+| 2 | egl layer: config/context/surface/swap/interval, DEPTH bit of `glClear` | `done` | batched frames swap at the display rate with `batch_check` and `texture_pattern`; the `PSP_DISABLE_VSYNC` path is sprint 013 T5 |
 | 3 | state map: every `glEnable` bit the library sets, blend/depth/cull/masks/shade/viewport/scissor | `done` | mapped; the library uses ten enable bits, not the twenty GL has |
-| 3b | **dither** — new. pspGL's captured background is a *pattern* of `(240,240,240)` and `(248,248,248)`; ours is flat `(240,244,240)`. Match it (`GU_DITHER`, and check `GU_FAST_CLEAR_BIT`) or record why not | `todo` | 62 % of the frame differs at least partly because of this |
+| 3b | dither: match pspGL's background pattern | `done` | `sceGuEnable(GU_DITHER)`; the background pattern now matches and it was half of the frame's difference (sprint 012 T5) |
 | 4 | matrices in CPU memory + pushed to the GE, `glGetFloatv` for both queries | `done` | a raw full-screen self-test sprite fills the display: transform proven. 3D path still unverified |
 | 5 | vertex arrays: fast interleaved path, converting path, `glDrawElements`, modes 10/4/1 | `done` | sprites draw; the fast path engages (`fast=1` in the trace) |
-| 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `doing` | uploads and draws (274 colours vs pspGL's 613) but three deltas documented below |
-| 6b | **texture parity** — new, and the next sprint's whole job: known-pattern texture, swizzle recipe from the references (`swizzle = 1`, `tbw` = padded pow2), alpha, dither | `doing` | see sprint 012 |
+| 6 | textures: gen/bind/delete/image/subimage/parameters, VRAM arena, white default | `done` | **byte-identical to pspGL** (613 colours, 0 differing pixels) after the four fixes in sprint 012 |
+| 6b | texture parity: pattern test, swizzle recipe, alpha, dither | `done` | [sprint 012](../sprints/012-phase5-texture-parity.md) — the pattern test cut three deltas to one, and the last was our own LA-decode bug. **0 differing pixels** |
+| 6c | non-power-of-two textures: pad the height and correct with `sceGuTexScale(realW/padW, realH/padH)` | `todo` | 012 T2 diagnosed it: the swizzle needs a power-of-two width and `height % 8 == 0`, so NPOT textures currently fall back to linear and still sample wrong. Corrects the earlier "TexScale is identity" claim, which holds only for pow2 |
 | 7 | readback: `glReadPixels` expanding 5650→RGBA8888 and flipping, plus `glGetString` | `todo` | `scrshot` bypasses GL, so nothing we own tests this |
 | 8 | display lists: two rotating, sized from a measured worst case, `GU_SYNC_WHAT_QUEUED` on the previous frame | `todo` | currently one list and a full sync per frame — correct but the slowest option |
 | 9 | cache discipline before the GE reads vertices or texels | `done` | it was **blocking**, not an optimisation: without it the GE read stale vertices and drew nothing |
@@ -241,93 +242,43 @@ history stays readable.
 | 12 | **immediate-mode symbols** — new: `glBegin`/`glEnd`/`glVertex2i/2f/3f`/`glTexCoord2f`/`glColor4ub/3f/4f`/`glNormal3f`. Needed by the `--wrap` counter harness (it requires `__real_*` to exist) and by any `PSP_BATCH=0` library | `todo` | this is why `psp-tests/*` currently build with `WRAP=0` |
 | 13 | **remove the stubs** — new: once 6b/7/12 land, `gl_stub.c` should hold nothing; any remaining call logs once and asserts in a debug build instead of silently doing nothing | `todo` | a silent stub is how "the driver draws nothing" stays invisible |
 
-**Dropped:** nothing. Every original task survived the review; the list grew by four (3b, 6b, 12, 13) because
-doing the work found work.
+**Dropped:** nothing. Every original task survived the review; the list grew by five (3b, 6b, 6c, 12, 13) because
+doing the work found work. Five are done, one is diagnosed and waiting (6c), and the rest belong to sprints 013
+(12) and 014 (7, 8, 10, 11, 13).
+
 
 ## Sprints
 
-Four sprints, in order. 011 is done and is written up for the record; 012 is written out in full because it is
-next; 013 and 014 are scoped here and get their own pages when they start.
+Four sprints, in order. 011 and 012 are done and written up; 013 is written out in full because it is next;
+014 is scoped here and gets its page when it starts.
 
-| sprint | goal | exit |
-|---|---|---|
-| [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | `done` — framebuffers, clear, matrices, draw paths, cache discipline | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
-| [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | one known-pattern texture, the references' swizzle recipe, dither | `batch_check` **byte-identical** to pspGL; a 2×2 pattern drawn 1:1 matches texel for texel |
-| 013 — Pixel parity and the counter harness | both `batch_check` scenes and `basic_shapes` identical; `bunnymark` runs with `WRAP=1` (task 12); `SPLIT` swap sane; `PSP_DISABLE_VSYNC` builds | every archived capture reproduced; counters work again |
-| 014 — Ceiling, VRAM and readback | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | 60 fps ceiling **> 1,600 sprites**, VRAM accounted, no stubs left, phase exit met |
-
-### Tasks 4-5 progress (2026-21) — five bugs, four of them invisible-until-drawn
-
-The matrix stack and the two draw paths (`gl_draw.c`: fast path for the batcher's interleaved
-24-byte vertices, converting path for `DrawMesh`'s separate arrays, plus `glDrawElements`) are
-written and reach the GE. Getting the first pixels on screen cost five bugs, and each one looked
-like "the driver draws nothing" while the clear kept working:
-
-1. **Framebuffer size computed before the struct was filled** (task 1) — both buffers at offset 0.
-   The boot log line caught it; a single-buffered driver still clears correctly, so it would
-   have shipped.
-2. **`glEnableClientState` recorded bits the draw path never read** — the fast path never
-   engaged and the format lost its colour and texture bits.
-3. **No data-cache writeback before the GE reads vertices.** `sceGuClear` carries its colour in
-   the command list and works; vertices are read from main RAM, so without
-   `sceKernelDcacheWritebackRange` the GE reads stale memory. This is task 9 in the list above
-   and it is **blocking**, not an optimisation (now in `pspguWriteback`).
-4. **GU's matrices are undefined after `sceGuInit`** — the view matrix has to be set to identity
-   explicitly. Samples always set all three; skipping one collapses every vertex.
-5. **`sceGuSetMatrix` wants the matrix in column-major memory order — no transpose.** Sending
-   the GL matrix transposed put the ortho's translation in a `w` row, so every vertex was
-   divided by it: geometry collapsed to a few pixels around the screen centre. This is the one
-   that looks like a projection bug and is not.
-
-State: with a raw self-test sprite the whole display fills (0,0,0)→(480,272) correctly. Through
-raylib, geometry now reaches the GE but the screen goes **black** once `GL_TEXTURE_2D` is
-enabled with no texture bound — the GE samples from an undefined address. That is task 6, and
-until it exists the driver is not usable.
-
-### Task 6 progress — textures draw, and disagree with pspGL in three measured ways
-
-`gl_texture.c` implements the six texture symbols. The review decided three things before any code:
-every source format is **expanded to GE 8888** (the GE has no LUMINANCE, and grey+alpha is what our
-sprite sheet and the font atlas decode to — 8888 matches pspGL's `copy_expand_LA`, so a comparison
-is meaningful), textures are uploaded **unswizzled** (`sceGuTexMode(..., GU_FALSE)`; swizzling is
-bandwidth, not texels), and a **1×1 white default** is created at boot so `bind(0)` can never leave
-the GE sampling an undefined address — which is what blacked the screen at the end of task 5.
-
-State: the scene renders (274 distinct colours against pspGL's 613, background and geometry in the
-right places), but three specific deltas remain, all measured on the same binary and scene:
-
-| what | pspgu | pspGL | first hypothesis |
+| sprint | goal | state | exit |
 |---|---|---|---|
-| background green channel | (240,**244**,240) | (240,**240**,240) | pspGL dithers the clear (`GU_DITHER`); ours is flat |
-| inside a sprite | (0,32,192) — the tint | (0,0,0) | alpha not applied: transparent texture areas painted with the tint |
-| at (130,60) | (80,4,0) | (240,240,240) background | wrong texel fetched, not just wrong alpha — suspect the UV/`tbw` path |
+| [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) | framebuffers, clear, matrices, both draw paths, cache discipline | **done** | no pspGL symbols; a self-test sprite fills the screen; five bugs recorded |
+| [012 — Texture parity](../sprints/012-phase5-texture-parity.md) | pattern test, `GU_TCC_RGBA` alpha, `GU_DITHER`, the LA-decode bug, swizzle | **done** — parity reached | `batch_check` 2D **byte-identical** to pspGL: 0 differing pixels, 613 colours |
+| [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) | mesh scene, `basic_shapes`, the immediate-mode symbols (task 12), `--wrap` counters, `PSP_DISABLE_VSYNC` | **written, not started** | every archived capture reproduced; `bunnymark` links and runs `WRAP=1` |
+| 014 — Ceiling, VRAM and readback | rotating lists with queued sync, VRAM accounting, `PSP_GU_DEPTH=0`, `glReadPixels`/`TakeScreenshot`, stubs gone | scoped | 60 fps ceiling **> 1,600 sprites**, VRAM accounted, no stubs, phase exit met |
 
-62.4 % of pixels differ, so this is not a rounding question; it is the sampling path. A survey of the
-four reference engines (see "Reference implementations" below) ruled out the texture transform —
-`sceGuTexScale/Offset` changed **zero pixels** — and pointed at two live candidates: our upload is
-**unswizzled** where both PSPRuntime and PGE swizzle and pass `swizzle = 1`, and the reference
-`tbw`/padding recipe is `tbw = paddedPowerOfTwoWidth`, which ours computes but with a redundant
-second `nextPow2` call worth re-checking. The next concrete step is still a **known-pattern texture**
-(a 2×2 or 4×4 image with distinct corner colours drawn 1:1): it separates "wrong texel" from "wrong
-alpha" from "wrong blend" in one capture instead of three guesses.
+Where the phase stands in one paragraph: the driver renders **byte-identically to pspGL on the 2D scene** —
+textures, alpha, dither, swizzle and all — after six bugs that each looked like "draws nothing" or "draws garbage".
+It has not yet been compared on 3D, on `basic_shapes`, or with the counters linked, which is exactly sprint 013.
+The one known defect is non-power-of-two textures, diagnosed in 012 T2: the swizzle needs a power-of-two width and a
+height divisible by 8, so those textures need a padded height plus `sceGuTexScale(realW/padW, realH/padH)` — and
+that fix also retires the earlier "TexScale is identity" claim, which holds only for power-of-two textures.
 
+### What it cost — six bugs, and what each one looked like from outside
 
+Kept because five of the six presented identically ("nothing is drawn" or "garbage is drawn") while the clear kept
+working, which is the most expensive failure mode this phase has.
 
-- **Source lives in `tools/pspgu/`**, built and installed by `tools/pspgu-build.sh` modelled on
-  `tools/pspgl-build.sh` (build → install over `$PSPDEV/psp/lib/libGL.a` → `--check`). That keeps the A/B identical
-  to sprint 005/006: swap one archive, run the same binaries, compare captures. Nothing in `src/` changes.
-- **Keep pspdev's headers.** We implement the *symbols*, not the headers — `GL/gl.h`, `GL/glext.h` and `GLES/egl.h`
-  stay as pspGL left them, so the library and the tests compile unchanged. Forking headers would double the surface
-  for no gain.
-- **Files, in the order they get written:** `egl.c` (display/config/context/surface/swap + framebuffers + the boot
-  sequence of finding 6) → `gl_state.c` (enable/disable, blend, depth, cull, scissor, viewport, clear) →
-  `gl_matrix.c` (the ten matrix calls + `glGetFloatv`) → `gl_draw.c` (the three `*Pointer` calls, client state,
-  `glDrawArrays`/`glDrawElements`, modes 10/4/1) → `gl_texture.c` (gen/bind/image/subimage/parameters) →
-  `gl_query.c` (`glGetString`, `glGetFloatv`, `glReadPixels`). The first two files are the vertical slice; the rest
-  are stubs until their task comes up.
-- **First acceptance, before any drawing:** swap the archive, run `psp-tests/batch_check` unmodified, and expect a
-  cleared screen in the requested colour, `psp-nm <elf> | grep -c pspgl_` at 0, and the boot log showing the eleven
-  init calls in order. Drawing comes after that.
+| # | bug | how it presented |
+|---|---|---|
+| 1 | framebuffer size computed before the struct was filled | both buffers at offset 0; a single-buffered driver still clears, so it would have shipped |
+| 2 | `glEnableClientState` bits never read by the draw path | fast path never engaged; the vertex format lost colour and texcoords |
+| 3 | no dcache writeback before the GE reads vertices | nothing drawn at all — **blocking**, not an optimisation (task 9) |
+| 4 | GU's view matrix undefined after `sceGuInit` | everything collapsed to a point |
+| 5 | `sceGuSetMatrix` takes column-major, no transpose | geometry collapsed to a few pixels near the screen centre — looks like a projection bug, is not |
+| 6 | LUMINANCE_ALPHA decoded as RGB565 (branched on byte count, not type) | sprite colours nonsense; the last 32.6 % of the frame |
 
 ## What we already know
 
@@ -352,6 +303,9 @@ alpha" from "wrong blend" in one capture instead of three guesses.
 **Not** an exit criterion: "frame time ≤ best pspGL result". Phase 4 already achieved that (16.683 ms at N=1,000)
 without any of this work, so it cannot certify it.
 
-## Sprints and features
+## Sprint index
 
-None yet. Use the [sprint template](../templates/sprint.md).
+- [011 — GE up and the vertex path](../sprints/011-phase5-ge-up.md) — **done**
+- [012 — Texture parity](../sprints/012-phase5-texture-parity.md) — **done**
+- [013 — Corpus parity and the counter harness](../sprints/013-phase5-corpus-and-counters.md) — **next**
+- 014 — Ceiling, VRAM and readback — scoped above
