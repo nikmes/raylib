@@ -95,6 +95,9 @@ nav:
           - psp/sprints/018-phase7-corpus-and-budget.md
           - psp/sprints/019-phase7-text-work.md
           - psp/sprints/020-phase7-tilemap-and-windowing.md
+          - psp/sprints/021-phase7-sprites-and-shapes.md
+          - psp/sprints/022-phase7-particles.md
+          - psp/sprints/023-phase7-cache-strips-and-close.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md
