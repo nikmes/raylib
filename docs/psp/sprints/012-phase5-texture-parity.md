@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `8843e652` |
 | Started / closed | — / — |
 | Build number(s) | `b12` (pspgu with textures drawing, 36 KB archive), `b13` (this sprint) |
-| Tasks | 0/5 done |
+| Tasks | 1/5 done |
 
 ## 0. Handover
 
@@ -23,7 +23,10 @@ three candidate causes were measured and two were ruled out.
 | inside a sprite | the tint colour | `(0,0,0)` | texture alpha not reaching the blend |
 | one sprite pixel | `(80,4,0)` | background | wrong texel — sampling the wrong address or stride |
 
-62.4 % of the frame differs. This is not rounding.
+62.4 % of the frame differs. This is not rounding — and after T1 the pattern test has narrowed it to one
+sentence: **texels are right, alpha is ignored** (see the task log). The transparent quadrant renders opaque black
+and a 50 %-alpha texel renders fully opaque, which is why the sprite areas wear the tint colour where pspGL shows
+see-through or background.
 
 **Already true, verified — do not re-derive:**
 
@@ -122,7 +125,7 @@ for the pattern.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **the pattern test**: a new `psp-tests/texture_pattern` that builds a 4×4 image in code (four distinct corner colours, plus one fully transparent quadrant), uploads it, and draws it as a single 64×64 sprite at a known position, twice, then stops | `todo` | the four quadrants are the four colours, in the right corners, and the transparent quadrant shows the background → expected: any other result names the bug immediately | — |
+| T1 | **the pattern test**: `psp-tests/texture_pattern` builds a 4×4 image in code (red/green/blue/transparent quadrants) drawn 16×, a 32×32 half-alpha texture drawn 1:1, and (behind `PATTERN_NPOT`) a 33×17 checkerboard | `done` | the four quadrants are the four colours, in the right corners | **Texels are correct; alpha is not applied.** Measured at 1:1: TL `(248,0,0)` red, TR `(0,252,0)` green, BL `(0,0,248)` blue, transparent quadrant `(0,0,0)` (should be the `(32,32,32)` background), half-alpha half `(248,0,0)` **at full opacity** instead of blending 50 % over the background |
 | T2 | **layout and stride**: `tbw` = padded power of two, rows written at that stride, the redundant second `nextPow2` removed, and a non-power-of-two texture (e.g. 33×17) drawn to prove the padding path | `todo` | the 33×17 texture samples correctly; `tbw` and the buffer stride agree by construction, asserted in code | — |
 | T3 | **swizzle**: adopt the references' recipe — swizzle the texels on upload (`SwizzleFast` equivalent) and pass `swizzle = 1` to `sceGuTexMode`. Keep the unswizzled path behind a switch so the two can be A/B'd | `todo` | swizzled vs unswizzled captures are **identical to each other** (same texels) — if they are not, one of the two layouts is wrong, which is the point | — |
 | T4 | **alpha and blend**: confirm the LA expansion puts the alpha in the right byte and that `GU_TFX_MODULATE` × `GU_SRC_ALPHA/ONE_MINUS_SRC_ALPHA` gives pspGL's result. The `(0,32,192)`-vs-`(0,0,0)` delta is the test | `todo` | inside a sprite, pspgu matches pspGL pixel for pixel; transparent texture areas show the background | — |
@@ -132,7 +135,17 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### Task log (append-only)
 
-- _(not started)_
+- sprint opened, all tasks `todo`
+- T1 `done`: the pattern test collapses three deltas into one. **Texture sampling is correct and alpha is
+  ignored.** Four quadrant colours land in the right corners at 1:1; a `(255,0,0,128)` texel renders as
+  `(248,0,0)` instead of blending over the background, and a fully transparent texel renders as opaque black
+  instead of showing what is behind it. So T4 is the whole sprint, T2/T3 are hygiene, and T5 is the background
+  only.
+- T1 also found that **pspGL hangs on this test scene** (it prints the texture ids, never reaches `DONE`, no
+  capture). That is why the non-power-of-two checkerboard is behind `PATTERN_NPOT`: it cannot be part of a
+  comparison scene until we know whether pspGL is choking on that texture or on something else in this app. The
+  scene pspgu renders and pspGL does not is itself a finding — a driver that handles a case pspGL does not — but
+  it makes the parity oracle unusable until it is understood.
 
 ## 6. Budgets
 
