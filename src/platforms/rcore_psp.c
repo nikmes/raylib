@@ -474,14 +474,19 @@ void PollInputEvents(void)
     int read = 1;
 
 #if PSP_PAD_FAIL
-    // Test-only: fail the read after 60 successful polls, with a button held.
-    static int pspPollCount = 0;
-    if (pspPollCount < 60)
+    // Test-only: fail after 60 consecutive polls with CROSS or SQUARE held, so the last
+    // good snapshot contains a held button regardless of when the operator presses it.
+    static int pspFailCount = 0;
+    read = sceCtrlReadBufferPositive(&pad, 1);
+    if (read > 0)
     {
-        read = sceCtrlReadBufferPositive(&pad, 1);
-        if (read > 0) pspPollCount++;
+        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_SQUARE)) != 0)
+        {
+            pspFailCount++;
+            if (pspFailCount >= 60) read = -1;
+        }
+        else pspFailCount = 0;
     }
-    else read = -1;
 #else
     read = sceCtrlReadBufferPositive(&pad, 1);
 #endif

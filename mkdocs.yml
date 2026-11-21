@@ -118,7 +118,16 @@ nav:
               - P9-S7 — Adopt route (conditional): psp/sprints/051-phase9-adopt-route.md
           - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
-          - 11 — General optimisation outside the renderer: psp/phases/11-general-optimisation.md
+          - 11 — General optimisation outside the renderer:
+              - psp/phases/11-general-optimisation.md
+              - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
+              - P11-S2 — Compiler and linker: psp/sprints/053-phase11-compiler-and-linker.md
+              - P11-S3 — Feature surface and limits: psp/sprints/054-phase11-feature-surface.md
+              - P11-S4 — Frame CPU: psp/sprints/055-phase11-frame-cpu.md
+              - P11-S5 — VFPU math and bulk copy: psp/sprints/056-phase11-vfpu-math-and-copy.md
+              - P11-S6 — Heap, stacks and alignment: psp/sprints/057-phase11-heap-and-stacks.md
+              - P11-S7 — Load path and I/O: psp/sprints/058-phase11-load-path-and-io.md
+              - P11-S8 — Startup, power, teardown and close: psp/sprints/059-phase11-startup-and-close.md
           - 12 — Release gate:
               - psp/phases/12-release-gate/index.md
           - 13 — Samples porting:

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started — reviewed 2026-11-21; blocked on phases 7–10 |
+| State | not started — reviewed 2026-11-21; eight sprints written (052–059); blocked on phases 7–10 |
 | Depends on | Phases 1–10; a build already at `-O2`, and one asset-heavy sample as well as bunnymark |
 | Exit criterion | every remaining CPU, memory, I/O and startup cost in a real frame and a real load is measured, and either removed or explicitly budgeted |
 
@@ -40,9 +40,10 @@ Phase 11-owned code", with a named handoff to phases 8 and 10/5.
 not inherited by accident — `src/Makefile:551` sets it explicitly, and psp-gcc's default is the opposite
 (gp-relative `%gp_rel`). The real A/B is the current `-G0` against `-G8`/the toolchain default, and the safety
 claim in the Makefile comment ("crt0 sets gp for its own layout") is the hypothesis to test. Feature stripping
-belongs in `RAYLIB_CONFIG_FLAGS` with `EXTERNAL_CONFIG_FLAGS` (`src/Makefile:395`), not edits to `src/config.h`;
-config.h's `MAX_*` block is commented documentation, and the effective limits live in `rcore.c`, `rgestures.h`
-and the module headers.
+needs a new `PSP_CONFIG_FLAGS` variable appended inside the PSP block: a command-line `CUSTOM_CFLAGS` overrides
+the block's own `-O2`, `-DPSP_BATCH` and `-DSUPPORT_MODULE_RAUDIO=0`, and `RAYLIB_CONFIG_FLAGS` implies
+`EXTERNAL_CONFIG_FLAGS`, which skips every `config.h` default. Do not edit `src/config.h`; its `MAX_*` block is
+commented documentation, and the effective limits live in `rcore.c`, `rgestures.h` and the module headers.
 
 **Finding 5 — the logging task has no mechanism.** `TRACELOG` is all-or-nothing at compile time
 (`SUPPORT_TRACELOG`, `src/config.h:378`); there is no INFO/DEBUG compile-time level. "Compile INFO/DEBUG out,
@@ -129,9 +130,11 @@ Two rules decide what belongs here:
       frame deltas
 - [ ] A/B `-ffast-math -fno-math-errno`. Before trusting it, run a numerical smoke test for NaN/Inf, comparisons,
       camera math and collision; document what changed
-- [ ] Strip unused raylib modules and formats through `RAYLIB_CONFIG_FLAGS` with `EXTERNAL_CONFIG_FLAGS`
-      (`src/Makefile:395`), not by editing `src/config.h`, so desktop and web builds stay upstream. Candidates,
-      all enabled by default:
+- [ ] Strip unused raylib modules and formats through a new `PSP_CONFIG_FLAGS` variable appended inside the PSP
+      block (`src/Makefile:549-600`), not by editing `src/config.h`, so desktop and web builds stay upstream. Do
+      not use a command-line `CUSTOM_CFLAGS` (it overrides the block's `-O2`, `-DPSP_BATCH` and
+      `-DSUPPORT_MODULE_RAUDIO=0`) or `RAYLIB_CONFIG_FLAGS` (it implies `EXTERNAL_CONFIG_FLAGS`, which skips
+      every config.h default). Candidates, all enabled by default:
       `SUPPORT_MODULE_RMODELS`, `SUPPORT_MODULE_RAUDIO` (only if unused), `SUPPORT_FILEFORMAT_BMP`,
       `SUPPORT_FILEFORMAT_GIF`, `SUPPORT_FILEFORMAT_QOI`, `SUPPORT_FILEFORMAT_DDS`, `SUPPORT_FILEFORMAT_TTF`,
       `SUPPORT_FILEFORMAT_FNT`, `SUPPORT_FILEFORMAT_OBJ`, `SUPPORT_FILEFORMAT_MTL`, `SUPPORT_FILEFORMAT_IQM`,
@@ -321,6 +324,20 @@ model: alloc/free churn fragments it, and its size comments ("32Mb") already dis
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../templates/sprint.md). A sprint here belongs to this phase only; if it
-changes a draw path, VRAM allocation, input mapping or audio mixing, it belongs in the phase that owns that
-surface.
+The phase is sized as eight sprints. All eight are written; none has run, because phases 7–10 are not closed.
+P11-S1 can be prepared and executed early as instrumentation, but its baseline must be re-taken after those
+phases land.
+
+| sprint | scope | state |
+|---|---|---|
+| [P11-S1 — 052 — Measurement harness and re-baseline](../sprints/052-phase11-measurement-harness.md) | boot identity, CPU zones, `--wrap` counters, no-vsync arm, load workload, first profile | written |
+| [P11-S2 — 053 — Compiler and linker](../sprints/053-phase11-compiler-and-linker.md) | `-O2`/`-O3`/`-Os`, LTO, section GC, fast-math, `-G0` vs `-G8` | written |
+| [P11-S3 — 054 — Feature surface and limits](../sprints/054-phase11-feature-surface.md) | `PSP_CONFIG_FLAGS`, per-sample manifest, `SUPPORT_*` strip, `MAX_*` audit | written |
+| [P11-S4 — 055 — Frame CPU: doubles, formatting and logging](../sprints/055-phase11-frame-cpu.md) | integer frame clock, formatting cache, trace level, tiny libc, guards | written |
+| [P11-S5 — 056 — VFPU math and bulk copy](../sprints/056-phase11-vfpu-math-and-copy.md) | per-operation math, accuracy, 64-byte copy, div/mod, FP exceptions | written |
+| [P11-S6 — 057 — Heap, stacks and alignment](../sprints/057-phase11-heap-and-stacks.md) | heap map and `-256`, pools, alignment, thread stacks, volatile decision, soak | written |
+| [P11-S7 — 058 — Load path and I/O](../sprints/058-phase11-load-path-and-io.md) | `sceIo` vs stdio, `calloc` vs `malloc`, chunk cache, loader thread, manifests | written |
+| [P11-S8 — 059 — Startup, power, teardown and close](../sprints/059-phase11-startup-and-close.md) | boot split, clock A/B, teardown, suspend/resume, final profile, phase close | written |
+
+A sprint here belongs to this phase only; if it changes a draw path, VRAM allocation, input mapping or audio
+mixing, it belongs in the phase that owns that surface.

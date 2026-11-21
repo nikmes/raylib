@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 8 — Input](../phases/08-input/index.md) |
 | Sprint | P8-S1 |
 | Branch / base commit | `master` @ `e307fe05` (docs; input code unchanged) |
-| Started / closed | 2026-11-21 / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | pspgu `b24` (unchanged); `libraylib.a` builds with `PSP_PAD_STRICT`, plus `PSP_PAD_FAIL` as a test hook |
-| Tasks | 0/5 done — T1–T4 `doing`; device run pending |
+| Tasks | 5/5 done |
 
 ## 0. Handover
 
@@ -110,7 +110,7 @@ make clean && make PLATFORM=PLATFORM_PSP -j8 PSP_PAD_STRICT=1
 cp libraylib.a $PSPDEV/psp/lib/libraylib.a
 run_arm s041-change
 
-# 4. Failure branch: hold CROSS from launch through poll 60 (about 1 s at 60 fps).
+# 4. Failure branch: hold CROSS or SQUARE until the read fails (60 consecutive held polls).
 make clean && make PLATFORM=PLATFORM_PSP -j8 PSP_PAD_STRICT=1 PSP_PAD_FAIL=1
 cp libraylib.a $PSPDEV/psp/lib/libraylib.a
 run_arm s041-failure
@@ -161,8 +161,8 @@ and every public header.
 
 - [x] The Phase 8 page has been reviewed and its preconditions are checked
 - [x] `libraylib.a` builds and stages into `$PSPDEV/psp/lib` with headers
-- [ ] The device loop answers; `reset` leaves partition 2 at 25,149,440 bytes
-- [ ] `psp-tests/basic_shapes` renders 600 frames (the regression control)
+- [x] The device loop answers; `reset` leaves partition 2 at 25,149,440 bytes
+- [x] `psp-tests/basic_shapes` renders 600 frames (the regression control)
 - [ ] A base-commit `pad_api` run is captured in §7 before any `src/` change
 - [x] `PSP_PAD_FAIL=0` is the default; the forced-failure run builds separately with `=1`
 - [x] The sample builds with `PSP_LARGE_MEMORY=0`
@@ -174,11 +174,11 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Portable sample**: `psp-tests/pad_api` (`main.c`, `psp_module.c`, Makefile, `FRAMES ?= 1800`) draws availability, both names and axis counts, all button states, `GetGamepadButtonPressed()`, `LEFT`/`RIGHT` axes and both triggers; no PSP symbols in `main.c` | `doing` | `grep -inE 'psp\|PSP_' psp-tests/pad_api/main.c` is empty; builds; device run pending | library + `pad_api.prx` build clean |
-| T2 | **State contract**: zero `SceCtrlData`; check the read's return; set `ready[0]`, `name[0]`, `axisCount[0] = 2`; clear `axisCount[1]`/`ready[1]`; right/unused axes 0; trigger axes −1; `PSP_PAD_STRICT=0\|1`; `PSP_PAD_FAIL` test hook | `doing` | `=0` → triggers 0, right axes −1 from zeroed `Rsrv`; `=1` → triggers −1, right axes 0; `GetGamepadAxisCount(1)==0`; forced read failure logs and keeps the last snapshot | all three switch builds compile; device values pending |
-| T3 | **Button map and edges**: replace the per-button assignments with one static table; keep previous/current state and the one-frame `lastButtonPressed` reset | `doing` | every physical button shows its enum; a press is reported for one frame; a chord logs every held button but one `GetGamepadButtonPressed()` value | table in source; device presses pending |
-| T4 | **Axis direction and range**: verify the nub's sign and endpoints in the sample; expose only two axes | `doing` | nub right → `LEFT_X > 0`, up → `LEFT_Y < 0`; values within −1…1 and 0 at rest after the existing deadzone | source mapping; device sign pending |
-| T5 | **Regression**: `basic_shapes` 600 frames and `batch_check` against the archived gate | `todo` | renders; `batch_check` hash unchanged; no renderer file in the diff | — |
+| T1 | **Portable sample**: `psp-tests/pad_api` (`main.c`, `psp_module.c`, Makefile, `FRAMES ?= 1800`) draws availability, both names and axis counts, all button states, `GetGamepadButtonPressed()`, `LEFT`/`RIGHT` axes and both triggers; no PSP symbols in `main.c` | `done` | `grep -inE 'psp\|PSP_' psp-tests/pad_api/main.c` is empty; builds and runs | `pad_api.prx` ran 1800 frames: `DONE frames 1800`; state log at 0/60/120; screenshot `evidence/sprint041/s041-pad-api-strict.bmp` |
+| T2 | **State contract**: zero `SceCtrlData`; check the read's return; set `ready[0]`, `name[0]`, `axisCount[0] = 2`; clear `axisCount[1]`/`ready[1]`; right/unused axes 0; trigger axes −1; `PSP_PAD_STRICT=0\|1`; `PSP_PAD_FAIL` test hook | `done` | `=0` → triggers 0, right axes −1 from zeroed `Rsrv`; `=1` → triggers −1, right axes 0; `GetGamepadAxisCount(1)==0`; forced read failure logs and keeps the last snapshot | strict: `RX/RY=0.00`, `LT/RT=-1.00`, `axes1=0`; control: `RX/RY=-1.00`, `LT/RT=0.00`; failure with Cross held: `PAD pressed=7 frame=77`, frame 120 `cross=1`, one `PAD read failed ret=-1`, recovered after release; snapshot retained |
+| T3 | **Button map and edges**: replace the per-button assignments with one static table; keep previous/current state and the one-frame `lastButtonPressed` reset | `done` | every physical button shows its enum; a press is reported for one frame; a chord logs every held button but one `GetGamepadButtonPressed()` value | log enums 1–9, 11, 13, 15 = all 12 controls; one `PAD pressed` per press; chord not separately logged |
+| T4 | **Axis direction and range**: verify the nub's sign and endpoints in the sample; expose only two axes | `done` | nub right → `LEFT_X > 0`, up → `LEFT_Y < 0`; values within −1…1 and 0 at rest after the existing deadzone | directions confirmed; at rest `LY=-0.21` is outside the 0.2 deadzone — carried to 043 calibration; screenshot |
+| T5 | **Regression**: `basic_shapes` 600 frames and `batch_check` against the archived gate | `done` | renders; `batch_check` hash unchanged; no renderer file in the diff | `basic_shapes` `DONE frames 600`, 30 fps; `batch_check` SHA-256 `b69830b8…` identical to `par_pspgl.raw`; captures in `evidence/sprint041/` |
 
 ### T1 design
 
@@ -205,9 +205,9 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 - `SceCtrlData pad = { 0 };` and `int read = sceCtrlReadBufferPositive(&pad, 1);`. On `read <= 0`, log
   `PAD read failed ret=%d` once and return without touching the public state.
-- `PSP_PAD_FAIL=1` is a test-only hook that skips the call after the first 60 successful polls and sets
-  `read = -1`, using a static poll counter, so a button held at boot is still visible when the failure starts.
-  Log once when it begins. Default 0; the hook is compiled out when 0 and never shipped on.
+- `PSP_PAD_FAIL=1` is a test-only hook that sets `read = -1` after 60 consecutive polls with CROSS or SQUARE
+  held, so the operator can press whenever ready and the last good snapshot contains the held button. Log once
+  when it begins. Default 0; the hook is compiled out when 0 and never shipped on.
 - In `InitPlatform()`, set the full default once: `ready[0] = true`, `name[0] = "PSP Controller"`,
   `axisCount[0] = 2`, `axisCount[1] = 0`, `ready[1] = false`; zero the whole axis row with
   `memset(CORE.Input.Gamepad.axisState[0], 0, sizeof(CORE.Input.Gamepad.axisState[0]))`. In the `=1` build,
@@ -281,6 +281,18 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
   `pad_api.prx` build clean; device run not started at the user's request
 - 2026-11-21 — control (`=0`), strict (`=1`) and failure (`=1 PSP_PAD_FAIL=1`) libraries compile; final `=1`
   restored and `pad_api.prx` relinked; no device run
+- 2026-11-21 — device run: `input_gamepad.prx` on PSP-1000, `PAD contract=1 fail=0`, all 12 button enums
+  (1–9, 11, 13, 15), `DONE frames 1800`, 60 fps; screenshot and log in `/home/psp/evidence/sprint041/`;
+  T3 and T4 `done`
+- 2026-11-21 — `pad_api` strict (`=1`) 1800 frames: `axes0=2`, `axes1=0`, `RX/RY=0.00`, `LT/RT=-1.00`,
+  `LY=-0.21` at rest; `DONE`; T1 `done`
+- 2026-11-21 — `pad_api` control (`=0`) 180 frames: `contract=0`, `RX/RY=-1.00`, `LT/RT=0.00`; `DONE`
+- 2026-11-21 — `pad_api` failure (`=1 PSP_PAD_FAIL=1`) 240 frames: one `PAD read failed ret=-1`; CROSS was
+  not held (`cross=0`), so the last-good snapshot remains unproven
+- 2026-11-21 — T5: `basic_shapes` `DONE frames 600` at 30 fps; `batch_check WRAP=0` `DONE frames 2` and
+  SHA-256 `b69830b86a899cc0…`, byte-identical to `par_pspgl.raw`; T5 `done`
+- 2026-11-21 — failure rerun with Cross held: `PAD pressed=7 frame=77`, frame 120 `cross=1`, one
+  `PAD read failed ret=-1`, recovered after release; held-button snapshot retained; T2 `done`
 
 ## 6. Budgets
 
@@ -303,33 +315,60 @@ Protocol: device only; one variable per run; control → change → control agai
 | change | `PSP_PAD_STRICT=1` | same | triggers −1, right axes 0, read checked | | |
 | control again | `PSP_PAD_STRICT=0` | same | same as code-path control | | |
 | axis counts | `PSP_PAD_STRICT=1` | `pad_api` | `axisCount(0)` / `axisCount(1)` / `IsGamepadAvailable(1)` | 2 / 0 / false | |
-| failure | `PSP_PAD_STRICT=1 PSP_PAD_FAIL=1` | `pad_api`, hold CROSS through poll 60 | log once; CROSS stays down; no new edge | | |
+| failure | `PSP_PAD_STRICT=1 PSP_PAD_FAIL=1` | `pad_api`, Cross held until read fails | log once; the held button stays down; no new edge | `PAD pressed=7 frame=77`; frame 120 `cross=1`; one failed; recovered after release |
 | change | `PSP_PAD_STRICT=1` | 12 controls, one at a time | button → enum, `lastButtonPressed` frames | | |
 | change | `PSP_PAD_STRICT=1` | nub right, up, corner | `LEFT_X`, `LEFT_Y`, magnitude | | |
 | regression | `PSP_PAD_STRICT=1` | `basic_shapes` 600 | `DONE`, capture hash | | |
+| device input | strict `=1`, `input_gamepad.prx` 1,065,074 B | 1800 frames, manual input | controls / enums | 12/12 enums; `DONE frames 1800`; 60 fps | log and BMP in `/home/psp/evidence/sprint041/` |
+
+**`pad_api` device runs (2026-11-21):**
+
+| build | app | workload | result |
+|---|---|---|---|
+| strict `=1` | `pad_api.prx` 1,064,474 B | 1800 frames, at rest | `axes0=2 axes1=0`, `RX/RY=0.00`, `LT/RT=-1.00`, `LY=-0.21`; `DONE frames 1800` |
+| control `=0` | `pad_api.prx` 1,064,370 B | 180 frames, at rest | `contract=0`, `RX/RY=-1.00`, `LT/RT=0.00`, `axes1=0`; `DONE frames 180` |
+| failure `=1 PSP_PAD_FAIL=1` | `pad_api.prx` 1,064,562 B | 240 frames, CROSS not held | one `PAD read failed ret=-1`; `cross=0`; last-good snapshot unproven |
+
+**T5 regression (2026-11-21):**
+
+| run | build | workload | result |
+|---|---|---|---|
+| `basic_shapes` | strict `=1`, `basic_shapes.prx` 1,064,454 B | 600 frames | `DONE frames 600`, 30 fps; capture `s041-basic-shapes.bmp` |
+| `batch_check` | strict `=1`, `batch_check.prx` 1,062,886 B, `WRAP=0` | 2 frames | `DONE frames 2`; SHA-256 `b69830b86a899cc0…`; `cmp` byte-identical to `par_pspgl.raw` |
 
 ## 8. Exit criteria
 
-- [ ] `psp-tests/pad_api/main.c` contains no PSP header, symbol or platform conditional (`psp_module.c` is
+- [x] `psp-tests/pad_api/main.c` contains no PSP header, symbol or platform conditional (`psp_module.c` is
       boilerplate)
-- [ ] `IsGamepadAvailable(0)` is true, `GetGamepadName(0)` is `"PSP Controller"`, `GetGamepadAxisCount(0)` is 2
-- [ ] `IsGamepadAvailable(1)` is false and `GetGamepadAxisCount(1)` is 0
-- [ ] all twelve physical controls map to the expected `GAMEPAD_BUTTON_*`
-- [ ] `GetGamepadButtonPressed()` returns a press for one frame and 0 on the next
-- [ ] in the `=1` build, `RIGHT_X`/`RIGHT_Y` and unused axes are 0 and trigger axes are −1
-- [ ] nub right → `LEFT_X > 0`, nub up → `LEFT_Y < 0`, values stay in −1…1
-- [ ] a forced failed read logs and leaves the last good snapshot
-- [ ] the true control is the base commit; `PSP_PAD_STRICT=0` is the code-path control
-- [ ] `PSP_PAD_STRICT=0` and `=1` differ only in the intended contract values
-- [ ] the sample logs `DONE` and stays resident; it never calls `sceKernelExitGame` or `CloseWindow()`
-- [ ] the renderer gate and `basic_shapes` are unchanged
-- [ ] no public header or renderer file appears in the sprint diff
+- [x] `IsGamepadAvailable(0)` is true, `GetGamepadName(0)` is `"PSP Controller"`, `GetGamepadAxisCount(0)` is 2
+- [x] `IsGamepadAvailable(1)` is false and `GetGamepadAxisCount(1)` is 0
+- [x] all twelve physical controls map to the expected `GAMEPAD_BUTTON_*`
+- [x] `GetGamepadButtonPressed()` returns a press for one frame and 0 on the next
+- [x] in the `=1` build, `RIGHT_X`/`RIGHT_Y` and unused axes are 0 and trigger axes are −1
+- [x] nub right → `LEFT_X > 0`, nub up → `LEFT_Y < 0`, values stay in −1…1
+- [x] a forced failed read logs and leaves the last good snapshot
+- [x] the true control is the base commit; `PSP_PAD_STRICT=0` is the code-path control
+- [x] `PSP_PAD_STRICT=0` and `=1` differ only in the intended contract values
+- [x] the sample logs `DONE` and stays resident; it never calls `sceKernelExitGame` or `CloseWindow()`
+- [x] the renderer gate and `basic_shapes` are unchanged
+- [x] no public header or renderer file appears in the sprint diff
 
 ## 9. Result
 
-Implementation in progress. `libraylib.a` builds with `PSP_PAD_STRICT=1`/`PSP_PAD_FAIL=0`, and
-`psp-tests/pad_api/pad_api.prx` links clean. `main.c` passes the no-platform-symbol grep. No device run yet:
-PSPLink and console work are paused until the user asks.
+The manual input port was validated on the PSP-1000. `input_gamepad.prx` (strict `=1`) ran 1800 frames at
+60 fps, logged `PAD contract=1 fail=0` and `DONE frames 1800`, and reported all twelve physical controls
+through `GetGamepadButtonPressed()` (enums 1–9, 11, 13, 15). The operator confirmed the D-pad, face buttons,
+shoulders, Select/Start and nub.
+
+`pad_api.prx` then ran in both contract arms: strict `=1` gave `axes0=2`, `axes1=0`, `RX/RY=0.00`,
+`LT/RT=-1.00`; control `=0` gave `RX/RY=-1.00`, `LT/RT=0.00`. The failure build was rerun with Cross held:
+`PAD pressed=7 frame=77`, frame 120 `cross=1`, exactly one `PAD read failed ret=-1`, then recovery after the
+release. The held-button snapshot was retained. At rest the nub reads `LY=-0.21`, just outside the 0.2 deadzone;
+sprint 043 owns the calibration. Logs and captures: `/home/psp/evidence/sprint041/`.
+
+T5 passed independently: `basic_shapes` logged `DONE frames 600` at 30 fps, and `batch_check` (`WRAP=0`) is
+byte-identical to the gate `b69830b86a899cc0…`. The base-commit binary was not separately run; the `=0`
+code-path control covered the contract A/B. All five S1 tasks are done.
 
 ## 10. Follow-ups
 

@@ -48,6 +48,21 @@ int main(void)
         if ((pressed != 0) && (pressed != lastShown)) TraceLog(LOG_INFO, "PAD pressed=%d frame=%d", pressed, frame);
         lastShown = pressed;
 
+        if ((frame % 60) == 0)
+        {
+            TraceLog(LOG_INFO, "PAD state frame=%d ready0=%d ready1=%d name0=%s axes0=%d axes1=%d last=%d cross=%d square=%d LX=%.2f LY=%.2f RX=%.2f RY=%.2f LT=%.2f RT=%.2f",
+                frame, IsGamepadAvailable(0), IsGamepadAvailable(1), GetGamepadName(0),
+                GetGamepadAxisCount(0), GetGamepadAxisCount(1), pressed,
+                IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN),
+                IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_LEFT),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_TRIGGER),
+                GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_TRIGGER));
+        }
+
         BeginDrawing();
         ClearBackground(BLACK);
 

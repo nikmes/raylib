@@ -368,8 +368,8 @@ maps buttons to `GAMEPAD_BUTTON_*` with a 0.2 deadzone — start from that, then
   but it changes what `IsKeyDown` and the mouse mean on this platform, so record the choice.
 - Sampling: `sceCtrlSetSamplingCycle()` / mode, and whether to read once per frame or on a fixed rate.
 - `SetGamepadVibration()` must stay a documented no-op — the PSP has no rumble.
-Sprints 041–044 (P8-S1–P8-S4): 041 implemented (library and portable sample build; device run pending);
-042–044 written.
+Sprints 041–044 (P8-S1–P8-S4): 041 done (5/5) — input mapping, contract arms, held-button failure snapshot and
+T5 regression device-validated; 042–044 written.
 Exit: a sample that draws every button's live state plus raw and normalised axis values; each control
 pressed and confirmed; measured nub range recorded on this console; `GetGamepadButtonPressed` returns the
 pressed button for exactly the frame whose poll saw it.
@@ -415,7 +415,8 @@ DaedalusX64's PSP playbook
 (`/home/psp/ref/daedalus/AI_MEMORY_MAP.md` §12), checked against its source, supplies code-checked values for the
 same levers: `PSP_HEAP_SIZE_KB(-256)`, 333 MHz, VFPU sin/cos/pow but not sqrt/fabs, 64-byte VFPU memcpy, 8 KB
 ROM chunks, and partition-5 volatile memory. Its first-fit heap does not coalesce — a counter-example, not a
-model. `[external: DaedalusX64]`
+model. `[external: DaedalusX64]` Sprints 052–059 are written: the harness first, then flags, feature surface,
+frame CPU, VFPU, heap/stacks, load path and the startup/close. They are blocked on phases 7–10.
 
 ### Phase 12 — Release gate
 Four configurations on the same console, same workload, same clocks, and the same Phase 11 build flags:
