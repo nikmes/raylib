@@ -57,7 +57,7 @@ ifeq ($(WRAP),1)
                -Wl,--wrap=eglSwapBuffers
 endif
 
-LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu
+LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = bunnymark counters (raylib 6.5-dev)

@@ -127,6 +127,21 @@ calls (position 3×`f32`, texcoord 2×`f32`, colour 4×`u8`), `glDrawArrays` wit
 (triangles) or **1** (lines), and `glDisable(GL_TEXTURE_2D)` + `glBindTexture(0)` for texture-less runs. Immediate
 mode (`glBegin`/`glVertex*`) only appears in a `PSP_BATCH=0` build — 11 extra symbols, one dispatch.
 
+**Finding 13 (found by doing it): the app link line changes.** pspGL reaches the GE through `libpspge` and
+never calls GU, so our test apps never linked `libpspgu`. A GU-based driver does, so every app needs `-lpspgu`
+added to `LIBS` — done for `bunnymark` and `batch_check`, and it belongs in the docs for anyone building raylib on
+PSP with this driver.
+
+**Finding 14 (found by doing it): the `--wrap` counter harness needs the immediate-mode symbols to exist.** `--wrap`
+requires `__real_glBegin` and friends at link time even when nothing calls them, and under `PSP_BATCH=1` our driver
+does not define them — so `psp-tests/*` link with `WRAP=0` until task 5 adds the immediate-mode entry points
+(`PSP_BATCH=0` support). `psp_counters.c` also needed its `eglSwapBuffers` wrapper moved inside the `WRAP_COUNTERS`
+guard for the same reason.
+
+**Finding 15: pspgu is reproducible where pspGL was not.** Two consecutive builds give the identical content hash
+(`df1646a7…`), so `tools/pspgu-build.sh --verify-repeat` can demand equality; pspGL needed a *content* hash because
+two of its objects embed `__DATE__`.
+
 **Finding 12: the viewport recipe, with numbers.** 480×272 visible inside a 512-wide buffer:
 `sceGuOffset(2048 - 240, 2048 - 136)`, `sceGuViewport(2048, 2048, 480, 272)`, scissor `(0, 0, 480, 272)`. The oracle
 is the first byte-identical capture against `c4eb44e7…`; anything off by a pixel shows up there and nowhere else.
@@ -181,7 +196,7 @@ optimises.
 
 | # | task | verification |
 |---|---|---|
-| 1 | **vertical slice**: the 52 symbols as logging stubs **plus** real egl init, two framebuffers, GU display setup and `glClear` — enough to show a cleared screen. Everything else returns without doing anything | `psp-nm app.elf \| grep -c pspgl_` is 0 **and** the screen is actually cleared in the requested colour; the stub log then shows the remaining call order (the boot contract in §0 finding 6 is what it should match) |
+| 1 | **vertical slice**: the 52 symbols as logging stubs **plus** real egl init, two framebuffers, GU display setup and `glClear` | `done` — `tools/pspgu/{pspgu_internal.h,egl.c,gl_state.c,gl_stub.c}` + `tools/pspgu-build.sh`. Boot log: `GU up: 480x272 stride 512, fb 272 KiB x2, depth yes (272 KiB), textures from 816 KiB, list 256 KiB`; `psp-nm batch_check.elf \| grep -c pspgl_` = **0**; capture is a uniform `(240,244,240)`, the same RAYWHITE-through-5650 value a pspGL build produces |
 | 2 | **egl layer**: config, context, surface, `eglSwapBuffers` with the same vsync semantics as today, `eglSwapInterval` (compiled out of the 52 but needed by `PSP_DISABLE_VSYNC`), `eglGetError`; and the DEPTH bit of `glClear` handled explicitly (§0 finding 7) | `psp-tests/bunnymark` boots and reaches `DONE` with counters intact; `SPLIT ... swap=` non-zero; a `PSP_DISABLE_VSYNC=1` build still links |
 | 3 | **state mapping**: a table of every `glEnable`/`glDisable` bit the library uses, plus `glBlendFunc`, `glDepthFunc/Mask`, `glColorMask`, `glCullFace`, `glFrontFace`, `glScissor`, `glViewport`, `glShadeModel`, `glPolygonMode`, `glLineWidth` → GU commands, emitted only when the value changes | the state trace of one `batch_check` frame matches the 31 flush points the batcher has; no command re-emitted with the same value |
 | 4 | **matrices**: `glMatrixMode`, `glLoadIdentity`, `glPushMatrix`, `glPopMatrix`, `glMultMatrixf`, `glOrtho`, `glFrustum`, `glRotatef`, `glScalef`, `glTranslatef` over the VFPU (GUM or hand-written), kept in CPU/VFPU memory **and** pushed to the GE as float24, with `glGetFloatv` answering both matrix queries (§0 finding 8) | `batch_check` 2D scene identical; the camera-relative 3D scene from sprint 009 renders without trembling; `rlGetMatrixModelview()` returns a sane matrix |

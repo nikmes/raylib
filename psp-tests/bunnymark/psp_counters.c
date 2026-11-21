@@ -78,10 +78,10 @@ void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid
     __real_glDrawElements(mode, count, type, indices);
 }
 
-#endif // WRAP_COUNTERS
-
 // eglSwapBuffers is wrapped with opaque pointer types on purpose: including
 // GLES/egl.h alongside GL/gl.h risks redefining the same types.
+// NOTE: this lives inside the guard because --wrap requires __real_* to exist at link
+// time, and a WRAP=0 build has no such symbol.
 extern unsigned int __real_eglSwapBuffers(void *dpy, void *surf);
 
 unsigned int __wrap_eglSwapBuffers(void *dpy, void *surf)
@@ -92,6 +92,8 @@ unsigned int __wrap_eglSwapBuffers(void *dpy, void *surf)
     swapCalls++;
     return r;
 }
+
+#endif // WRAP_COUNTERS
 
 double PspCountersSwapSeconds(void) { return swapSeconds; }
 unsigned int PspCountersSwapCalls(void) { return swapCalls; }

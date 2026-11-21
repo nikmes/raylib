@@ -13,8 +13,10 @@ OBJS = main.o psp_counters.o
 CFLAGS = -Wall
 
 WRAP ?= 1
+# The counters header is needed either way; only the --wrap flags are WRAP's business
+CFLAGS += -I../bunnymark
 ifeq ($(WRAP),1)
-    CFLAGS += -DWRAP_COUNTERS -I../bunnymark
+    CFLAGS += -DWRAP_COUNTERS
     LDFLAGS += -Wl,--wrap=glBegin -Wl,--wrap=glEnd \
                -Wl,--wrap=glVertex2f -Wl,--wrap=glVertex2i \
                -Wl,--wrap=glBindTexture \
@@ -32,7 +34,9 @@ ifdef MESH_SCENE
     CFLAGS += -DMESH_SCENE
 endif
 
-LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspvfpu
+# -lpspgu: the pspgu driver talks to the GE through GU, where pspGL used libpspge
+# directly. The archive supplies the GL symbols; GU comes from the SDK.
+LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = batch check (raylib 6.5-dev)
