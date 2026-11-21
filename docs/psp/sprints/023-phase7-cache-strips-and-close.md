@@ -4,19 +4,23 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Sprint | P7-S6 |
-| Branch / base commit | `master` @ the sprint 022 close (this doc is written before 021/022 run) |
+| Branch / base commit | `master` @ `a696b30e` (sprint 022 closed) |
 | Started / closed | — / — |
-| Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
+| Build number(s) | pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; `scene_2d` cache build |
 | Tasks | 0/4 done |
 
 ## 0. Handover
 
-**Situation.** Phase 7's renderer work is in place or scheduled: text (019), 512-pixel windows and the wide tile
-atlas (020), sprites/shapes (021), particles (022). What remains is the phase's measurement half and its exit
-table. The **texture cache** has never been measured: the GE has 8 KiB, a 480×272 8888 row is 1,920 B (about four
+**Situation.** Phase 7's renderer work is closed through sprint 022: text (019), 512-pixel windows and the wide
+tile atlas (020), sprites/shapes (021), particles (022). What remains is the phase's measurement half and its exit
+table. The **texture cache** has never been measured: the GE has 8 KiB, a 480×256 8888 row is 1,920 B (about four
 rows), and recipe R2 claims strips pay only when texels repeat. This sprint prices the 16/32/64/128-px strip
 widths on a single draw and on a repeated draw, adopts a width only if the repeated case moves, then runs the
 whole phase's regression and fills the exit table.
+
+**The background must be 480×256, not 480×272.** pspgu pads to powers of two: 480×272 8888 allocates
+`512×512×4 = 1,048,576 B`, which does not fit beside the font (~913 KiB free). A **480×256 logical** image pads
+to `512×256×4 = 524,288 B` and fits. The scene draws the 480×256 region 1:1; the bottom 16 rows stay black.
 
 **Read before acting**, in this order:
 
@@ -26,9 +30,9 @@ whole phase's regression and fills the exit table.
 4. `../memory-map.md` §4 — the 8 KiB cache and the band arithmetic; §5 — the phase roadmap.
 5. `psp-tests/scene_2d/main.c` — the scene harness and marker format.
 
-**First action.** Add `MODE=cache STRIP=16|32|64|128 REPEAT=1|4` to `scene_2d`: a 480×272 8888 background drawn in
-vertical strips, strip-major order, repeated once or four times at the same position. Run the eight combinations
-before deciding anything.
+**First action.** Add `MODE=cache STRIP=16|32|64|128 REPEAT=1|4` to `scene_2d`: a **480×256** 8888 background
+drawn in vertical strips, strip-major order, repeated once or four times at the same position. Run the ten
+combinations (16/32/64/128/480 px × repeat 1/4) before deciding anything.
 
 **Hard rules.**
 
@@ -50,14 +54,21 @@ export PSPDEV=/home/psp/pspdev
 export PATH=$PATH:$PSPDEV/bin
 
 cd /home/psp/raylib-psp/psp-tests/scene_2d
-make clean && make MODE=cache STRIP=16 REPEAT=4
-make clean && make MODE=cache STRIP=64 REPEAT=4
-make clean && make MODE=cache STRIP=480 REPEAT=4
-cp scene_2d.prx /tmp/s3/app.prx
+make clean && make MODE=cache STRIP=16 REPEAT=4 MARKER=s23_s16_r4.txt
+make clean && make MODE=cache STRIP=64 REPEAT=4 MARKER=s23_s64_r4.txt
+make clean && make MODE=cache STRIP=480 REPEAT=4 MARKER=s23_s480_r4.txt
+cp scene_2d.prx /tmp/s3/s23_app.prx
 cd /tmp/s3 && timeout 20 pspsh -e "reset"; sleep 6
-( printf './app.prx\n'; sleep 20 ) | timeout 40 pspsh
+( printf './s23_app.prx\n'; sleep 20 ) | timeout 40 pspsh
 pspsh -e "scrshot host0:/s23.raw"          # after DONE only
 ```
+
+Use a unique PRX (`s23_app.prx`) and the per-scene `MARKER`; other sessions share `/tmp/s3`.
+
+**Instrument check.** The gate reference depends on the original gray+alpha
+`host0:/textures/bunnymark/wabbit_alpha.png` (md5 `5618cb98…`). Another session replaced it during sprint 022 and
+the gate failed; check it before the regression. The boot line must say `pspgu b24` and
+`RLGL: PSP_CULL=1 PSP_TRI_FAST=1`.
 
 **Do not touch.** The text/window/shape/particle paths, the allocator, `DrawMesh`, and the 3D path.
 
@@ -92,15 +103,16 @@ sample-porting phase.
 ## 4. Preconditions
 
 - [ ] Sprints 018–022 closed; their captures are in `/home/psp/evidence/sprint0{18..22}/`
-- [ ] pspgu `b24`; gate `b69830b8…`; pspGL restorable (`2ab7378e`)
+- [ ] pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; gate `b69830b8…`; pspGL restorable (`2ab7378e`)
+- [ ] The gray+alpha `host0:/textures/bunnymark/wabbit_alpha.png` is restored (md5 `5618cb98…`), not the RGBA copy
 - [ ] `basic_shapes` build and capture procedure available (phase 5 gate, 284 colours)
-- [ ] Device loop available with reset between runs
+- [ ] Device loop available with reset between runs; unique PRX and `MARKER` per point
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Cache scene**: `MODE=cache STRIP REPEAT`, 480×272 8888 background, strip-major, one texture, one bind | `todo` | captures identical across strip widths; one bind/frame; draws fixed | |
+| T1 | **Cache scene**: `MODE=cache STRIP REPEAT`, **480×256** 8888 background, strip-major, one texture, one bind | `todo` | captures identical across strip widths; one bind/frame; draws fixed | |
 | T2 | **Strip measurement and decision**: 16/32/64/128/480 × repeat 1/4; adopt only if repeat moves | `todo` | work table; decision with the repeated case | |
 | T3 | **Full regression**: 018–022 captures, gate, `basic_shapes` colours, VRAM/residency | `todo` | all hashes; 284 colours; 0 evictions; no mid-frame upload | |
 | T4 | **Phase close**: exit table, Phase 7 page/index done, next phase named | `todo` | every criterion answered; docs strict build passes | |
@@ -109,11 +121,14 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### T1 design
 
-- Generate a 480×272 8888 background (deterministic pattern: 32-px checker plus a gradient, so both repeated
-  and varying texels exist); load one texture. VRAM 522,240 B, fits beside the font (~394 KiB free).
-- Draw in vertical strips of `STRIP` px: for `x0` in 0..480 step STRIP, for `y` 0..272 step 1 (a quad per strip,
-  272 tall), `DrawTexturePro` with source `{x0,0,STRIP,272}` and destination `{x0,0,STRIP,272}`. The batcher
-  merges the strips into one run (same texture); the vertex order is strip-major.
+- `MODE=cache` in `scene_2d`: Makefile `STRIP ?= 480`, `REPEAT ?= 1`, both compiled as defines; `MARKER` is
+  already supported. `sceneObjects = REPEAT × ceil(480/STRIP)`.
+- Generate a **480×256** 8888 background (deterministic pattern: 32-px checker plus a gradient, so both repeated
+  and varying texels exist); load one texture. pspgu pads it to **512×256 = 524,288 B**, which fits beside the
+  font. The 480×256 region is drawn 1:1; the bottom 16 rows of the screen stay black.
+- Draw in vertical strips of `STRIP` px: for `x0` in 0..480 step STRIP (the last strip is the remainder), draw a
+  quad of `STRIP×256` with source `{x0,0,STRIP,256}` and destination `{x0,0,STRIP,256}`. The batcher merges the
+  strips into one run (same texture); the vertex order is strip-major.
 - `REPEAT=1` draws once; `REPEAT=4` draws the same order four times at the same position (overdraw), so the
   second/third/fourth passes can reuse cache lines.
 - Marker: `cache strip=… repeat=… quads=… draws=… binds=… work=…`.
@@ -128,10 +143,18 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ### T3 design
 
-- Rebuild the current library; run text 1/8/24, tiles, particles 500/2,000, shapes, mixed, oversize 1024×128 and
-  the wide tile atlas; compare to the 018–022 captures.
-- `batch_check WRAP=0` vs `par_pspgl.raw`.
-- Build and run `basic_shapes`; capture and count colours against the phase 5 baseline **284**.
+- Rebuild the current library with `PSP_CULL=1 PSP_TRI_FAST=1`; record the boot line. Run text 1/8/24, tiles,
+  particles 500/2,000, shapes, mixed, oversize 1024×128 and the wide tile atlas; compare to the 018–022 captures.
+- `batch_check WRAP=0` vs `par_pspgl.raw`; check the wabbit texture md5 first.
+- Build and run `basic_shapes`:
+  ```sh
+  cd psp-tests/basic_shapes
+  make clean && make
+  cp basic_shapes.prx /tmp/s3/s23_bs.prx
+  # reset, run, DONE, capture to s23_bs.raw
+  ```
+  Count unique RGB triples after the 54-byte capture header; the phase 5 baseline is **284**. A different count
+  must be explained before the phase closes.
 - Record boot free/largest and residency before/after each fitting scene: 0 evictions/reloads/failures, no
   mid-frame upload.
 
@@ -151,7 +174,8 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
   | no visual regression | 018–023 captures + gate + 284 colours |
 
 - Update `../phases/07-2d-specialisation/index.md` state to **done** (or record a named deferral), the sprint table, and
-  `../phases/index.md`. Name the next phase (8 — input, unless the recorded order changes).
+  `../phases/index.md`. Record the parallel state rather than inventing a successor: Phases 8 and 9 are already in
+  progress by other sessions, and Phase 13 is continuous. Phase 7's close does not reorder or gate them.
 
 ## 6. Budgets
 
@@ -159,7 +183,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 |---|---|---|
 | strip widths | 16/32/64/128/480 | the R2 set plus the natural order |
 | repeats | 1 and 4 | single vs reused texels |
-| background | 480×272 8888 = 522,240 B | fits with the font |
+| background | 480×256 8888 logical; padded 512×256 = 524,288 B | 480×272 padded to 512×512 would be 1 MiB and would not fit |
 | frames | 300, two runs | project rule |
 | decision | ≥5 % on repeat, pixels identical | below that the reordering is not worth it |
 
@@ -189,6 +213,7 @@ Not run yet.
 
 ## 10. Follow-ups
 
-- **Phase 8 — input** after Phase 7 closes (or the recorded order if a deferral changes it).
+- **Phase 8 — input** is already in progress in parallel, as is Phase 9; Phase 13 is continuous. Phase 7's close
+  records the current roadmap state rather than naming a serial successor.
 - The strip result, positive or null, is recorded here and in the memory map; no recipe is promoted on a single
   draw.
