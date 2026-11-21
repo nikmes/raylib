@@ -61,39 +61,39 @@ nav:
       - Baseline numbers: psp/baselines.md
       - Phases:
           - psp/phases/index.md
-          - Phase 0 — Baseline:
+          - 0 — Baseline:
               - psp/phases/00-baseline/index.md
               - P0-S1 — Baseline: psp/sprints/000-phase0-baseline.md
-          - Phase 1 — 6.2 boots on pspGL:
+          - 1 — 6.2 boots on pspGL:
               - psp/phases/01-bring-up-6-2/index.md
               - P1-S1 — Import platform: psp/sprints/001-phase1-import-platform.md
               - P1-S2 — Samples green: psp/sprints/002-phase1-samples-green.md
-          - Phase 2 — Instrumentation and baseline:
+          - 2 — Instrumentation and baseline:
               - psp/phases/02-instrumentation/index.md
               - P2-S1 — Counters: psp/sprints/003-phase2-counters.md
               - P2-S2 — Baselines: psp/sprints/004-phase2-baselines.md
-          - Phase 3 — pspGL upgrade A/B:
+          - 3 — pspGL upgrade A/B:
               - psp/phases/03-pspgl-upgrade/index.md
               - P3-S1 — pspGL A/B: psp/sprints/005-phase3-pspgl-ab.md
               - P3-S2 — Decide: psp/sprints/006-phase3-decide.md
-          - Phase 4 — PSP fixed-function rlgl batcher:
+          - 4 — PSP fixed-function rlgl batcher:
               - psp/phases/04-rlgl-batcher/index.md
               - P4-S1 — Batch skeleton: psp/sprints/007-phase4-batch-skeleton.md
               - P4-S2 — Sprite primitive: psp/sprints/008-phase4-sprite-primitive.md
               - P4-S3 — Inline vertex path: psp/sprints/009-phase4-inline-vertex-path.md
-          - Phase 5 — Native GU backend:
+          - 5 — Native GU backend:
               - psp/phases/05-native-gu-backend/index.md
               - P5-S1 — GE up: psp/sprints/011-phase5-ge-up.md
               - P5-S2 — Texture parity: psp/sprints/012-phase5-texture-parity.md
               - P5-S3 — Corpus and counters: psp/sprints/013-phase5-corpus-and-counters.md
               - P5-S4 — Ceiling, VRAM, readback: psp/sprints/014-phase5-ceiling-vram-readback.md
-          - Phase 6 — Textures and VRAM:
+          - 6 — Textures and VRAM:
               - psp/phases/06-textures-vram/index.md
               - P6-S1 — Fill and texture format: psp/sprints/010-phase6-fill-and-texture-format.md
               - P6-S2 — NPOT and VRAM: psp/sprints/015-phase6-npot-and-vram.md
               - P6-S3 — Residency and eviction: psp/sprints/016-phase6-residency-eviction.md
               - P6-S4 — Format matrix and gated features: psp/sprints/017-phase6-format-matrix-and-gated-features.md
-          - Phase 7 — 2D specialisation:
+          - 7 — 2D specialisation:
               - psp/phases/07-2d-specialisation/index.md
               - P7-S1 — Corpus and budget: psp/sprints/018-phase7-corpus-and-budget.md
               - P7-S2 — Text work: psp/sprints/019-phase7-text-work.md
@@ -101,14 +101,14 @@ nav:
               - P7-S4 — Sprites and shapes: psp/sprints/021-phase7-sprites-and-shapes.md
               - P7-S5 — Particles: psp/sprints/022-phase7-particles.md
               - P7-S6 — Cache strips and close: psp/sprints/023-phase7-cache-strips-and-close.md
-          - Phase 8 — Input:
+          - 8 — Input:
               - psp/phases/08-input/index.md
-          - Phase 9 — Audio:
+          - 9 — Audio:
               - psp/phases/09-audio/index.md
-          - Phase 10 — 3D and advanced:
+          - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
-          - Phase 11 — General optimisation outside the renderer: psp/phases/11-general-optimisation.md
-          - Phase 12 — Release gate:
+          - 11 — General optimisation outside the renderer: psp/phases/11-general-optimisation.md
+          - 12 — Release gate:
               - psp/phases/12-release-gate/index.md
       - Templates:
           - psp/templates/sprint.md
