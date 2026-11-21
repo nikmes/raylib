@@ -112,6 +112,23 @@ alone would allow is the GE: at 1,600 sprites its fill takes ~5.5 ms, and work +
 Mixed rotated/unrotated scenes: an alternation budget caps primitive-class changes at 8 per frame, so the worst case
 is 12 draws/frame and a 16.683 ms frame, against 1,001 draws and 83.417 ms before it.
 
+## The pixel budget (sprint 010)
+
+Fill on this console is **rasterisation throughput, ~221 Mtexel/s**, and it is insensitive to what the texels weigh
+and to whether they blend. Eight cells at N=1,200 with CPU work held at 8.54–8.65 ms:
+
+| change | effect on frame | effect on `swap` |
+|---|---|---|
+| RGBA8888 → 5650 (4 B → 2 B per texel) | 0.0 % | −0.6 % |
+| RGBA8888 → 5551 | 0.0 % | −0.7 % |
+| blending off | 0.0 % | −0.2 % |
+| 4× pixel area (`SPRITE_SCALE=2`) | **1 period → 2 periods** | **+199.5 %** |
+
+So a 60 fps frame holds roughly **1.6–2.0 M drawn texels**: 1.23 M has slack, 1.64 M (1,600 sprites) holds,
+4.92 M needs two periods. For a 480×272 screen that is 12–15 full-screen layers of overdraw. Bunnymark at 1,600
+sprites is 9.4× overdraw, which is why its sprite ceiling says more about the workload than about the console —
+**quote texels per frame from here on, and measure overdraw before quoting a sprite count.**
+
 ## Adopted library (current reference)
 
 Since sprint 006 the project ships **pspGL from `TheMrIron2/pspgl` @ `ae9a668`, `PSPGL_DLIST_SIZE_WORDS=8192`**,

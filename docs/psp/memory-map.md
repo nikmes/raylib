@@ -194,6 +194,13 @@ batcher has to reach, and the number to beat when the native backend lands.
   predicted.
 - pspGL maps `GL_QUADS` to a GE **triangle fan**, so batched quads must be expanded to triangles: 6 vertices per
   sprite instead of 4.
+- **Fill is rasterisation-rate-bound, ~221 Mtexel/s, and it does not care about texel bytes or blending.**
+  Measured at N=1,200 with CPU work held constant: RGBA8888 → 5650 → 5551 moved the frame by 0.0 %, blending off
+  by −0.2 %, 4× the pixel area by **+199.5 %**. So the 60 fps budget is **~1.6–2.0 M drawn texels per frame**, not
+  a sprite count — and bunnymark's 1,600 sprites are 9.4× overdraw. Quote texels/frame, not sprites
+  `[measured: sprint 010, 8 cells]`.
+- **16-bit textures are a memory lever, not a speed lever**: 2 B/texel instead of 4 in a 2 MiB budget, at zero cost
+  in speed. `5551` has 1 bit of alpha (hard-edged sprites), `4444` has 4 — a per-texture fidelity choice.
 - `glLockArraysEXT` around each draw: **no effect** (+0.4 %), because the cache is rebuilt per lock.
 `[measured: PSP-1000, 2026-11-20, sprint 007, full table in `baselines.md`]`
 

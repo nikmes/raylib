@@ -55,6 +55,7 @@ None yet. Use the [sprint template](../templates/sprint.md).
 ## Sprints and features
 
 - [Sprint 010 — What fill actually costs, and 16-bit textures](../sprints/010-phase6-fill-and-texture-format.md)
-  — phase 4's ceiling is `work 11.0 ms + fill ~5.5 ms` in a 16.683 ms period, and only the first half has been
-  attacked. This sprint finds out whether fill is texel bytes (16-bit uploads fix it), pixel area (fewer sprites
-  fix it) or blend traffic (opaque passes fix it) before anything is implemented, then bisects the ceiling again
+  — **done, negative result.** Fill is rasterisation-rate-bound (~221 Mtexel/s): 16-bit textures changed the frame
+  by 0.0 %, blending off by −0.2 %, 4× the area by +199.5 %. The budget is **~1.6–2.0 M drawn texels per 60 fps
+  frame**, not a sprite count. 16-bit textures survive as a **memory** lever (2 B/texel in a 2 MiB budget), with
+  `4444` for sprites and `5650` for opaque — the speed case for them is dead
