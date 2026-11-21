@@ -218,3 +218,27 @@ bug from the texture ones, and the count will say whether it is ordering, indice
 - Non-power-of-two textures: pad the height and correct with `sceGuTexScale` (012 T2).
 - 3D depth and camera behaviour beyond one cube — phase 10.
 - `glGetFloatv` for `GL_LINE_WIDTH`/`GL_POINT_SIZE` is still answered from constants; fine until something reads them.
+
+
+## 9c. T1 status: four eliminations, one open question
+
+Kept as the working record, because each entry is a measurement someone would otherwise repeat.
+
+| # | hypothesis | outcome |
+|---|---|---|
+| 1 | raylib's `MatrixToFloat` needs transposing in `glMultMatrixf` | **rejected twice** — once with a contaminated depth baseline, once clean: 613 colours, the cubes vanish |
+| 2 | a stale sprite texture is sampled by the mesh cut | **rejected** by the draw trace: `drawElements count=36 tex2d=0 bound=1` |
+| 3 | the projection matrix needs transposing at upload | **rejected by the 2D gate**: 0 → 40,813 differing pixels |
+| 4 | the screen mapping (viewport/offset) differs from pspGL's | **rejected by arithmetic**: pspGL's `glViewport` reduces to the same `screen_x = 240 + 240·ndc` ours does |
+
+Open question, stated precisely: projecting the cube's eight corners through raylib's own `BeginMode3D` numbers
+(near 0.05, far 4000, `top = 0.05·tan 22.5°`, aspect 480/272, camera (0,1,4)→(0,0,0)) predicts `DrawCube` at
+**x 81..191** — and **pspGL's capture starts at exactly x=81**, while ours starts at **x=0** and is roughly twice
+as wide. So the reference is right, our source math is right, and the GE still receives something different.
+
+That leaves one place to look, and it is not in the code we have been reading: **what the GE actually receives**.
+The next probe should be a single triangle whose three vertices have known NDC positions, drawn with the frustum
+projection, captured and measured against the predicted screen coordinates — so the answer is "the GE put vertex A
+at pixel X" rather than another inference from a whole scene. Two candidates it will separate: the projection
+really is being altered between our matrix and the GE's registers (float24 truncation, or `sceGuSetMatrix`'s
+handling of the `w` row), or the modelview is being applied twice.
