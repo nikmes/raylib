@@ -849,6 +849,57 @@ static void spritesDraw(void)
 #endif
 
 // ---------------------------------------------------------------------------------
+// Texture-cache strip scene (sprint 023 T1)
+// ---------------------------------------------------------------------------------
+#if defined(MODE_CACHE)
+static Texture2D cacheTex;
+static int cacheQuads;
+
+static void cacheInit(void)
+{
+    // 480x256 logical; pspgu pads to 512x256 = 524,288 B at 8888 and it fits.
+    Image img = GenImageColor(480, 256, BLACK);
+
+    for (int y = 0; y < 256; y++)
+    {
+        for (int x = 0; x < 480; x++)
+        {
+            int checker = ((x/32) + (y/32))&1;
+            Color c = {
+                (unsigned char)(checker? 200 : 80),
+                (unsigned char)y,
+                (unsigned char)((x*255)/479),
+                255
+            };
+            ImageDrawPixel(&img, x, y, c);
+        }
+    }
+
+    cacheTex = LoadTextureFromImage(img);
+    UnloadImage(img);
+
+    int strips = (480 + SCENE_STRIP - 1)/SCENE_STRIP;
+    cacheQuads = strips*SCENE_REPEAT;
+}
+
+static void cacheDraw(void)
+{
+    for (int r = 0; r < SCENE_REPEAT; r++)
+    {
+        for (int x0 = 0; x0 < 480; x0 += SCENE_STRIP)
+        {
+            int w = SCENE_STRIP;
+            if ((x0 + w) > 480) w = 480 - x0;
+
+            Rectangle src = { (float)x0, 0.0f, (float)w, 256.0f };
+            Rectangle dst = { (float)x0, 0.0f, (float)w, 256.0f };
+            DrawTexturePro(cacheTex, src, dst, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+        }
+    }
+}
+#endif
+
+// ---------------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------------
 static int sceneObjects(void)
@@ -867,6 +918,8 @@ static int sceneObjects(void)
     return SCENE_COUNT*3;
 #elif defined(MODE_SPRITES)
     return SCENE_COUNT;
+#elif defined(MODE_CACHE)
+    return cacheQuads;
 #elif defined(MODE_FONT)
     return TextLength(FONT_SAMPLE);
 #elif defined(MODE_OVERSIZE)
@@ -879,7 +932,8 @@ static int sceneObjects(void)
 static int sceneRuns(void)
 {
 #if defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_PARTICLES) || \
-    defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES)
+    defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES) || \
+    defined(MODE_CACHE)
     return 1;
 #else
     return 4;
@@ -902,6 +956,8 @@ static void sceneInit(void)
     oversizeInit();
 #elif defined(MODE_SPRITES)
     spritesInit();
+#elif defined(MODE_CACHE)
+    cacheInit();
 #else
     textInit();
     tilesInit();
@@ -914,7 +970,7 @@ static void sceneUpdate(void)
 {
 #if defined(MODE_PARTICLES)
     particlesUpdate();
-#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES)
+#elif defined(MODE_TEXT) || defined(MODE_TILES) || defined(MODE_SHAPES) || defined(MODE_FONT) || defined(MODE_OVERSIZE) || defined(MODE_SPRITES) || defined(MODE_CACHE)
     // stationary
 #else
     particlesUpdate();
@@ -947,6 +1003,8 @@ static void sceneDraw(void)
     oversizeDraw();
 #elif defined(MODE_SPRITES)
     spritesDraw();
+#elif defined(MODE_CACHE)
+    cacheDraw();
 #else
     tilesDraw();
     particlesDraw();
@@ -986,6 +1044,8 @@ static const char *sceneName(void)
     return "oversize";
 #elif defined(MODE_SPRITES)
     return "sprites";
+#elif defined(MODE_CACHE)
+    return "cache";
 #else
     return "mixed";
 #endif
@@ -1117,6 +1177,9 @@ int main(void)
 #elif defined(MODE_SPRITES)
     snprintf(sceneExtra, sizeof(sceneExtra), " sprites total=%d visible=%d offscreen_pct=%d",
              SCENE_COUNT, spriteVisible, SCENE_OFFSCREEN_PCT);
+#elif defined(MODE_CACHE)
+    snprintf(sceneExtra, sizeof(sceneExtra), " cache strip=%d repeat=%d quads=%d",
+             SCENE_STRIP, SCENE_REPEAT, cacheQuads);
 #endif
 
     SaveFileText(SCENE_MARKER,

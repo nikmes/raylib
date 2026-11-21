@@ -19,7 +19,7 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [4 — rlgl batcher](04-rlgl-batcher/index.md) | collapse per-sprite submission, still on GL | **done** — 1,000 sprites at 60 fps, ceiling 1,600 |
 | [5 — Native GU backend](05-native-gu-backend/index.md) | drop OpenGL and pspGL entirely | **done** — 2,375 sprites at 60 fps, 2D byte-identical; `DrawMesh` parity deferred to phase 10 |
 | [6 — Textures and VRAM](06-textures-vram/index.md) | swizzle, allocation, residency | **done** — sprints 015, 016, 017; CLUT/mipmaps dropped with measurements; 018 not needed |
-| [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **in progress** — 018–022 done; 023 written |
+| [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **done** — 018–023; all exit criteria; cache strips measured null |
 | [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | in progress — P8-S1 done (5/5); P8-S2 T1 done (peek), T2 latch built; T3–T6 pending; 043–044 written |
 | [9 — Audio](09-audio/index.md) | `sceAudio` output without costing frame time | **in progress** — P9-S1–S3 done; P9-S4 blocked (decode gate); P9-S4a needed |
 | [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | not started |

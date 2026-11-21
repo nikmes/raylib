@@ -949,6 +949,11 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   (−27.6 %), 2,000 **10.928 → 7.804 ms** (−28.6 %), captures byte-identical, one draw and one bind per run.
   2,000 = 4,000 vertices / one draw; **2,049 = 4,098 / two draws**; 4,000 = 8,000 vertices / 192 KiB, over the
   128 KiB arena, and falls back to a full sync. The loop is a recipe, not a public API.
+- **Texture-cache strips are a null (sprint 023, b24):** natural 480-px order is fastest on a 480×256 8888
+  background — **0.928/0.929 ms** at one draw and **0.948/0.947 ms** at four overdraws. The best strip (128 px)
+  is +2.9 %/+6.1 %, and every point is one draw and one bind, so the difference is texture-read locality. No
+  strip width is adopted. `basic_shapes` remains 284 colours and the gate `b69830b8…`; Phase 7 closed with
+  018–023.
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

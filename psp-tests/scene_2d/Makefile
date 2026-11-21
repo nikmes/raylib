@@ -42,6 +42,8 @@ ROTATE ?= 0
 REF ?= 0
 ATLAS_WIDE ?= 0
 ATLAS_REF ?= 0
+STRIP ?= 480
+REPEAT ?= 1
 
 CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_COUNT=$(COUNT) \
          -DSCENE_OFFSCREEN_PCT=$(OFFSCREEN) \
@@ -83,7 +85,8 @@ endif
 ifeq ($(REF),1)
     CFLAGS += -DOVERSIZE_REF
 endif
-CFLAGS += -DOVERSIZE_W=$(WIDE) -DOVERSIZE_H=$(HIGH) -DOVERSIZE_ROTATE=$(ROTATE)
+CFLAGS += -DOVERSIZE_W=$(WIDE) -DOVERSIZE_H=$(HIGH) -DOVERSIZE_ROTATE=$(ROTATE) \
+          -DSCENE_STRIP=$(STRIP) -DSCENE_REPEAT=$(REPEAT)
 
 ifeq ($(MODE),text)
     CFLAGS += -DMODE_TEXT
@@ -95,6 +98,8 @@ else ifeq ($(MODE),shapes)
     CFLAGS += -DMODE_SHAPES
 else ifeq ($(MODE),sprites)
     CFLAGS += -DMODE_SPRITES
+else ifeq ($(MODE),cache)
+    CFLAGS += -DMODE_CACHE
 else ifeq ($(MODE),mixed)
     CFLAGS += -DMODE_MIXED
 else ifeq ($(MODE),font)

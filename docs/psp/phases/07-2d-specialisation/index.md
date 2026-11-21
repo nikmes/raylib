@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — sprints 018–020 done; 021–023 written |
+| State | **done** — sprints 018–023; all exit criteria; cache strips measured as a null |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
@@ -21,24 +21,30 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
 
 ## Tasks
 
-- [ ] **Text**: accumulate consecutive glyphs of one atlas into a single run; no per-glyph bind
-- [ ] **Sprites**: reject fully offscreen sprites before generating vertices; fast path for unrotated and
-      uniformly scaled; optional horizontal slicing for large sprites if cache benchmarks justify it
-- [ ] **Tile maps**: draw per atlas/state run, not per tile; verify against a large map
-- [ ] **Shapes**: keep the shapes texture bound across consecutive calls; batch rectangles, triangles and lines
-      into separate compatible runs
-- [ ] **Particles**: one dynamic vertex stream per texture run, double or triple buffered; measure simulation
-      cost separately from rendering
+- [x] **Text**: accumulate consecutive glyphs of one atlas into a single run; no per-glyph bind — sprint 019:
+  1 draw and 1 bind per run at 63/548/1,637 glyphs, work −44/−51/−54 %
+- [x] **Sprites**: reject fully offscreen sprites before generating vertices; fast path for unrotated and
+      uniformly scaled; optional horizontal slicing for large sprites if cache benchmarks justify it — sprint 021:
+  cull at `DrawTexturePro`/`DrawRectanglePro`, 20k→10k vertices at 50 % off-screen, work −27.8 %; sprites already
+  2 vertices each. Slicing is the 020 window path
+- [x] **Tile maps**: draw per atlas/state run, not per tile; verify against a large map — sprint 020: 28 tiles over
+  a 1024-wide atlas are 8 window draws, not 28; two-texture reference needs 8 binds
+- [x] **Shapes**: keep the shapes texture bound across consecutive calls; batch rectangles, triangles and lines
+  into separate compatible runs — sprint 021: 3-vertex triangles, 10,000→7,000 vertices, 4→3 draws, median
+  33.4→16.7 ms; binds 1/frame, not per shape
+- [x] **Particles**: one dynamic vertex stream per texture run, double or triple buffered; measure simulation
+  cost separately from rendering — sprint 022: 1 draw at 2,000, direct stream −28.6 %, simulation separate
 - [x] Cache glyph layout where raylib semantics allow it (no re-shaping per frame) — sprint 019 layout cache
 - [x] **Texture limit audit**: find every 2D path that can exceed 512×512 (large sprites, tile sheets, UI
       backgrounds) and slice it into 512-pixel windows with `tbw` set to the full texture stride — audit in sprint
       018, window probe/upload/split in sprint 020
-- [ ] **Texture-cache measurement**: per draw, record atlas footprint, atlas-run length and strip width
-      (16/32/64/128 px); measure with a repeated draw as well as a single one, so reuse is visible
-- [ ] **Bind audit**: assert one texture bind per atlas run in the frame counters; a glyph or tile causing a
-      bind is a bug, not a slowdown
-- [ ] **Boot-time 2D VRAM budget**: log free bytes and largest block after fonts/UI/hot atlases are resident;
-      fail loudly rather than evict or upload mid-frame
+- [x] **Texture-cache measurement**: per draw, record atlas footprint, atlas-run length and strip width
+      (16/32/64/128 px); measure with a repeated draw as well as a single one, so reuse is visible — sprint 023:
+  natural 480 px is fastest at both repeats; strips are a measured null and are not adopted
+- [x] **Bind audit**: assert one texture bind per atlas run in the frame counters; a glyph or tile causing a
+      bind is a bug, not a slowdown — 019/021/022: binds are per run, not per glyph/shape/particle
+- [x] **Boot-time 2D VRAM budget**: log free bytes and largest block after fonts/UI/hot atlases are resident;
+      fail loudly rather than evict or upload mid-frame — sprint 018, repeated in every later scene
 
 ## What we already know
 
@@ -174,19 +180,23 @@ copy, and do not invalidate the whole D-cache in a steady frame.
       already 1 draw/run at 63/548/1,637 glyphs; 019 kept that and cut work 44–54 %
 - [x] tile map: submissions proportional to atlas runs on a map large enough to matter — 28 tiles over a
       1024-wide atlas are **8 window draws**, not 28, with one bind; two-texture reference needs 8 binds
-- [ ] particles: one submission per compatible system, CPU simulation cost measured separately
+- [x] particles: one submission per compatible system, CPU simulation cost measured separately — 022: 1 draw at
+  2,000 (4,000 vertices), 2 at 2,049; simulation 0.14–1.10 ms separate
 - [x] every 2D path that can exceed 512×512 renders correctly through window slicing, seams included — 1024×128
       and 128×1024 are byte-identical to their pre-sliced references; rotated triangles clipped
-- [ ] texture-cache behaviour measured, not assumed: a strip width is adopted only if the repeated-draw case
-      moves, and the working set per draw is recorded
-- [ ] no mid-frame texture upload or eviction in a representative UI, tile-map and particle scene
-- [ ] boot-time 2D VRAM map printed, with fonts/UI/hot atlases resident and the largest free block recorded
-- [ ] no visual regression in the samples, screenshots compared
+- [x] texture-cache behaviour measured, not assumed: a strip width is adopted only if the repeated-draw case
+      moves, and the working set per draw is recorded — 023: natural 480 px fastest; strips null
+- [x] no mid-frame texture upload or eviction in a representative UI, tile-map and particle scene — every
+  018–023 run reports 0 evictions/reloads/failures
+- [x] boot-time 2D VRAM map printed, with fonts/UI/hot atlases resident and the largest free block recorded —
+  018 `BUDGET` line; cache scene 392,704 B free with the 480×256 texture
+- [x] no visual regression in the samples, screenshots compared — 018–022 captures match; gate `b69830b8…`;
+  `basic_shapes` 284 colours
 
 ## Sprints and features
 
-The phase is sized as six sprints. P7-S1–P7-S5 (018–022) are done; P7-S6 (023) is written and is
-implemented once the previous sprint's numbers are in hand (the fast paths depend on what the corpus measures).
+The phase is closed: P7-S1–P7-S6 (018–023) are done. The renderer paths are measured and the phase exit table is
+filled below; the strip experiment is a recorded null.
 
 | sprint | scope | state |
 |---|---|---|
@@ -195,7 +205,7 @@ implemented once the previous sprint's numbers are in hand (the fast paths depen
 | [P7-S3 — 020 — Tile maps and 512-pixel windowing](../../sprints/020-phase7-tilemap-and-windowing.md) | window probe, `tbw`≤1024 upload, draw-time window split, oversize scenes, wide tile atlas, seam parity | **done** — swizzled windows proven, 1024 uploads, 2/4 window draws, byte-identical to the pre-sliced refs |
 | [P7-S4 — 021 — Sprites and shapes](../../sprints/021-phase7-sprites-and-shapes.md) | offscreen rejection for axis-aligned draws; 3-vertex triangle path; bind/run audit | **done** — cull 20k→10k vertices (−27.8 %), triangles 6k→3k, shapes median 33.4→16.7 ms, gate 0 |
 | [P7-S5 — 022 — Particles](../../sprints/022-phase7-particles.md) | one stream per texture run, api/direct probe, 2,049/4,000 cap and arena, tear audit | **done** — direct −27.6 %/−28.6 %, 1 draw at 2,000, 2 at 2,049, captures identical, gate 0 |
-| [P7-S6 — 023 — Cache strips, regression, close](../../sprints/023-phase7-cache-strips-and-close.md) | 16/32/64/128 px strip A/B on single and repeated draws; full regression; phase exit table | written |
+| [P7-S6 — 023 — Cache strips, regression, close](../../sprints/023-phase7-cache-strips-and-close.md) | 16/32/64/128/480 px strip A/B on single and repeated draws; full regression; phase exit table | **done** — natural order fastest, strips null; 018–022 regression, gate 0, `basic_shapes` 284 |
 
 The strip experiment may be a null result (R2 predicts it may be); the phase close and the full regression still
 run in 023, so it does not collapse into 022.

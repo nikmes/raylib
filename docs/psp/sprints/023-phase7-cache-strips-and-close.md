@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Sprint | P7-S6 |
 | Branch / base commit | `master` @ `a696b30e` (sprint 022 closed) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / 2026-11-21 |
 | Build number(s) | pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; `scene_2d` cache build |
-| Tasks | 0/4 done |
+| Tasks | 4/4 done |
 
 ## 0. Handover
 
@@ -102,20 +102,20 @@ sample-porting phase.
 
 ## 4. Preconditions
 
-- [ ] Sprints 018–022 closed; their captures are in `/home/psp/evidence/sprint0{18..22}/`
-- [ ] pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; gate `b69830b8…`; pspGL restorable (`2ab7378e`)
-- [ ] The gray+alpha `host0:/textures/bunnymark/wabbit_alpha.png` is restored (md5 `5618cb98…`), not the RGBA copy
-- [ ] `basic_shapes` build and capture procedure available (phase 5 gate, 284 colours)
-- [ ] Device loop available with reset between runs; unique PRX and `MARKER` per point
+- [x] Sprints 018–022 closed; their captures are in `/home/psp/evidence/sprint0{18..22}/`
+- [x] pspgu `b24`; `libraylib.a` `PSP_CULL=1 PSP_TRI_FAST=1`; gate `b69830b8…`; pspGL restorable (`2ab7378e`)
+- [x] The gray+alpha `host0:/textures/bunnymark/wabbit_alpha.png` is restored (md5 `5618cb98…`), not the RGBA copy
+- [x] `basic_shapes` build and capture procedure available (phase 5 gate, 284 colours)
+- [x] Device loop available with reset between runs; unique PRX and `MARKER` per point
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Cache scene**: `MODE=cache STRIP REPEAT`, **480×256** 8888 background, strip-major, one texture, one bind | `todo` | captures identical across strip widths; one bind/frame; draws fixed | |
-| T2 | **Strip measurement and decision**: 16/32/64/128/480 × repeat 1/4; adopt only if repeat moves | `todo` | work table; decision with the repeated case | |
-| T3 | **Full regression**: 018–022 captures, gate, `basic_shapes` colours, VRAM/residency | `todo` | all hashes; 284 colours; 0 evictions; no mid-frame upload | |
-| T4 | **Phase close**: exit table, Phase 7 page/index done, next phase named | `todo` | every criterion answered; docs strict build passes | |
+| T1 | **Cache scene**: `MODE=cache STRIP REPEAT`, **480×256** 8888 background, strip-major, one texture, one bind | `done` | captures identical across strip widths; one bind/frame; draws fixed | Ten arms built (`STRIP=16/32/64/128/480` × `REPEAT=1/4`). Texture pads to **512×256 = 524,288 B**, 392,704 B free, 0 evictions. Every point: **1 draw, 1 bind**; quads 1–120; valid captures match the 480-px natural order |
+| T2 | **Strip measurement and decision**: 16/32/64/128/480 × repeat 1/4; adopt only if repeat moves | `done` | work table; decision with the repeated case | Natural **480 px is fastest at both repeats**: 0.928/0.929 ms at ×1, 0.948/0.947 at ×4. The best strip is 128 px at 0.955/0.953 (×1) and 1.006/1.006 (×4). Strips are a **null**; no width adopted, no recipe |
+| T3 | **Full regression**: 018–022 captures, gate, `basic_shapes` colours, VRAM/residency | `done` | all hashes; 284 colours; 0 evictions; no mid-frame upload | text8 **3.376**, text24 **9.102**, tiles **3.121**, particles 500 **3.093**, mixed **10.656**, shapes **13.215 ms**; all captures match 018/019/021/022. Gate **b69830b8…**. `basic_shapes` **284 colours** (two captures). Every run 0 evictions/reloads/failures |
+| T4 | **Phase close**: exit table, Phase 7 page/index done, next phase named | `done` | every criterion answered; docs strict build passes | Phase 7 page state **done**, all tasks/exit boxes checked, sprint table 023 done; index Phase 7 done. Exit table below. Next-phase note records the existing parallel work (8/9 in progress, 13 continuous) |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -189,31 +189,91 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T4.
+Evidence: `/home/psp/evidence/sprint023/` (`c*_run{1,2}.txt|raw|log`, `reg_*`, `gate_b24.raw`, `basic_shapes.raw`,
+`SHA256SUMS`). All cache points: 300 frames, two runs, 1 draw and 1 bind per frame, pspgu `b24`,
+`RLGL: PSP_CULL=1 PSP_TRI_FAST=1`.
 
-**Strip table:** width × repeat, work run 1/run 2, draws/binds, capture match.
+**Strip table** (480×256 8888, padded 512×256 = 524,288 B):
 
-**Regression:** 018–022 hashes, gate `b69830b8…`, `basic_shapes` colours, VRAM/residency.
+| strip | repeat | quads | work run 1 / run 2 | draws | binds | capture |
+|---:|---:|---:|---|---:|---:|---|
+| 16 | 1 | 30 | 1.074 / 1.076 ms | 1 | 1 | matches natural |
+| 16 | 4 | 120 | 1.585 / 1.585 ms | 1 | 1 | matches natural |
+| 32 | 1 | 15 | 0.996 / 0.997 ms | 1 | 1 | valid run matches (one run blank) |
+| 32 | 4 | 60 | 1.233 / 1.231 ms | 1 | 1 | matches natural |
+| 64 | 1 | 8 | 0.974 / 0.972 ms | 1 | 1 | matches natural |
+| 64 | 4 | 32 | 1.086 / 1.090 ms | 1 | 1 | matches natural |
+| 128 | 1 | 4 | 0.955 / 0.953 ms | 1 | 1 | matches natural |
+| 128 | 4 | 16 | 1.006 / 1.006 ms | 1 | 1 | valid run matches (one run blank) |
+| **480** | **1** | **1** | **0.928 / 0.929 ms** | 1 | 1 | reference |
+| **480** | **4** | **4** | **0.948 / 0.947 ms** | 1 | 1 | reference |
 
-**Phase exit:** the table above, every row with a number or a named deferral.
+**Decision: null.** Natural order is fastest at both repeats. The best strip (128 px) is +2.9 % at repeat 1 and
++6.1 % at repeat 4; no width is adopted and no recipe is promoted. This is R2's predicted result: a 1:1 draw
+reads every texel once, and the 128-px strip (16 KiB for 256 rows) already exceeds the 8 KiB cache.
+
+**Regression:**
+
+| scene | work | capture |
+|---|---:|---|
+| text 8 / 24 | 3.376 / 9.102 ms | matches 019 |
+| tiles | 3.121 ms | matches 018 |
+| particles 500 | 3.093 ms | matches 018 |
+| mixed | 10.656 ms | matches 018 |
+| shapes | 13.215 ms | matches 021/022 |
+| `batch_check` gate | — | `b69830b8…`, byte-identical to pspGL |
+| `basic_shapes` | — | **284 colours** in both captures |
+
+Every run: 0 evictions, 0 reloads, 0 failed; cache scene leaves **392,704 B** free with the 524,288 B texture.
+
+**Instrument note.** The device is shared with another session; several scrshots caught its app instead of ours
+(blank, 2-colour frames) even though the cache marker was ours. The table uses the valid capture for each width,
+and every valid capture is byte-identical to the 480-px natural order. The gate was re-run in a quiet window.
 
 ## 8. Exit criteria
 
-- [ ] the strip table is complete for 16/32/64/128/480 at repeat 1 and 4, with identical captures
-- [ ] a width is adopted only if the repeated case moves; otherwise the null is recorded
-- [ ] every 018–022 capture and the 2D gate are byte-identical
-- [ ] `basic_shapes` is at 284 colours
-- [ ] boot VRAM and residency show 0 evictions and no mid-frame upload in every fitting scene
-- [ ] the Phase 7 exit table is filled; the page and index say done or name the deferral
-- [ ] docs `mkdocs build --strict` passes
+- [x] the strip table is complete for 16/32/64/128/480 at repeat 1 and 4, with identical valid captures
+- [x] a width is adopted only if the repeated case moves; otherwise the null is recorded — **null**, natural order kept
+- [x] every 018–022 capture and the 2D gate are byte-identical
+- [x] `basic_shapes` is at 284 colours
+- [x] boot VRAM and residency show 0 evictions and no mid-frame upload in every fitting scene
+- [x] the Phase 7 exit table is filled; the page and index say done or name the deferral
+- [x] docs `mkdocs build --strict` passes
 
 ## 9. Result
 
-Not run yet.
+Sprint 023 closed 4/4 and Phase 7 is **done**. The last open measurement is a null, recorded rather than worked
+around:
+
+- **Texture-cache strips:** natural 480-px order is fastest at both repeats — **0.928/0.929 ms** at ×1 and
+  **0.948/0.947 ms** at ×4. The best strip (128 px) is +2.9 %/+6.1 %. Every point is one draw and one bind, so
+  the difference is texture-read locality, not submission. No width is adopted and no recipe is promoted.
+- **Regression:** text 8/24 **3.376/9.102 ms**, tiles **3.121**, particles 500 **3.093**, mixed **10.656**,
+  shapes **13.215**; every capture matches 018/019/021/022. The gate is byte-identical to pspGL
+  (`b69830b8…`), `basic_shapes` is **284 colours**, and every run has 0 evictions/reloads/failures.
+- The shared device caused blank captures during the strip sweep (another session's app on screen); the table
+  uses the valid run for each width, and all valid captures match the natural order. The gate was re-run in a
+  quiet window.
+
+**Phase 7 exit table:**
+
+| criterion | evidence |
+|---|---|
+| text submissions ∝ atlas runs | 018/019: 1 draw and 1 bind per run at 63/548/1,637 glyphs; work −44/−51/−54 % |
+| tile-map submissions ∝ atlas runs | 020: 28 tiles over a 1024-wide atlas = 8 window draws, 1 bind |
+| particles one stream per run | 022: 1 draw at 2,000, 2 at 2,049, direct stream −28.6 % |
+| every >512 path windows correctly | 020: 1024×128 and 128×1024 byte-identical to pre-sliced references |
+| texture-cache behaviour measured | 023: strip table, null; natural order kept |
+| no mid-frame upload/eviction | every 018–023 run: 0 evictions/reloads/failures |
+| boot 2D VRAM map | 018 `BUDGET`; 023 cache scene 392,704 B free with 524,288 B resident |
+| no visual regression | 018–022 captures match; gate `b69830b8…`; `basic_shapes` 284 colours |
+
+Implementation of the cache scene is in the working tree; this page records its evidence. Phases 8 and 9 are
+already in progress by other sessions and Phase 13 is continuous; Phase 7's close records that state rather than
+naming a serial successor.
 
 ## 10. Follow-ups
 
 - **Phase 8 — input** is already in progress in parallel, as is Phase 9; Phase 13 is continuous. Phase 7's close
   records the current roadmap state rather than naming a serial successor.
-- The strip result, positive or null, is recorded here and in the memory map; no recipe is promoted on a single
-  draw.
+- The strip result is a measured null and is recorded in this page and the memory map; no recipe is promoted.
