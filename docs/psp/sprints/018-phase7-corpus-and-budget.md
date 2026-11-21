@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation.md) |
 | Branch / base commit | `master` @ `01325cf8` (sprint 017 closed; phase 6 done) |
-| Started / closed | — / — |
-| Build number(s) | `b23` (no driver change expected; the sprint is a harness) |
-| Tasks | 0/7 done |
+| Started / closed | 2026-11-21 / 2026-11-21 |
+| Build number(s) | `b23` (driver unchanged; the sprint is a harness) |
+| Tasks | 7/7 done |
 
 ## 0. Handover
 
@@ -120,24 +120,24 @@ texture-cache strip experiment (023), mipmaps/CLUT (phase 10 / closed in 017), a
 
 ## 4. Preconditions
 
-- [ ] Phase 6 closed at `01325cf8`; pspgu `b23` builds and is pixel-gated
-- [ ] `psp-tests/bunnymark/psp_counters.c` compiles against the current `libraylib.a` with `--wrap`
-- [ ] `pspguVramReport` and `pspguResidencyStats` are callable from a test app (the `texture_residency` pattern)
-- [ ] `/tmp/s3/par_pspgl.raw` is present (`b69830b8…`) for the gate
-- [ ] Device loop available: `usbhostfs_pc` rooted at `/tmp/s3`, `pspsh`, `reset` between runs
-- [ ] pspGL archive restorable (`2ab7378e`)
+- [x] Phase 6 closed at `01325cf8`; pspgu `b23` builds and is pixel-gated
+- [x] `psp-tests/bunnymark/psp_counters.c` compiles against the current `libraylib.a` with `--wrap`
+- [x] `pspguVramReport` and `pspguResidencyStats` are callable from a test app (the `texture_residency` pattern)
+- [x] `/tmp/s3/par_pspgl.raw` is present (`b69830b8…`) for the gate
+- [x] Device loop available: `usbhostfs_pc` rooted at `/tmp/s3`, `pspsh`, `reset` between runs
+- [x] pspGL archive restorable (`2ab7378e`)
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Harness**: `psp-tests/scene_2d` with `MODE`, `COUNT`, `LINES`, `FRAMES`, `TARGET_FPS=0`; fixed LCG; per-frame times; `SPLIT work/swap`; marker file | `todo` | two runs of one build give identical counters and captures; marker has mode/count/frames/work/swap | |
-| T2 | **Text scene**: fixed 78-character line(s) at fontSize 10; `LINES=1|8|24`; count glyphs, runs, `ends`, `drawArrays`, `binds`; capture | `todo` | submissions and binds reported per glyph count; two runs identical; screenshot stable | |
-| T3 | **Tile scene**: 128×128 atlas of 16×16 tiles; 30×17 visible grid from a 120×68 logical map; optional `SCROLL=1`; count tiles/runs/binds | `todo` | 510 visible tiles, one atlas; counters and capture recorded; scrolling build deterministic per frame count | |
-| T4 | **Particle scene**: 2,000 deterministic particles, one 32×32 texture; simulation timed separately from rendering with `sceKernelGetSystemTimeWide`; wrap-around motion | `todo` | `sim` and `work` reported separately; two runs at the same frame count have identical counters and pixels | |
-| T5 | **Shape scene**: 1,000 rectangles, 1,000 triangles, 1,000 lines in compatible contiguous groups; count runs/submissions/vertices | `todo` | three groups, counts recorded; no texture binds except the default | |
-| T6 | **Boot budget and in-frame residency**: after assets, `pspguVramReport("boot2d")` + `pspguResidencyStats`; `BUDGET_FLOOR_KB` (default 128); re-read after the measured frames; `BUDGET FAIL` if free < floor or residency events moved | `todo` | free/largest printed; floor verdict printed; evictions/reloads/failed unchanged over the frames | |
-| T7 | **512-pixel audit**: every 2D path that can exceed 512×512, with file/line, current behaviour, whether `tbw` is full-stride, and the window plan | `todo` | a table in §7 with no "unknown" rows for the four workloads | |
+| T1 | **Harness**: `psp-tests/scene_2d` with `MODE`, `COUNT`, `LINES`, `FRAMES`, `TARGET_FPS=0`; fixed LCG; per-frame times; `SPLIT work/swap`; marker file | `done` | two runs of one build give identical counters and captures; marker has mode/count/frames/work/swap | Five modes, nine configurations, **18 runs**, all `PASS`; every marker is one line with mode/objects/runs/counters/work/swap/sim/median/p95/free/largest/residency/verdict; two runs per point agree to ≤0.1 % on work and byte-for-byte on captures. `/home/psp/evidence/sprint018/` (`*_run{1,2}.txt|raw|log`, `SHA256SUMS`) |
+| T2 | **Text scene**: fixed 78-character line(s) at fontSize 10; `LINES=1|8|24`; count glyphs, runs, `ends`, `drawArrays`, `binds`; capture | `done` | submissions and binds reported per glyph count; two runs identical; screenshot stable | **63 / 548 / 1,637 glyphs → 1 draw/frame at all three** (126 / 1,096 / 3,274 vertices, under the 4,096 cap); binds **1 per run**, unbinds 0 (the PSP batcher defers `rlSetTexture`); work **1.226 / 6.827 / 19.680 ms**. Text24 misses 60 fps: median **33.367 ms**. Captures identical across runs |
+| T3 | **Tile scene**: 128×128 atlas of 16×16 tiles; 30×17 visible grid from a 120×68 logical map; optional `SCROLL=1`; count tiles/runs/binds | `done` | 510 visible tiles, one atlas; counters and capture recorded; scrolling build deterministic per frame count | 510 tiles, **1 draw/frame**, 1,020 vertices, binds **1 per run**; work **3.228 ms**. `SCROLL=1`: work **3.244 ms**, same counters, view differs from the stationary capture; two scroll runs identical |
+| T4 | **Particle scene**: `COUNT` deterministic particles, one 32×32 texture; simulation timed separately with `GetTime()` (the `SPLIT` clock); wrap-around motion | `done` | `sim` and `work` reported separately; two runs at the same frame count have identical counters and pixels | 500: work **3.285 ms**, sim **0.443 ms**; 2,000: work **11.844 ms**, sim **1.775 ms**. **1 draw/frame** at both (1,000 / 4,000 vertices; 4,000 is just under the cap). Captures identical across runs |
+| T5 | **Shape scene**: 1,000 rectangles, 1,000 triangles, 1,000 lines in compatible contiguous groups; count runs/submissions/vertices | `done` | three groups, counts recorded; bind behaviour recorded, including the default texture | 3,000 objects, **4 draws/frame**, **10,000 vertices/frame**, **1 bind + 1 unbind per frame** for the default shapes texture; work **21.789 ms**, median **33.367 ms**. The bind is per frame, not per shape |
+| T6 | **Boot budget and in-frame residency**: after assets, `pspguVramReport("boot2d")` + `pspguResidencyStats`; `BUDGET_FLOOR_KB` (default 128); re-read after the measured frames; `BUDGET FAIL` if free < floor or residency events moved | `done` | free/largest printed; floor verdict printed; evictions/reloads/failed unchanged over the frames | Boot free: **916,992 B** (text, shapes), **851,456 B** (tiles), **912,896 B** (particles), **847,360 B** (mixed); largest = free in every case; floor 131,072 B → **OK** everywhere. **0 evictions, 0 reloads, 0 failed** across all 300-frame runs |
+| T7 | **512-pixel audit**: every 2D path that can exceed 512×512, with file/line, current behaviour, whether `tbw` is full-stride, and the window plan | `done` | a table in §7 with no "unknown" rows for the four workloads | Audit in §7. **Finding:** width > 512 is not rejected — the texture is allocated and marked used, but the swizzled upload returns early (`gl_texture.c:231`), so it samples zero/uninitialised VRAM. `tbw = nextPow2(width)` today (`gl_texture.c:566`) |
 
 Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are stable.
 
@@ -185,7 +185,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 - Texture: `GenImageColor(32, 32, ...)` with a four-quadrant pattern so a wrong UV is visible.
 - Particle state: `pos`, `vel`, `colour` from the LCG; each frame `pos += vel`, wrap at the 480×272 edges.
   `COUNT` particles drawn with `DrawTexturePro` at 32×32 (overlap is expected; this is a fill workload too).
-- Simulation timing: two `sceKernelGetSystemTimeWide()` reads around the update loop, summed per frame; `sim`
+- Simulation timing: two `GetTime()` reads around the update loop, summed per frame; `sim`
   printed as a separate average. `work` includes simulation; do not subtract it silently.
 - Run at `COUNT=500` and `COUNT=2000`, `FRAMES=300`, two runs each.
 
@@ -232,57 +232,138 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 ## 7. Measurements
 
-Filled by T1–T7. The tables must carry the build marker (`[PSPGU] GU up: pspgu b23 …`) and the run command.
+Build marker on every run: `[PSPGU] GU up: pspgu b23, 480x272 stride 512, texfmt 8888, fb 272 KiB x3, depth
+yes (272 KiB), lists 2 x 240 KiB, arenas 2 x 128 KiB`. Nine configurations, **two runs each**, `FRAMES=300`,
+`TARGET_FPS=0`, marker plus two captures per run. Evidence: `/home/psp/evidence/sprint018/`
+(`<tag>_run{1,2}.txt|raw|log`, `gate_b23.raw`, `SHA256SUMS`).
 
-**Baseline counters (to fill):**
+Two runs of one build agree to ≤0.1 % on work; every pair of captures is byte-identical, and for the stationary
+scenes the captures are identical across runs too. A post-cleanup rebuild (preprocessor guards only) reproduced
+the text-8 counters exactly, work 6.856 vs 6.827/6.829 ms — a 0.4 % run-to-run difference. `ends` and `begins` are
+0 in every scene: the PSP batcher is default-on, so all drawing reaches the boundary as `glDrawArrays`, not
+immediate calls.
 
-| scene | objects | runs | ends | drawArrays | binds | unbinds | verts | work ms | swap ms | median ms |
-|---|---|---|---|---|---|---|---|---|---|---|
-| text LINES=1 | | | | | | | | | | |
-| text LINES=8 | | | | | | | | | | |
-| text LINES=24 | | | | | | | | | | |
-| tiles 30×17 | 510 | 1 | | | | | | | | |
-| particles 500 | | | | | | | | | | |
-| particles 2000 | | | | | | | | | | |
-| shapes 1000×3 | | | | | | | | | | |
-| mixed | | | | | | | | | | |
+**Per-frame submissions (totals below are for 300 frames):**
 
-**Boot budget (to fill):** `free=… largest=… floor=…` after the font + atlas + particle texture; residency
-before/after the measured frames.
+| scene | objects/frame | declared runs | draws/frame | binds/run | unbinds/run | vertices/frame |
+|---|---:|---:|---:|---:|---:|---:|
+| text LINES=1 | 63 | 1 | **1** | 1 | 0 | 126 |
+| text LINES=8 | 548 | 1 | **1** | 1 | 0 | 1,096 |
+| text LINES=24 | 1,637 | 1 | **1** | 1 | 0 | 3,274 |
+| tiles 30×17 | 510 | 1 | **1** | 1 | 0 | 1,020 |
+| tiles 30×17 `SCROLL=1` | 510 | 1 | **1** | 1 | 0 | 1,020 |
+| particles 500 | 500 | 1 | **1** | 1 | 0 | 1,000 |
+| particles 2,000 | 2,000 | 1 | **1** | 1 | 0 | 4,000 |
+| shapes 1,000×3 | 3,000 | 1 | **4** | 300 | 300 | 10,000 |
+| mixed | 2,158 | 4 | **4** | 900 | 300 | 3,916 |
 
-**512-pixel audit (to fill):**
+Reading: text, tiles and particles already produce **one submission per atlas run** in this range — 1,637
+glyphs is 3,274 vertices, inside the 4,096-vertex batch cap. Text therefore already meets the phase's
+submission criterion up to about 2,048 glyphs; its cost is vertex generation, not submission count. Shapes are
+**cap-bound** (10,000 vertices → 4 draws) and pay one bind and one unbind per frame for the default texture,
+not one per shape. Mixed is **run-bound** (4 draws for four textures) and pays three binds per frame.
+
+**Timing (run 1 / run 2):**
+
+| scene | work ms | swap ms | median ms | sim ms |
+|---|---|---|---|---|
+| text LINES=1 | 1.226 / 1.226 | 15.504 / 15.503 | 16.683 / 16.683 | 0.021 |
+| text LINES=8 | 6.827 / 6.829 | 9.901 / 9.899 | 16.684 / 16.683 | 0.020 |
+| text LINES=24 | 19.680 / 19.673 | 13.734 / 13.738 | 33.367 / 33.367 | 0.021 |
+| tiles | 3.228 / 3.229 | 13.558 / 13.556 | 16.684 / 16.684 | 0.020 |
+| tiles `SCROLL=1` | 3.244 / 3.246 | 13.541 / 13.537 | 16.684 / 16.683 | 0.023 |
+| particles 500 | 3.285 / 3.285 | 13.443 / 13.446 | 16.683 / 16.683 | **0.443** |
+| particles 2,000 | 11.844 / 11.843 | 4.940 / 4.940 | 16.683 / 16.683 | **1.775** |
+| shapes 1,000×3 | 21.789 / 21.781 | 11.625 / 11.631 | 33.367 / 33.372 | 0.021 |
+| mixed | 14.745 / 14.743 | 2.096 / 2.096 | 16.684 / 16.683 | 0.442 |
+
+The median stays pinned to 16.683 ms while work is under the vblank: `eglSwapBuffers` is still paced by the
+display even at `TARGET_FPS=0`, so work and swap trade against each other. Only text 24 lines and shapes miss
+60 fps (median 33.367 ms); at those points the work already exceeds 16.683 ms.
+
+**Boot budget (after the font and each scene's assets, before the measured frames):**
+
+| scene | assets | free B | largest B | floor B | verdict | evictions / reloads / failed |
+|---|---|---:|---:|---:|---|---|
+| text | default font 65,536 | 916,992 | 916,992 | 131,072 | OK | 0 / 0 / 0 |
+| shapes | default font 65,536 | 916,992 | 916,992 | 131,072 | OK | 0 / 0 / 0 |
+| tiles | font + 128² atlas 65,536 | 851,456 | 851,456 | 131,072 | OK | 0 / 0 / 0 |
+| particles | font + 32² texture 4,096 | 912,896 | 912,896 | 131,072 | OK | 0 / 0 / 0 |
+| mixed | font + atlas + 32² texture 135,168 | 847,360 | 847,360 | 131,072 | OK | 0 / 0 / 0 |
+
+The fixed reservations are `reserved=1,114,112` B (3 × 272 KiB colour + 272 KiB depth); the font is already
+resident by `boot2d`, so the free figure is after it. Largest equals free in every case: one span, no
+fragmentation at boot. Residency counters are unchanged across all 300 measured frames.
+
+**512-pixel audit:**
 
 | path | file:line | can exceed 512? | `tbw` today | window plan |
 |---|---|---|---|---|
-| | | | | |
+| `DrawTexturePro` (all `DrawTexture*` delegate here) | `src/rtextures.c:4876` | **Destination** may be >512, but that is not a GE limit — UVs stay inside the source. Source is limited by the upload path below | n/a | No destination slicing. Enforce source ≤512 |
+| `DrawTextureNPatch` | `src/rtextures.c:5001` | Nine quads from one source; destination may be >512; source as above | n/a | No destination slicing; split the source texture if it is oversized |
+| `DrawTextEx` / `DrawTextCodepoint` | `src/rtext.c:1228`, `src/rtext.c:1282` | Default atlas 128×128 is safe. `LoadFontEx` builds the atlas with `GenImageFontAtlas` (`src/rtext.c:810`), which grows width to a POT and doubles height on overflow — a large charset can exceed 512 | `nextPow2(width)` | Cap the atlas at 512, or per-atlas-run windows; sprint 019 |
+| Tile / background sheet upload | `tools/pspgu/gl_texture.c:566` (`tbw = nextPow2(width)`), `:231` (swizzle guard) | **Yes.** `tbw > 512` is not rejected: the block is allocated, `t->used = 1`, then `uploadShadowToVram` logs and returns — the texture samples zero/uninitialised VRAM | `nextPow2(width)` | Split the sheet at load, or sample 512-pixel windows with full-stride `tbw`; sprint 020 |
+| `BeginScissorMode` / `EndScissorMode` | `src/rcore.c:1092`, `src/rlgl.h:2256` | Not a texture limit; the scissor clips at the GE, but both calls flush the batch and reject no vertices | n/a | Optional: reject draws wholly outside the scissor rect before vertex generation |
+| Shapes quads on PSP | `src/rshapes.c:1489` | No texture limit: the PSP path is per-triangle because unsigned 16-bit UVs wrap; the default 1×1 white texel is used | n/a | None for size; the per-triangle path is the recorded reason, not a bug |
 
-**Gate:** `batch_check` on the sprint build vs `par_pspgl.raw`, byte comparison and SHA-256.
+**Finding for sprint 020.** The dangerous case is a wide texture that *fits VRAM*: for example a 640×64 8888
+texture has `tbw = 1024` and 262,144 B, so the allocation succeeds, but the swizzled upload is skipped and the
+GE samples whatever was in the block. This contradicts the memory-map's "textures wider than 512 are rejected"
+wording — they are allocated and marked used, not rejected. Sprint 020 owns the fix (split or fail loudly); the
+audit also gives sprint 019 the custom-font atlas case.
+
+**Gate:** `batch_check` (`WRAP=0`) on `b23` vs `/tmp/s3/par_pspgl.raw`: **byte-identical**, SHA-256
+`b69830b86a899cc083146402e6333df43007286dd1278dbdbf05db6d9e357e7c`; two captures in the same run also
+identical. Evidence `/home/psp/evidence/sprint018/gate_b23.raw`.
 
 ## 8. Exit criteria
 
-- [ ] `scene_2d` builds with `MODE=text|tiles|particles|shapes|mixed` and writes a complete `DONE` marker
-- [ ] every scene is deterministic: two runs at the same `COUNT`/`FRAMES` have identical counters and captures
-- [ ] objects, runs and boundary counters are recorded for each scene at the stated counts
-- [ ] the boot-time VRAM map is printed, with free/largest and the floor verdict
-- [ ] every fitting scene has 0 evictions, 0 reloads and 0 failed allocations across the measured frames
-- [ ] the 512-pixel audit table is complete for the four workloads and the texture upload path
-- [ ] `batch_check` is byte-identical to `par_pspgl.raw` on the sprint build
-- [ ] no `src/` or `tools/pspgu/` file is in the sprint diff
+- [x] `scene_2d` builds with `MODE=text|tiles|particles|shapes|mixed` and writes a complete `DONE` marker
+- [x] every scene is deterministic: two runs at the same `COUNT`/`FRAMES` have identical counters and captures
+- [x] objects, runs and boundary counters are recorded for each scene at the stated counts
+- [x] the boot-time VRAM map is printed, with free/largest and the floor verdict
+- [x] every fitting scene has 0 evictions, 0 reloads and 0 failed allocations across the measured frames
+- [x] the 512-pixel audit table is complete for the four workloads and the texture upload path
+- [x] `batch_check` is byte-identical to `par_pspgl.raw` on the sprint build
+- [x] no `src/` or `tools/pspgu/` file is in the sprint diff
 
 ## 9. Result
 
-Not run yet.
+Sprint 018 closed 7/7 with nine device configurations, two runs each, and no renderer or driver change. The
+corpus now exists and every later Phase 7 claim has a baseline:
+
+- **Text already submits per atlas run.** 63, 548 and 1,637 glyphs each produce **1 draw/frame** (3,274 vertices
+  at the top point, inside the 4,096 cap) and no per-glyph bind. Work is the cost: **1.226 / 6.827 / 19.680 ms**.
+  Sprint 019 should target vertex/layout cost, not submission count; above about 2,048 glyphs the cap will add
+  a second draw, which 019 can measure with `LINES=32`.
+- **Tiles and particles are also one draw/frame** at 510 tiles and 2,000 particles. Tile work is **3.228 ms**;
+  particle work is **3.285 ms at 500** and **11.844 ms at 2,000**, with simulation **0.443 / 1.775 ms** measured
+  separately.
+- **Shapes are the outlier**: 3,000 objects make **4 draws and 10,000 vertices per frame**, and cost **21.79 ms**,
+  plus one bind and one unbind per frame for the default texture. That is the case sprint 021 is for.
+- **Mixed** (four textures, 2,158 objects) is run-bound at **4 draws/frame, 3 binds/frame, 14.745 ms**, which
+  confirms that texture changes, not vertex count, set the submission floor in a combined scene.
+- **VRAM is comfortable**: boot free is **847,360–916,992 B**, largest equals free, and every 300-frame run has
+  **0 evictions, 0 reloads, 0 failed**. The CLUT revisit is not triggered.
+- **512 finding:** width > 512 is allocated and marked used but silently not uploaded (`gl_texture.c:231`), so a
+  wide texture that fits VRAM samples uninitialised memory. This corrects the memory-map wording ("rejected")
+  and is the first task of sprint 020.
+
+The 2D gate is unchanged: byte-identical to pspGL (`b69830b8…`). No `src/` or `tools/pspgu/` file changed.
 
 ## 10. Follow-ups
 
-- **Sprint 019 — text runs and layout cache**: consecutive glyphs of one atlas in one run; cache glyph layout
-  where raylib semantics allow; verify short labels and paragraphs, screenshot parity.
-- **Sprint 020 — tile maps and 512-pixel windowing**: per-atlas-run tile rendering, scrolled traversal, window
-  slicing from the T7 audit with full-stride `tbw`, seam screenshots.
-- **Sprint 021 — sprites and shapes**: offscreen rejection before vertex generation, unrotated/uniform-scale fast
-  paths, shapes texture held across compatible runs.
-- **Sprint 022 — particles**: one dynamic stream per texture run, double/triple buffered, simulation cost kept
-  separate from rendering.
+- **Sprint 019 — text runs and layout cache**: the baseline already has one draw per atlas run, so the sprint's
+  target is **work**: cached glyph layout, no re-shaping per frame, and the batch-cap boundary above 2,048
+  glyphs. Verify short labels and a 32-line paragraph, screenshot parity.
+- **Sprint 020 — tile maps and 512-pixel windowing**: fix the silent >512 upload first (split at load or fail
+  loudly), then per-atlas-run tile rendering, scrolled traversal, full-stride `tbw` windows and seam screenshots.
+  The custom-font atlas case is shared with 019.
+- **Sprint 021 — sprites and shapes**: offscreen rejection before vertex generation; the shape scene's 4 draws
+  and 10,000 vertices are the before/after; unrotated/uniform-scale sprite paths; keep the shapes texture bound
+  across compatible runs.
+- **Sprint 022 — particles**: one dynamic stream per texture run, double/triple buffered, simulation kept
+  separate. The baseline is already 1 draw at 2,000, so the target is vertex-generation cost, not submission.
 - **Sprint 023 — texture-cache strips, regression, phase close**: 16/32/64/128 px strip A/B on the repeated-draw
   case only; full sample screenshot comparison; phase 7 exit table. If the strips are a null result (R2 predicts
   they may be), 023 collapses into 022 and the phase closes after 022.

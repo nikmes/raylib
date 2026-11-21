@@ -873,11 +873,20 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
 - **Full texture uploads use an 8-row band**, not a full-image scratch: the band is ≤16 KiB at 512×8888, the
   source reads stay sequential, and the swizzled blocks are written to a cached EDRAM base followed by one exact
   range writeback. A 256×256 8888 upload measured **21.088 → 19.849 ms** with the heap allocation removed. A
-  literal 128-byte block path through the uncached alias measured 26.2 ms and was rejected. Textures wider than
-  512 are rejected until phase 7 windows them.
+  literal 128-byte block path through the uncached alias measured 26.2 ms and was rejected. Widths above 512 are
+  **not rejected**: the block is allocated and the texture marked used, but the swizzled upload returns early
+  (`gl_texture.c:231`) and the GE samples uninitialised VRAM. A wide-but-short texture (640×64 8888 = 262,144 B,
+  `tbw` 1024) therefore fits and is silently wrong. Phase 7 sprint 020 splits or fails loudly (sprint 018 audit).
 - **Upload cost with the residency shadow (b23, 30-run median):** 8888 32² 4,096 B/0.499 ms, 64² 16,384/1.998,
   128² 65,536/8.228, 256² 262,144/33.332. Logical 384² and 512² pad to 512² = 1,048,576 B and **do not fit** the
   916,992 B free tail. `auto` halves the bytes for 5650/4444: 512² is 524,288 B at 113–130 ms.
+- **2D workload baseline (b23, `psp-tests/scene_2d`, 300 frames, two runs each):** text 63/548/1,637 glyphs is
+  **1 draw/frame** at all three (3,274 vertices at the top point, under the 4,096 cap) and costs
+  1.226/6.827/19.680 ms work; 510 tiles is 1 draw/3.228 ms; 500/2,000 particles is 1 draw at 3.285/11.844 ms
+  with 0.443/1.775 ms simulation; 3,000 shapes is **4 draws, 10,000 vertices, 1 bind + 1 unbind per frame** at
+  21.79 ms. Four textures in one frame (mixed) is 4 draws and 3 binds. Boot free 847,360–916,992 B, largest =
+  free, 0 evictions/reloads/failures. Immediate `glBegin/glEnd` paths are fully bypassed by the batcher (sprint
+  018).
 - **CLUT and mipmaps are dropped for phase 6, with measurements.** A 128×128 T4 glyph atlas is 8,192 B + 64 B
   palette vs 32,768 B at 4444, and a raw copy is 0.080 vs 0.532 ms — but that is 2.7 % of free and no workload is
   VRAM-bound. A 256×256 mip chain costs +33 % (349,504 vs 262,144 B) and produced an identical capture at 4× in

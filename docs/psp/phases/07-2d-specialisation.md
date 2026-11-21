@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **ready** — sprint 018 (corpus, counters, boot budget) written and implementation-ready; 019–023 planned |
+| State | **in progress** — sprint 018 done (corpus, counters, boot budget); 019–023 planned |
 | Depends on | Phase 5 or 6 (batching and texture residency in place) |
 | Exit criterion | text submissions scale with atlas runs, not glyph count; tile maps with atlas runs, not tile count |
 
@@ -14,9 +14,10 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
 
 ## What has to be true before starting
 
-- [ ] Batching works; submissions already scale with state runs
-- [ ] Counters can separate logical objects from submissions
-- [ ] A representative workload per category exists (a UI screen, a tile map, a particle emitter)
+- [x] Batching works; submissions already scale with state runs
+- [x] Counters can separate logical objects from submissions
+- [x] A representative workload per category exists (a UI screen, a tile map, a particle emitter) — sprint 018's
+  `scene_2d`
 
 ## Tasks
 
@@ -40,8 +41,10 @@ removes work *before* vertices are generated — the cheapest vertex is the one 
 
 ## What we already know
 
-- `rtext.c` draws every glyph through `DrawTexturePro`, which binds and unbinds per call — that is the single
-  worst behaviour for dialogue-heavy screens
+- `rtext.c` draws every glyph through `DrawTexturePro`; at the API level that is one bind/unbind pair per glyph.
+  **Sprint 018 measured the PSP boundary:** the batcher defers `rlSetTexture`, so 63/548/1,637 glyphs each produce
+  **one draw and one bind per run**, not per glyph. The text cost is vertex generation (1.226/6.827/19.680 ms
+  work), not submissions, until the 4,096-vertex cap is crossed at about 2,048 glyphs.
 - `rshapes.c` is already forced off the shapes-quads path on PSP in the 5.5 port; that guard has a reason and
   must be understood before it is removed
 - Text and sprites both need the **unsigned 16-bit TEXCOORD** rule respected: negative or zero-centred UVs wrap
@@ -128,7 +131,8 @@ run. T4 uses a 16-entry CLUT (`sceGuClutLoad(2, ...)`), T8 a 256-entry one (`sce
 is loaded on the bind, so a per-glyph bind pays it per glyph.
 
 - **Why**: a 512² T8 glyph atlas is 256 KiB, a T4 one 128 KiB; a 128×128 T8 atlas is 16 KiB, already twice
-  the cache. `rtext.c` currently binds per glyph through `DrawTexturePro`.
+  the cache. `rtext.c` calls `rlSetTexture` per glyph through `DrawTexturePro`, but the PSP batcher defers the
+  bind; sprint 018 measured one bind per atlas run, not per glyph.
 - **Watch**: the font atlas and the shapes texture may share an id in 6.5-dev (see sprint 007); do not split
   them accidentally and turn one run into two.
 - **Verify**: submissions equal font runs, not glyph count; short labels and a paragraph; screenshot identical
@@ -175,13 +179,13 @@ copy, and do not invalidate the whole D-cache in a steady frame.
 
 ## Sprints and features
 
-The phase is sized as six sprints. 018 is written; 019–023 are planned and are written only when the previous
+The phase is sized as six sprints. 018 is done; 019–023 are planned and are written only when the previous
 sprint's numbers are in hand (the fast paths depend on what the corpus measures).
 
 | sprint | scope | state |
 |---|---|---|
-| [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | written |
-| 019 — Text runs and layout cache | consecutive glyphs of one atlas per run; cached layout; paragraph parity | planned |
+| [018 — Corpus, counters and boot budget](../sprints/018-phase7-corpus-and-budget.md) | `scene_2d`: text, tiles, particles, shapes, mixed; boundary counters; boot VRAM map; 512-pixel audit | **done** |
+| 019 — Text runs and layout cache | submissions are already one per atlas run (018); target **work** with cached layout, the batch-cap boundary above ~2,048 glyphs, and paragraph parity | planned |
 | 020 — Tile maps and 512-pixel windowing | per-atlas-run tiles, scrolled traversal, window slicing with full-stride `tbw`, seam screenshots | planned |
 | 021 — Sprites and shapes | offscreen rejection before vertex generation; unrotated/uniform-scale paths; shapes texture held across compatible runs | planned |
 | 022 — Particles | one dynamic stream per texture run, double/triple buffered; simulation measured separately | planned |
