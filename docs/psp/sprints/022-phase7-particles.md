@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 7 — 2D specialisation](../phases/07-2d-specialisation/index.md) |
 | Sprint | P7-S5 |
-| Branch / base commit | `master` @ the sprint 021 close (this doc is written before 021 runs) |
+| Branch / base commit | `master` @ `d9a83d81` (sprint 021 closed) |
 | Started / closed | — / — |
-| Build number(s) | pspgu `b24` (unchanged); `scene_2d` builds |
+| Build number(s) | pspgu `b24` (unchanged); `scene_2d` api/direct builds |
 | Tasks | 0/5 done |
 
 ## 0. Handover
@@ -26,8 +26,10 @@ cost to justify promoting it, and records the cap/tearing boundary.
 4. `src/rlgl.h:622-930` — the batcher: one bind per run, 2-vertex sprites, the 4,096 cap.
 5. `../phases/07-2d-specialisation/index.md` — the particle exit criterion.
 
-**First action.** Add `PARTICLE_IMPL=api|direct` to `scene_2d`, where `direct` is one `rlSetTexture` +
-`rlBegin(RL_QUADS)` loop with the same geometry, and run `COUNT=500/2000` before any `src/` change.
+**First action.** Add `PARTICLE_IMPL=api|direct` and a per-run `MARKER=` to `scene_2d`, where `direct` is one
+`rlSetTexture` + `rlBegin(RL_QUADS)` loop with the same geometry, and run `COUNT=500/2000` before any `src/`
+change. The marker name matters: other sessions run the same app, and the default `scene2d_done.txt` was
+overwritten during sprint 021.
 
 **Hard rules.**
 
@@ -37,8 +39,9 @@ cost to justify promoting it, and records the cap/tearing boundary.
   `work`.
 - **A stream is per texture run.** One texture for the whole system; a bind in the middle of the loop is a bug,
   not a tuning detail.
-- **The cap is evidence, not a knob.** Do not raise `RLPSP_BATCH_CAP`; record 2 draws at 4,000 and the arena
-  arithmetic if a change is proposed.
+- **The cap is evidence, not a knob.** Do not raise `RLPSP_BATCH_CAP`; use **2,049** as the clean first-second-draw
+  point (4,098 vertices, one arena) and record 4,000 only as the arena-overflow case. The arena is 128 KiB,
+  24 B/vertex, so 5,461 vertices is its ceiling; 4,000 particles (8,000 vertices) forces the full-sync fallback.
 - **No driver change.** pspgu stays `b24`; the 512-window path must not be touched.
 - **Freeze before capture.** Particles move; render three frozen frames after the measured ones so two captures
   can be compared, as 018 does.
@@ -52,18 +55,21 @@ export PSPDEV=/home/psp/pspdev
 export PATH=$PATH:$PSPDEV/bin
 
 cd /home/psp/raylib-psp/psp-tests/scene_2d
-make clean && make MODE=particles COUNT=2000 PARTICLE_IMPL=api
-make clean && make MODE=particles COUNT=2000 PARTICLE_IMPL=direct
-make clean && make MODE=particles COUNT=4000 PARTICLE_IMPL=api
-cp scene_2d.prx /tmp/s3/app.prx
+make clean && make MODE=particles COUNT=2000 PARTICLE_IMPL=api MARKER=s22_api.txt
+make clean && make MODE=particles COUNT=2000 PARTICLE_IMPL=direct MARKER=s22_direct.txt
+make clean && make MODE=particles COUNT=2049 PARTICLE_IMPL=api MARKER=s22_cap.txt
+cp scene_2d.prx /tmp/s3/s22_app.prx
 cd /tmp/s3 && timeout 20 pspsh -e "reset"; sleep 6
-( printf './app.prx\n'; sleep 16 ) | timeout 35 pspsh
+( printf './s22_app.prx\n'; sleep 16 ) | timeout 35 pspsh
 pspsh -e "scrshot host0:/s22.raw"          # after DONE only
 ```
 
+Use a unique PRX name (`s22_app.prx`) and the `MARKER` file; the shared `app.prx`/`scene2d_done.txt` are used by
+other sessions.
+
 **Do not touch.** The text path, the 512-window splitter, the shape/sprites work, the allocator, `DrawMesh`.
 
-**Done means** §8: the direct probe and its decision, 1 draw at 2,000, the 2,048/4,000 cap table, two identical
+**Done means** §8: the direct probe and its decision, 1 draw at 2,000, the 2,049/4,000 cap table, two identical
 captures after a 300-frame run, and the regression hashes.
 
 ## 1. Objective
@@ -72,8 +78,8 @@ Four falsifiable results:
 
 1. A **direct particle loop** (one bind, one begin/end per system) is compared with `DrawTexturePro` at 500 and
    2,000 particles; the decision rule is at least 10 % work reduction with identical pixels.
-2. **One draw per stream** at 2,000 particles; **two draws** at 4,000, with the vertex counts and the cap
-   boundary recorded.
+2. **One draw per stream** at 2,000 particles; **two draws** at 2,049 (the clean cap crossing), with 4,000
+   recorded as the arena-overflow case and the vertex/arena arithmetic written.
 3. **Simulation and rendering are separate numbers** at every point.
 4. **No tearing and no mid-run bind:** two captures after a 300-frame run are identical; binds are one per
    system, not one per particle.
@@ -103,9 +109,9 @@ and shape paths, 3D.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Corpus**: `PARTICLE_IMPL=api\|direct`; `direct` is one bind/begin/end with the same quad; counts 500/2,000/4,000 | `todo` | direct captures equal api at a fixed final state; sim/work separate | |
-| T2 | **Direct-loop measurement**: 500/2,000 api vs direct, two runs | `todo` | work table; decision (≥10 % → promote, else null) | |
-| T3 | **Cap boundary**: 2,000 / 2,048 / 4,000, draws and vertices | `todo` | 2,000 = 1 draw, 4,000 = 2; arena arithmetic recorded | |
+| T1 | **Corpus**: `PARTICLE_IMPL=api\|direct`; `direct` is one bind/begin/end with the same quad; per-run `MARKER`; counts 500/2,000/2,049/4,000 | `todo` | direct captures equal api at a fixed final state; sim/work separate; marker name unique | |
+| T2 | **Direct-loop measurement**: 500/2,000 api vs direct, two runs, same-session baseline | `todo` | work table; decision (≥10 % → promote, else null) | |
+| T3 | **Cap boundary**: 2,000 / 2,049 / 4,000, draws and vertices | `todo` | 2,000 = 1 draw, 2,049 = 2; 4,000 = 2 but arena-bound; arithmetic recorded | |
 | T4 | **Tear and bind audit**: 300 frames, two captures, binds per run | `todo` | captures identical; one bind per system; no mid-loop bind | |
 | T5 | **Regression**: 018–021 captures, gate, VRAM/residency | `todo` | hashes unchanged; gate `b69830b8…`; 0 evictions | |
 
@@ -115,24 +121,31 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 - `PARTICLE_IMPL=api` is today: `DrawTexturePro` per particle.
 - `PARTICLE_IMPL=direct`: `rlSetTexture(particleTex.id)`, `rlBegin(RL_QUADS)`, one colour and four vertices per
-  particle in `DrawTexturePro`'s TL/BL/BR/TR order, `rlEnd()`, `rlSetTexture(0)`. The app must compile against
-  the header with the PSP batch section (`-I../../src` and `-DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1`,
-  as sprint 019's direct arm does).
+  particle in `DrawTexturePro`'s TL/BL/BR/TR order, `rlEnd()`, `rlSetTexture(0)`. The Makefile adds
+  `-I../../src -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1` for this arm, as sprint 019's direct arm
+  does; without them the app links the non-inline rl* declarations and fails.
+- `MARKER ?= scene2d_done.txt` becomes `-DSCENE_MARKER="\"$(MARKER)\""`, and `SaveFileText(SCENE_MARKER, ...)`
+  replaces the hardcoded name, so a concurrent session cannot delete the marker between the run and the copy.
+- Counts: 500, 2,000 and 2,049 for the direct/cap A/B, plus 4,000 sampled once for the arena-overflow record.
 - The same update loop, seed and frozen final frame for both arms.
 
 ### T2 design
 
-- Run 500 and 2,000, two runs each, 300 frames. Decision: promote only if `direct` work is at least 10 % below
-  `api` **and** the capture is byte-identical. Promotion means adding the loop as a **recipe**
-  (`docs/psp/recipes/`) and using it in the corpus; it does not mean a new public API unless a separate review
-  asks for one.
+- Run 500 and 2,000, two runs each, 300 frames, against the **same-session** `api` baseline on the sprint 021
+  library; the 018 numbers are the historical reference, not the A/B denominator.
+- Decision: promote only if `direct` work is at least 10 % below `api` **and** the capture is byte-identical.
+  Promotion means adding the loop as a **recipe** (`docs/psp/recipes/`) and using it in the corpus; it does not
+  mean a new public API unless a separate review asks for one.
 - If the win is <10 %, record the null result with the table and keep `api`.
 
 ### T3 design
 
-- 2,000 particles = 4,000 vertices, one draw. 2,048 = 4,096, exactly the cap. 4,000 = 8,000, two draws.
-- If a larger single draw is proposed, the arithmetic is 24 B/vertex and the per-list arena is 128 KiB (5,461
-  vertices); record it, do not change the cap in this sprint.
+- 2,000 particles = 4,000 vertices, one draw. 2,048 = 4,096, exactly the cap. **2,049 = 4,098, two draws**, the
+  first clean crossing; the second draw is 2 vertices.
+- 4,000 = 8,000 vertices, two draws, but the per-list arena is 128 KiB = **5,461 vertices** at 24 B each, so the
+  frame forces the full-sync fallback. Record it as an arena-bound case, not as a clean cap result.
+- If a larger single draw is proposed, the cap/arena arithmetic is the evidence; do not change either in this
+  sprint.
 
 ### T4 design
 
@@ -149,7 +162,7 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 
 | item | budget | why |
 |---|---|---|
-| counts | 500 / 2,000 / 4,000 | below, at, and above the sprite count of the 4,096 cap |
+| counts | 500 / 2,000 / 2,049 / 4,000 | below, at, just over, and over the arena |
 | frames | 300, two runs | project rule |
 | direct decision | ≥10 % work with identical pixels | below that the promotion is not justified |
 | binds | 1 per system | the stream is one texture run |
@@ -168,9 +181,9 @@ Filled by T1–T5.
 
 ## 8. Exit criteria
 
-- [ ] the api/direct table is recorded at 500 and 2,000 with identical captures
+- [ ] the api/direct table is recorded at 500 and 2,000 with identical captures, against a same-session baseline
 - [ ] the decision is recorded with the ≥10 % rule (promote or null)
-- [ ] 2,000 particles submit one draw; 4,000 submit two; the cap arithmetic is written
+- [ ] 2,000 particles submit one draw; 2,049 submit two; 4,000 is recorded as the arena-overflow case
 - [ ] simulation and rendering are separate numbers at every point
 - [ ] two captures after 300 frames are identical; binds are one per system
 - [ ] 018–021 captures and the gate are byte-identical
