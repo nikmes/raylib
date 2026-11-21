@@ -101,6 +101,22 @@ int main(int argc, char **argv)
     Texture2D checker = makeCheckerTexture();
     Texture2D halfAlpha = makeHalfAlphaTexture();
 
+    Texture2D texRGB = { 0 };
+
+#ifdef TEXFMT_PROBE
+    // Sprint 015 T2: a 32x32 GL_RGB source. No alpha, so PSP_GU_TEXFMT=auto can choose
+    // 5650 and the driver's log shows the PSM and bytes. It is drawn at (400,220): a
+    // red/blue swap in that square is the 5650 bit-order test.
+    {
+        Image rgb = GenImageColor(32, 32, (Color){ 200, 40, 90, 255 });
+        ImageFormat(&rgb, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+        texRGB = LoadTextureFromImage(rgb);
+        UnloadImage(rgb);
+        TraceLog(LOG_INFO, "TEXFMT probe id=%u %ix%i format=%i",
+                 texRGB.id, texRGB.width, texRGB.height, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+    }
+#endif
+
     TraceLog(LOG_INFO, "PATTERN textures: quadrant=%u checker=%u half=%u", quadrants.id, checker.id, halfAlpha.id);
 #ifdef PATTERN_NPOT
     TraceLog(LOG_INFO, "PATTERN NPOT=1: 33x17 checkerboard IS in the scene");
@@ -127,6 +143,11 @@ int main(int argc, char **argv)
             // 3. alpha per texel, 1:1
             DrawTexturePro(halfAlpha, (Rectangle){ 0, 0, 32, 32 }, (Rectangle){ 320, 30, 32, 32 },
                            (Vector2){ 0, 0 }, 0.0f, WHITE);
+
+#ifdef TEXFMT_PROBE
+            // 4. 32x32 GL_RGB: the 5650 bit-order test. Expected ~ (200,40,88), not (88,40,200).
+            DrawTexture(texRGB, 400, 220, WHITE);
+#endif
 
         EndDrawing();
     }

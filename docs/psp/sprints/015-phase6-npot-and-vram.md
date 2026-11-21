@@ -6,7 +6,7 @@
 | Branch / base commit | `master` @ `c31afe31` (T1 landed in `719b037e`) |
 | Started / closed | 2026-11-21 / — |
 | Build number(s) | `b16` baseline, `b17` T1, `b19` T3, `b20` T2, `b21` T4 |
-| Tasks | 2/4 done |
+| Tasks | 3/4 done |
 
 ## 0. Handover
 
@@ -47,8 +47,10 @@ memory claims are only evidence after T3 exists. T4 depends on T3's block (and o
 - **No “largest free block” until T3 exists.** The bump allocator can only report the free tail.
 - **Framebuffers and depth are never freed**, and they need 8 KiB alignment. The allocator must reserve them
   first and fail loudly if it cannot; a texture must never land in their range.
-- **Check the build marker before measuring** (`[PSPGU] GU up: pspgu bNN`) and run
-  `tools/pspgu-build.sh --verify-install`. The symbol content hash does not change when code does.
+- **Check the build marker before measuring** (`[PSPGU] GU up: pspgu bNN, texfmt …`) and run
+  `tools/pspgu-build.sh --verify-install` **with the same configuration env** (`PSP_GU_TEXFMT=auto`,
+  `PSP_GU_DEPTH=0`). The archive does not store its flags; verifying an auto install with a default build
+  reports STALE even though the boot line is right.
 - Commit messages carry the task ID: `sprint 015 T3: ...`.
 
 **Commands.**
@@ -58,8 +60,9 @@ export PSPDEV=/home/psp/pspdev
 export PATH=$PATH:$PSPDEV/bin
 
 cd /home/psp/raylib-psp
-./tools/pspgu-build.sh                      # build + install pspgu
-./tools/pspgu-build.sh --verify-install     # installed objects == fresh build
+./tools/pspgu-build.sh                      # build + install pspgu (default 8888)
+./tools/pspgu-build.sh --texfmt=auto        # measured 16-bit build
+PSP_GU_TEXFMT=auto ./tools/pspgu-build.sh --verify-install   # same config as installed
 ./tools/pspgu-build.sh --restore            # pspGL back; --check must say 2ab7378e
 
 # device run
@@ -136,7 +139,7 @@ with coalescing, free and largest-block counters; a churn probe; direct swizzle 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **NPOT textures (phase task 6c)**: pad **both** dimensions to powers of two (height at least 8 rows for the swizzle), zero the padding, swizzle the padded buffer, and correct with `sceGuTexScale(realW/padW, realH/padH)`; keep the logical size for GL | `done` | 33×17 checkerboard at (160,30), 3×: every cell single-colour and matching `(x+y)&1`; no shear; `texture_pattern` non-NPOT and the 2D gate unchanged | **281/561 cells wrong → 0/561**, two colours, no shear. 33×17 pads to 64×32 = **8,192 B** (logical 2,244 B; old linear 4,352 B). `batch_check` **0 differing pixels**; `basic_shapes` **284 colours, 0**. `b17`, commit `719b037e`; captures in `/home/psp/evidence/sprint015/` |
-| T2 | **Per-texture PSM** behind `PSP_GU_TEXFMT` (`8888` default, `auto` measured): opaque `GL_RGB` → `5650`; alpha sources → `4444` when every alpha is 0/255 (binary), else `8888`; one decision and one log line per texture | `todo` | 32×32 texture **4,096 → 2,048 B**; `auto`'s pixel delta vs `8888` counted by scene; default `batch_check`/`basic_shapes` still 0; half-alpha pattern checked for 4-bit quantisation | — |
+| T2 | **Per-texture PSM** behind `PSP_GU_TEXFMT` (`8888` default, `auto` measured): opaque `GL_RGB` → `5650`; `GL_RGBA`/`GL_LUMINANCE_ALPHA` → `4444` only when every alpha is 0/255 (binary), else `8888`; one decision and one log line per texture. Also fix the packed-16 source decode (4444 was decoded as 565) | `done` | 32×32 **GL_RGB** texture **4,096 → 2,048 B**; `auto`'s pixel delta vs `8888` counted by scene; default `batch_check`/`basic_shapes` still 0; the half-alpha RGBA texture (alpha 128) stays `8888` and is checked unchanged | **Default 8888: both parity scenes byte-identical.** `auto`: 32×32 GL_RGB → **5650, 2,048 B**; drawn probe reads (200,36,80), not swapped; 128×128 LA font 65,536→32,768 B and 32×32 LA wabbit 4,096→2,048 B (both binary alpha); half-alpha RGBA (alpha 128) stays **8888, 4,096 B**. Texture VRAM: `batch_check` 69,636→**34,820 B**, `basic_shapes` 65,540→**32,772 B**. Delta vs 8888: `batch_check` **7,843 px / 13,067 bytes** (4-bit quantisation, same channel order), `basic_shapes` **0 px**. 4444 NPOT checker **0/561** wrong. `b20` |
 | T3 | **Best-fit allocator** over 512-byte blocks with coalescing; free bytes and largest block tracked separately; one allocator for framebuffers, depth and textures; `pspguVramFree` + stats | `done` | 100 load/unload cycles: free and largest return within 512 B, no failure; boot line reports used/free/largest/allocs/frees; a texture unload returns its blocks; 2D gate 0 | **PASS twice.** 100 cycles × 16 textures: `free 916,992 → 916,992`, `largest 916,992 → 916,992`, `internal 508` (the 4-byte white texel's block), `allocs 1,606 / frees 1,600 / failures 0`. Boot line `reserved=1,114,112 requested=4 used=1,114,624 free=982,528 largest=982,528 internal=508`; assets `requested=69,636 used=1,184,256 free=912,896`. 2D gate **byte-identical**. `b19`; probe `psp-tests/texture_churn`, verdict in `churn_done.txt` |
 | T4 | **Direct swizzle into VRAM**: expand one **4×8-texel swizzle block** into a 128-byte stack tile and write it to the destination through the uncached alias; remove the full-texture `calloc` + memcpy | `todo` | 256×256 RGBA upload: scratch allocation gone (262,144 B → 0 heap; 128 B stack), elapsed time before/after, pixels unchanged; no whole-cache invalidate | — |
 
@@ -183,14 +186,28 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 - Add `PSP_GU_TEXFMT` (`8888` default, `auto`): `auto` chooses `GU_PSM_5650` for `GL_RGB`, `GU_PSM_4444` for
   `GL_RGBA`/`GL_LUMINANCE_ALPHA` only when a scan of the source alpha finds every value 0 or 255, otherwise
   `GU_PSM_8888`. `5650`/`4444` are 2 B/texel; `8888` stays 4. The scan is one pass during upload, keyed on the
-  source format: RGBA byte 3, LUMINANCE_ALPHA byte 1, packed-16 alpha bit; `GL_RGB` has no alpha to scan.
+  source format: RGBA byte 3, LUMINANCE_ALPHA byte 1; packed 16-bit sources stay 8888 (a 1-bit alpha source is
+  not what this lever is for).
+- **Bit order, matching the framebuffer expansion that the readback proved:** `5650` is
+  `r5 | (g6 << 5) | (b5 << 11)` (red low); `4444` is `r4 | (g4 << 4) | (b4 << 8) | (a4 << 12)` (red low, alpha
+  high), the GE's `0xAABBGGRR` order. If the `auto` capture shows a red/blue swap, this is the setting to
+  re-check first.
+- **The 32×32 byte target is a GL_RGB source.** The existing half-alpha test is RGBA with alpha 128 and must
+  stay 8888; add a `TEXFMT_PROBE` mode to `texture_pattern` that loads a 32×32 `R8G8B8` image and **draws it at
+  (400,220)** so the 5650 bit order is visible as a colour, not only a byte count. This is the measurement, not a
+  guess.
+- **The source scan decides, and the corpus is not what the first draft assumed.** The 128×128 font atlas and the
+  32×32 wabbit are both `LUMINANCE_ALPHA` with **binary** alpha, so `auto` chooses 4444 for both. The half-alpha
+  probe (alpha 128) stays 8888. `basic_shapes`' white/transparent glyphs are exact in 4-bit, so its delta is 0;
+  `batch_check`'s tinted sprite quantises 7,843 pixels. Both are measured, not predicted.
 - Extend the upload paths to pack 5650/4444 directly (no 8888 round trip). Keep `GU_TCC_RGBA`; 5650 ignores
-  alpha, 4444 uses it.
+  alpha, 4444 uses it. Fix the packed-16 source decode while here: the current code decodes all three 16-bit
+  types as 565, so a 4444 source would be wrong.
 - Log once per texture: `texture %u: %ux%u src=0x%x -> PSM 0x%x (%u B)`.
-- Verification: the `auto` 32×32 texture is 2,048 B; the `8888` default gate is 0; the `auto` build's pixel delta
-  is counted per scene (not required to be 0); the half-alpha pattern's 50 % blend is checked within 4-bit
-  quantisation. If `auto`'s delta is unacceptable, the default stays 8888 and the sprint records the measured
-  trade rather than hiding it.
+- Verification: the `auto` 32×32 **GL_RGB** texture is 2,048 B; the `8888` default gate is 0; the `auto` build's
+  pixel delta is counted per scene (not required to be 0); the half-alpha RGBA texture stays 8888 and unchanged.
+  If the corpus has no binary-alpha or opaque textures, the measured delta is 0 and the win is demonstrated by
+  the GL_RGB probe plus the byte accounting — that is a real result, recorded as such.
 
 ### T4 design (implementation-ready)
 
@@ -222,6 +239,11 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
   **Finding:** the first probe uploaded 1,600 textures with no `EndDrawing`, filled the 240 KiB list and hung at
   cycle ~50; the probe now ends a frame per cycle. A texture-only workload with no swap remains a hazard (GU has
   no list-capacity check) and is a follow-up.
+- 2026-11-21 — T2 `doing`: per-texture PSM behind `PSP_GU_TEXFMT`; source decode now distinguishes 565/5551/4444;
+  sub-image path is bpp-aware.
+- 2026-11-21 — T2 `done`: default 8888 byte-identical on both parity scenes. `auto`: GL_RGB→5650 2,048 B; the
+  LA font and wabbit are binary-alpha → 4444 (65,536→32,768 and 4,096→2,048); alpha-128 stays 8888. Delta:
+  `batch_check` 7,843 px (4-bit), `basic_shapes` 0. 5650 square (200,36,80) not swapped.
 
 ## 6. Budgets
 
@@ -230,8 +252,10 @@ Status vocabulary: `todo` / `doing` / `done` / `blocked` / `dropped`. IDs are st
 | 2D gate, differing pixels (default) | 0 | **0** (`batch_check`); **284/0** (`basic_shapes`) | `[measured: b17]` |
 | NPOT correctness | every 33×17 cell single-colour, correct parity | **0/561 wrong**, two colours | `[measured: b17]` |
 | NPOT padding cost, 33×17 | 64×32 = 8,192 B | **8,192 B** (logical 2,244 B; old 4,352 B) | `[measured]` |
-| 32×32 texture, `auto` | 2,048 B (4,096 B at 8888) | not started (T2) | — |
-| texture VRAM after T2, `batch_check` | measured, ≤ 69,636 B | not started (T2) | — |
+| 32×32 GL_RGB texture, `auto` | 2,048 B (4,096 B at 8888) | **2,048 B, PSM 5650** | `[measured: b20]` |
+| texture VRAM after T2 | measured, ≤ 69,636 B | **34,820 B** (`batch_check`); **32,772 B** (`basic_shapes`) | `[measured: b20]` |
+| `auto` pixel delta vs 8888 | counted, not required to be 0 | **7,843 px / 13,067 B** (`batch_check`); **0** (`basic_shapes`) | `[measured: b20]` |
+| half-alpha RGBA (alpha 128) | stays 8888 | **4,096 B, PSM 8888**, unchanged | `[measured: b20]` |
 | block rounding / internal fragmentation | reported, not hidden | **508 B** (the 4-byte white texel's block) | `[measured: b19]` |
 | free tail after assets (depth=1) | — | **912,896 B** (`batch_check` at b19); 916,992 B in the churn baseline | `[measured: b19]` |
 | largest free block | real, not a free-tail alias | **982,528 B** at boot; **912,896 B** after assets; **916,992 B** at churn | `[measured: b19]` |
@@ -257,9 +281,13 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 | control | b19 | `batch_check` default | gate / VRAM line | **0 differing pixels**; `reserved=1,114,112 requested=69,636 used=1,184,256 free=912,896 largest=912,896 internal=508` | T3 did not move the gate |
 | change | b19 | churn 100 × 16 textures | free / largest | **916,992 / 916,992 → 916,992 / 916,992** | two runs, `PASS`, `failures=0` |
 | change | b19 | churn accounting | allocs / frees / internal | **1,606 / 1,600 / 508** | 6 permanent allocations + 1,600 churn |
-| control | b20 | `batch_check` default | gate | expected 0 | T2 must not move it |
-| change | b20 | `batch_check` `auto` | pixel delta / texture bytes | | T2 |
-| change | b20 | `texture_pattern` `auto` | 32×32 bytes | expected 2,048 | T2 |
+| control | b20 | `batch_check` default | gate / texture bytes | **0 differing pixels**; texture 69,636 B | T2 did not move it |
+| control | b20 | `basic_shapes` default | gate / texture bytes | **byte-identical**; texture 65,540 B | T2 did not move it |
+| change | b20 | `batch_check` `auto` | texture bytes / delta | **34,820 B**; **7,843 px / 13,067 B** delta | same channel order (mean 3.5 vs 43 swapped on saturated pixels) |
+| change | b20 | `basic_shapes` `auto` | texture bytes / delta | **32,772 B**; **0 px** delta | white/transparent glyphs are exact in 4-bit |
+| change | b20 | `texture_pattern TEXFMT_PROBE` `auto` | 32×32 GL_RGB | **PSM 5650, 2,048 B**; drawn (200,36,80) | 5650 bit order correct |
+| change | b20 | `texture_pattern PATTERN_NPOT` `auto` | 33×17 checker in 4444 | **0/561** cells wrong | 4444 bit order correct |
+| control | b20 | half-alpha RGBA alpha 128 | PSM / bytes | **8888 / 4,096 B** | anti-aliased alpha stays 8888 |
 | baseline | b20 | 256×256 upload | heap / ms | 262,144 B / | T4 |
 | change | b21 | 256×256 upload | heap / ms | 0 / | T4 |
 
@@ -268,8 +296,8 @@ marker. T1 captures are archived in `/home/psp/evidence/sprint015/` with `SHA256
 - [x] T1: a 33×17 texture samples correctly, cell by cell, no shear or wraparound — 0/561 wrong
 - [x] the padded bytes are allocated, zeroed and counted; the VRAM line reports them — 8,192 B for 33×17
 - [x] the default 2D gate is 0 differing pixels and `basic_shapes` is 284 colours
-- [ ] T2: `PSP_GU_TEXFMT=auto` implemented; 32×32 = 2,048 B; its pixel delta is counted and recorded; the default
-      build is still 0 differing pixels
+- [x] T2: `PSP_GU_TEXFMT=auto` implemented; 32×32 GL_RGB = 2,048 B; its pixel delta is counted and recorded
+      (7,843 px `batch_check`, 0 `basic_shapes`); the default build is still 0 differing pixels
 - [x] T3: 100-cycle churn returns free and largest within 512 B, no allocation failure; the boot line reports
       used/free/largest/allocs/frees; a texture unload returns its blocks — **exact return**, two runs
 - [ ] T4: 256×256 upload uses no full-texture scratch (0 heap, 128 B stack); time measured; pixels unchanged;
@@ -289,7 +317,12 @@ The probe also found a driver-level hazard worth carrying: a workload that uploa
 frame** fills the 240 KiB display list and hangs (it stopped at cycle ~50 with the allocator still perfect). GU has
 no list-capacity check. The probe now ends a frame per cycle; the driver needs a high-water guard (follow-up).
 
-T2 and T4 are implementation-ready and remain.
+T2 is closed too. The default 8888 build did not move; `auto` halves the font and sprite textures (the corpus'
+LA sources have binary alpha) and cuts texture VRAM from 69,636 to 34,820 B in `batch_check` and from 65,540 to
+32,772 B in `basic_shapes`. The trade is measured: 7,843 pixels of 4-bit quantisation in `batch_check`, none in
+`basic_shapes`; 5650 and 4444 bit orders are verified by drawn colour. The default stays 8888.
+
+T4 remains: the direct swizzle-block upload (no full-texture scratch).
 
 ## 10. Follow-ups
 

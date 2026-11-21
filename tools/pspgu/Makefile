@@ -22,6 +22,9 @@ endif
 ifdef PSP_GU_DEPTH
     CFLAGS += -DPSP_GU_DEPTH=$(PSP_GU_DEPTH)
 endif
+ifeq ($(PSP_GU_TEXFMT),auto)
+    CFLAGS += -DPSPGU_TEXFMT_AUTO=1
+endif
 
 all: $(TARGET_LIB)
 

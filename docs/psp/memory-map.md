@@ -858,6 +858,11 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
 - **Texture-only work must end a frame.** The display list is 240 KiB and GU has no capacity check; a probe that
   uploaded 1,600 textures without `EndDrawing` overran it at cycle ~50. End a frame, or add a list high-water
   guard before a loading screen uploads textures in bulk.
+- **Per-texture PSM is a memory lever, not a speed one.** pspgu defaults to 8888 for pixel parity;
+  `PSP_GU_TEXFMT=auto` chooses 5650 for opaque `GL_RGB` and 4444 for `GL_RGBA`/`GL_LUMINANCE_ALPHA` whose alpha is
+  entirely 0/255, otherwise 8888. A 32×32 `GL_RGB` texture is 2,048 B instead of 4,096; the 128×128 LA font is
+  32,768 instead of 65,536 (its alpha is binary). The measured `auto` delta is 7,843 px in `batch_check` and 0 in
+  `basic_shapes`; the default build does not move (sprint 015 T2).
 
 ### Samples worth reading
 

@@ -12,6 +12,11 @@ ifdef PATTERN_NPOT
     CFLAGS += -DPATTERN_NPOT
 endif
 
+# 32x32 GL_RGB texture for the per-texture PSM measurement (sprint 015 T2)
+ifdef TEXFMT_PROBE
+    CFLAGS += -DTEXFMT_PROBE
+endif
+
 # -lpspgu: the pspgu driver reaches the GE through GU (pspGL used libpspge directly)
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 

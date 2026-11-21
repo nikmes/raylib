@@ -81,13 +81,16 @@ static void swizzleFast(unsigned char *out, const unsigned char *in, unsigned in
     }
 }
 
-// Where texel (x,y) lives in the swizzled layout - needed for sub-image updates
-static unsigned int swizzledOffset(int x, int y, int tbw)
+// Where texel (x,y) lives in the swizzled layout - needed for sub-image updates. A
+// swizzle block is 16 bytes x 8 rows: 4 texels wide at 8888, 8 at 16-bit.
+static unsigned int swizzledOffset(int x, int y, int tbw, int bpp)
 {
-    unsigned int widthBytes = (unsigned int)tbw*4;
-    unsigned int block = (unsigned int)((y/8)*(widthBytes/16) + (x/4))*128;
+    unsigned int widthBytes = (unsigned int)tbw*(unsigned int)bpp;
+    unsigned int texelsPerBlock = 16u/(unsigned int)bpp;
+    unsigned int block = (unsigned int)((y/8)*(widthBytes/16) + (x/(int)texelsPerBlock))*128;
 
-    return block + (unsigned int)((y%8)*16) + (unsigned int)((x%4)*4);
+    return block + (unsigned int)((y%8)*16) +
+           (unsigned int)((x%(int)texelsPerBlock)*bpp);
 }
 
 static int nextPow2(int v)
@@ -101,23 +104,6 @@ static PspGuTexture *lookup(unsigned int id)
 {
     if ((id == 0) || (id >= PSPGU_MAX_TEXTURES)) return NULL;
     return (textures[id].used)? &textures[id] : NULL;
-}
-
-// Pack one source pixel to the GE's 0xAABBGGRR word
-static unsigned int pack8888(const unsigned char *p, GLenum format)
-{
-    switch (format)
-    {
-        case GL_RGBA:             return ((unsigned int)p[3] << 24) | ((unsigned int)p[2] << 16) |
-                                         ((unsigned int)p[1] << 8) | (unsigned int)p[0];
-        case GL_RGB:              return 0xFF000000u | ((unsigned int)p[2] << 16) |
-                                         ((unsigned int)p[1] << 8) | (unsigned int)p[0];
-        case GL_LUMINANCE_ALPHA:  return ((unsigned int)p[1] << 24) | ((unsigned int)p[0] << 16) |
-                                         ((unsigned int)p[0] << 8) | (unsigned int)p[0];
-        case GL_LUMINANCE:        return 0xFF000000u | ((unsigned int)p[0] << 16) |
-                                         ((unsigned int)p[0] << 8) | (unsigned int)p[0];
-        default:                  return 0xFFFFFFFFu;
-    }
 }
 
 // A 2-byte source is EITHER a packed 16-bit colour (RGB565/RGBA5551/RGBA4444) OR two
@@ -147,16 +133,109 @@ static int sourceBytesPerPixel(GLenum format, GLenum type)
     }
 }
 
-// Expand any source the library passes into a GE 8888 texture
-static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum format, GLenum type)
+static int bytesPerTexel(unsigned int guFormat)
 {
+    return (guFormat == GU_PSM_8888)? 4 : 2;
+}
+
+// Decode one source pixel to 8-bit RGBA. Every upload path goes through this, so a
+// packed 16-bit source is decoded by its TYPE: 565, 5551 and 4444 are different layouts,
+// and the old code decoded all three as 565.
+static void readSourceRGBA(const unsigned char *p, GLenum format, GLenum type,
+                           int *r, int *g, int *b, int *a)
+{
+    if (isPacked16(type))
+    {
+        unsigned short v = *(const unsigned short *)p;
+
+        switch (type)
+        {
+            case GL_UNSIGNED_SHORT_5_6_5:
+                *r = (v & 0x1F) << 3; *g = ((v >> 5) & 0x3F) << 2;
+                *b = ((v >> 11) & 0x1F) << 3; *a = 255; break;
+            case GL_UNSIGNED_SHORT_5_5_5_1:
+                *r = (v & 0x1F) << 3; *g = ((v >> 5) & 0x1F) << 3;
+                *b = ((v >> 10) & 0x1F) << 3; *a = (v & 0x8000)? 255 : 0; break;
+            case GL_UNSIGNED_SHORT_4_4_4_4:
+                *r = (v & 0x0F) << 4; *g = ((v >> 4) & 0x0F) << 4;
+                *b = ((v >> 8) & 0x0F) << 4; *a = ((v >> 12) & 0x0F) << 4; break;
+            default:
+                *r = *g = *b = *a = 255; break;
+        }
+        return;
+    }
+
+    switch (format)
+    {
+        case GL_RGBA:            *r = p[0]; *g = p[1]; *b = p[2]; *a = p[3]; break;
+        case GL_RGB:             *r = p[0]; *g = p[1]; *b = p[2]; *a = 255; break;
+        case GL_LUMINANCE_ALPHA: *r = *g = *b = p[0]; *a = p[1]; break;
+        case GL_LUMINANCE:       *r = *g = *b = p[0]; *a = 255; break;
+        default:                 *r = *g = *b = *a = 255; break;
+    }
+}
+
+// Pack RGBA into the destination PSM. 5650 and 4444 put red in the low bits, matching the
+// framebuffer expansion the readback proved; a red/blue swap in an `auto` capture means
+// this order is wrong, not the source.
+static unsigned int packRGBA(int r, int g, int b, int a, unsigned int fmt)
+{
+    if (fmt == GU_PSM_5650)
+        return ((unsigned)(r >> 3) & 0x1F) |
+               (((unsigned)(g >> 2) & 0x3F) << 5) |
+               (((unsigned)(b >> 3) & 0x1F) << 11);
+
+    if (fmt == GU_PSM_4444)
+        return ((unsigned)(r >> 4) & 0x0F) |
+               (((unsigned)(g >> 4) & 0x0F) << 4) |
+               (((unsigned)(b >> 4) & 0x0F) << 8) |
+               (((unsigned)(a >> 4) & 0x0F) << 12);
+
+    return ((unsigned)a << 24) | ((unsigned)b << 16) | ((unsigned)g << 8) | (unsigned)r;
+}
+
+// Sprint 015 T2: choose a format per texture. 8888 is the default (pixel parity); `auto`
+// is the measured build. Only an opaque GL_RGB source becomes 5650; an alpha source
+// becomes 4444 only when every alpha is 0 or 255. Anti-aliased alpha (the font atlas,
+// the half-alpha probe) stays 8888, because 4-bit alpha would be a visible change.
+static unsigned int chooseFormat(GLenum format, GLenum type, const unsigned char *pixels,
+                                 int width, int height)
+{
+#if PSPGU_TEXFMT_AUTO
+    if (pixels != NULL)
+    {
+        if ((type == GL_UNSIGNED_BYTE) && (format == GL_RGB)) return GU_PSM_5650;
+
+        if ((type == GL_UNSIGNED_BYTE) &&
+            ((format == GL_RGBA) || (format == GL_LUMINANCE_ALPHA)))
+        {
+            int bytes = sourceBytesPerPixel(format, type);
+            int alphaIndex = (format == GL_RGBA)? 3 : 1;
+            int binary = 1;
+
+            for (int i = 0; i < width*height; i++)
+            {
+                unsigned char a = pixels[(size_t)i*bytes + alphaIndex];
+                if ((a != 0) && (a != 255)) { binary = 0; break; }
+            }
+            if (binary) return GU_PSM_4444;
+        }
+    }
+#else
+    (void)format; (void)type; (void)pixels; (void)width; (void)height;
+#endif
+
+    return GU_PSM_8888;
+}
+
+// Upload any source into the texture's chosen PSM and swizzle the padded image.
+static void uploadTexels(PspGuTexture *t, const unsigned char *pixels, GLenum format, GLenum type)
+{
+    int bpp = bytesPerTexel(t->guFormat);
     unsigned char *base = (unsigned char *)sceGeEdramGetAddr() + t->offset;
-    unsigned int rowBytes = (unsigned int)t->tbw*4;
-    // The padded rows are part of the texture the GE samples; they are zeroed (calloc)
-    // and included in the swizzle. Allocating only height rows and telling GU a padded
-    // height reads past the texture.
+    unsigned int rowBytes = (unsigned int)t->tbw*(unsigned int)bpp;
     unsigned int total = rowBytes*(unsigned int)t->padH;
-    unsigned int *scratch = (unsigned int *)calloc(1, total);      // zeroed: padding is real
+    unsigned char *scratch = (unsigned char *)calloc(1, total);     // zeroed: padding is real
     int bytes = sourceBytesPerPixel(format, type);
 
     if (scratch == NULL) return;
@@ -165,29 +244,23 @@ static void upload8888(PspGuTexture *t, const unsigned char *pixels, GLenum form
     {
         for (int x = 0; x < t->width; x++)
         {
+            int r, g, b, a;
             unsigned int texel;
 
-            if (isPacked16(type))
-            {
-                unsigned short v = ((const unsigned short *)pixels)[y*t->width + x];
-                unsigned int r = (v & 0x1F) << 3;
-                unsigned int g = ((v >> 5) & 0x3F) << 2;
-                unsigned int b = ((v >> 11) & 0x1F) << 3;
-                unsigned int a = (type == GL_UNSIGNED_SHORT_5_5_5_1)? ((v & 0x8000)? 0xFF : 0) : 0xFF;
-                texel = (a << 24) | (b << 16) | (g << 8) | r;
-            }
-            else texel = pack8888(pixels + ((size_t)y*t->width + x)*bytes, format);
+            readSourceRGBA(pixels + ((size_t)y*t->width + x)*bytes, format, type, &r, &g, &b, &a);
+            texel = packRGBA(r, g, b, a, t->guFormat);
 
-            scratch[(size_t)y*t->tbw + x] = texel;
+            if (bpp == 4) ((unsigned int *)scratch)[(size_t)y*t->tbw + x] = texel;
+            else ((unsigned short *)scratch)[(size_t)y*t->tbw + x] = (unsigned short)texel;
         }
     }
 
-    // Both allocated dimensions are now powers of two (padW = tbw, padH >= height), so
-    // the 8-row swizzle always applies. A non-power-of-two texture is sampled through
+    // Both allocated dimensions are powers of two (padW = tbw, padH >= height), so the
+    // 8-row swizzle always applies. A non-power-of-two texture is sampled through
     // sceGuTexScale(realW/padW, realH/padH), set in applyTexture.
     t->swizzled = (PSPGU_SWIZZLE && (t->padH % 8 == 0))? 1 : 0;
 
-    if (t->swizzled) swizzleFast(base, (const unsigned char *)scratch, rowBytes, (unsigned int)t->padH);
+    if (t->swizzled) swizzleFast(base, scratch, rowBytes, (unsigned int)t->padH);
     else memcpy(base, scratch, total);
 
     if (!t->swizzled && !t->warnedNonSwizzle)
@@ -330,8 +403,9 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t = lookup(currentTexture);
     if (t == NULL) { currentTexture = defaultTexture; return; }
 
-    // Every source becomes 8888; see the header comment for why
-    t->guFormat = GU_PSM_8888;
+    // Sprint 015 T2: one format decision per texture. The default build is 8888, so the
+    // parity gate cannot move; `PSP_GU_TEXFMT=auto` is the measured 16-bit build.
+    t->guFormat = chooseFormat(format, type, (const unsigned char *)pixels, width, height);
     t->width = width;
     t->height = height;
     // GU wants power-of-two dimensions and row stride. The padding columns and rows are
@@ -345,7 +419,11 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
     t->scaleV = (float)height / (float)t->padH;
 
     {
-        unsigned int bytes = (unsigned int)(t->padW * t->padH * 4);
+        int bpp = bytesPerTexel(t->guFormat);
+        unsigned int bytes = (unsigned int)(t->padW * t->padH * bpp);
+
+        pspguLog("texture %u: %dx%d src=0x%x -> PSM 0x%x (%u B)",
+                 currentTexture, width, height, format, t->guFormat, bytes);
 
         // Reuse the block when the padded size is unchanged; otherwise return the old
         // span and take a new one. The allocator rounds to 512-byte blocks.
@@ -371,7 +449,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
         }
     }
 
-    if (pixels != NULL) upload8888(t, (const unsigned char *)pixels, format, type);
+    if (pixels != NULL) uploadTexels(t, (const unsigned char *)pixels, format, type);
 
     t->used = 1;
     applyTexture(t);
@@ -381,8 +459,8 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
                      GLsizei height, GLenum format, GLenum type, const GLvoid *pixels)
 {
     PspGuTexture *t;
-    unsigned int *dst;
-    int bytes;
+    unsigned char *dst;
+    int bpp, bytes;
 
     (void)target;
 
@@ -391,33 +469,33 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
     t = lookup(currentTexture);
     if ((t == NULL) || (t->offset == 0)) return;
 
-    dst = (unsigned int *)((unsigned char *)sceGeEdramGetAddr() + t->offset);
+    bpp = bytesPerTexel(t->guFormat);
+    dst = (unsigned char *)sceGeEdramGetAddr() + t->offset;
     bytes = sourceBytesPerPixel(format, type);
 
-    // A sub-rectangle goes straight into the existing layout (UpdateTexture's path)
+    // A sub-rectangle goes straight into the existing layout (UpdateTexture's path),
+    // 8888 or 16-bit, with the same source decode as the full upload.
     for (int y = 0; y < height; y++)
     {
         for (int x = 0; x < width; x++)
         {
-            unsigned int texel;
+            int r, g, b, a;
+            unsigned int off, texel;
 
-            if (isPacked16(type))
-            {
-                unsigned short v = ((const unsigned short *)pixels)[y*width + x];
-                texel = 0xFF000000u | (((unsigned int)((v >> 11) & 0x1F) << 19) |
-                                       ((unsigned int)((v >> 5) & 0x3F) << 10) |
-                                       ((unsigned int)(v & 0x1F) << 3));
-            }
-            else texel = pack8888((const unsigned char *)pixels + ((size_t)y*width + x)*bytes, format);
+            readSourceRGBA((const unsigned char *)pixels + ((size_t)y*width + x)*bytes,
+                           format, type, &r, &g, &b, &a);
+            texel = packRGBA(r, g, b, a, t->guFormat);
 
-            if (t->swizzled)
-                *(unsigned int *)((unsigned char *)dst + swizzledOffset(xoffset + x, yoffset + y, t->tbw)) = texel;
-            else
-                dst[(size_t)(yoffset + y)*t->tbw + (xoffset + x)] = texel;
+            off = t->swizzled
+                ? swizzledOffset(xoffset + x, yoffset + y, t->tbw, bpp)
+                : (unsigned int)((size_t)(yoffset + y)*t->tbw + (xoffset + x))*bpp;
+
+            if (bpp == 4) *(unsigned int *)(dst + off) = texel;
+            else *(unsigned short *)(dst + off) = (unsigned short)texel;
         }
     }
 
-    pspguWriteback(dst, (unsigned int)(t->tbw * t->padH * 4));
+    pspguWriteback(dst, (unsigned int)(t->tbw * t->padH * bpp));
     pspguBeginFrame();
     sceGuTexFlush();
 }

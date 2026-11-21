@@ -37,7 +37,10 @@ re-uploaded mid-frame costs more than the draw it feeds.
       frame, never accumulating forever
 - [ ] Range-based cache writeback on upload; no whole-cache invalidate in a steady frame
 - [ ] No mipmaps unless a measurement says they pay
-- [ ] Per-texture PSM, not a global swizzle mode (the global mode forces every texture to match the framebuffer)
+- [x] Per-texture PSM, not a global swizzle mode — **sprint 015 T2**: default 8888 for parity; `PSP_GU_TEXFMT=auto`
+      chooses 5650 for `GL_RGB` and 4444 for `GL_RGBA`/`GL_LUMINANCE_ALPHA` with binary alpha, else 8888. 32×32
+      `GL_RGB` 4,096 → 2,048 B; the 128×128 LA font 65,536 → 32,768 B; texture VRAM 69,636 → 34,820 B. The `auto`
+      delta is 7,843 px in `batch_check`, 0 in `basic_shapes`; the default stays 8888
 
 ## What we already know
 

@@ -4,6 +4,7 @@
 #
 #   tools/pspgu-build.sh                 # build, install over libGL.a, keep the old one
 #   tools/pspgu-build.sh --depth=0       # 2D-only build, 272 KiB of VRAM back
+#   tools/pspgu-build.sh --texfmt=auto    # per-texture 16-bit formats (measured, not default)
 #   tools/pspgu-build.sh --check         # is the installed libGL.a a pspgu build, and which?
 #   tools/pspgu-build.sh --restore       # put pspGL back (rebuilds it from /home/psp/ref)
 #   tools/pspgu-build.sh --verify-repeat # build twice, require the same content hash
@@ -27,12 +28,13 @@ content_hash() {   # hash what the archive actually contains, not its bytes
 
 build() {
     local depth="${1:-}"
+    local args=()
+
+    [ -n "$depth" ] && args+=("PSP_GU_DEPTH=${depth}")
+    [ -n "${PSP_GU_TEXFMT:-}" ] && args+=("PSP_GU_TEXFMT=${PSP_GU_TEXFMT}")
+
     make -C "$SRC" clean >/dev/null 2>&1
-    if [ -n "$depth" ]; then
-        make -C "$SRC" "PSP_GU_DEPTH=${depth}" || return 1
-    else
-        make -C "$SRC" || return 1
-    fi
+    make -C "$SRC" "${args[@]}" || return 1
     return 0
 }
 
@@ -104,6 +106,12 @@ case "${1---install}" in
         build "${1#--depth=}" || exit 1
         install_lib
         echo "installed pspgu with PSP_GU_DEPTH=${1#--depth=}"
+        ;;
+    --texfmt=*)
+        PSP_GU_TEXFMT="${1#--texfmt=}"
+        build || exit 1
+        install_lib
+        echo "installed pspgu with PSP_GU_TEXFMT=${PSP_GU_TEXFMT}"
         ;;
     *)
         build || exit 1

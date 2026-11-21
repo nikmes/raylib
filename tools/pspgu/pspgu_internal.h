@@ -43,7 +43,14 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b19"
+#define PSPGU_BUILD "b20"
+
+// Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
+// `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
+#ifndef PSPGU_TEXFMT_AUTO
+    #define PSPGU_TEXFMT_AUTO 0
+#endif
+#define PSPGU_TEXFMT_NAME (PSPGU_TEXFMT_AUTO? "auto" : "8888")
 
 #ifndef PSP_GU_DEPTH
     #define PSP_GU_DEPTH 1              // 16-bit depth buffer, 272 KiB at 512 stride
