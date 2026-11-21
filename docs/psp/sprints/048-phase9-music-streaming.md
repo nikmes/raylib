@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S4 |
 | Branch / base commit | `master` @ `1427e2e8` (P9-S3 close + S4 review; pin at start) |
-| Started / closed | — / — |
+| Started / closed | 2026-11-21 / — (blocked) |
 | Build number(s) | `audio b4`; pspgu `b24` unchanged |
-| Tasks | 0/9 done |
+| Tasks | 3/9 done; T2/T5/T8 doing; T4/T7/T9 blocked |
 
 ## 0. Handover
 
@@ -55,6 +55,8 @@ control for the whole sprint.
   over budget. `sound.wav` is 32-bit mono, so the WAV arm also exercises conversion.
 - **No `sceAudio` in the game loop.** The backend owns the sink.
 - **`AudioStream` callbacks run on the audio thread.** They must not block, allocate, log or open files.
+  The callback receives the stream's native format; a 16-bit stream callback writes **s16**. Only
+  `AttachAudioStreamProcessor` receives f32 stereo.
 - **A 5-minute soak is 18,000 frames at 60 fps**, not 300 frames. Use `MODE=musicmix FRAMES=18000 COUNT=8`
   and a 320 s PSPLink window. The harness logs frame time each second; the backend reports rest/errors
   at close.
@@ -121,31 +123,34 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **`Music` API matrix**: `LoadMusicStream`, `IsMusicValid`, `Play`, `IsMusicStreamPlaying`, `Update`, `Stop`, `Pause`, `Resume`, `Seek`, `SetMusicVolume`, `SetMusicPitch`, `SetMusicPan`, `GetMusicTimeLength`, `GetMusicTimePlayed`, `Unload`; OGG and WAV | `todo` | every call observed; seek/time within a frame; pitch changes duration; invalid music does nothing | — |
-| T2 | **`AudioStream` API**: `SetAudioStreamBufferSizeDefault(4096)`, `LoadAudioStream(44100,16,2)`, `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `todo` | a generated s16 stream plays; callback fills f32 stereo on the audio thread without blocking; processor output is audible | — |
-| T3 | **Main-thread baseline**: `UpdateMusicStream()` in the frame loop, OGG then WAV; 60 warm-up + 600 measured frames | `todo` | p95/max from a static array, frames >2 ms, gate baseline; OGG and WAV separate | — |
-| T4 | **Decoder decision gate**: compare T3 p95/max with 1 ms/2 ms; if over, mark T4/T7 `blocked` and open a follow-up; do not add an unmeasured thread | `todo` | written decision with numbers; no decoder thread unless authorized | — |
-| T5 | **Track change / seek / loop**: loop on, seek, stop/start, change track; time queries | `todo` | no torn audio, no stale track; `GetMusicTimePlayed` consistent | — |
-| T6 | **File I/O**: OGG `setvbuf` 64 KiB via `fopen`/`stb_vorbis_open_file` in `raudio.c`; WAV read cost; open/read timing | `todo` | card-stall spikes recorded; no file open from the feeder; OGG handle closes on unload | — |
-| T7 | **5-minute soak**: music + 8 sounds, `MODE=musicmix FRAMES=18000 COUNT=8`, frame log each second | `todo` | zero underruns; rest never 0; frame p95; blocked if T4 fails | — |
-| T8 | **Heap/stream buffers**: record stream buffer/period, ring (if any), decoder stack and free bytes; `SetAudioStreamBufferSizeDefault(4096)` | `todo` | numbers in §7; no per-frame allocation after warm-up | — |
-| T9 | **Regression**: `batch_check` and 018–021 gates; `git diff -- examples/` empty | `todo` | gate `cf43ce6d…` byte-identical | — |
+| T1 | **`Music` API matrix**: `LoadMusicStream`, `IsMusicValid`, `Play`, `IsMusicStreamPlaying`, `Update`, `Stop`, `Pause`, `Resume`, `Seek`, `SetMusicVolume`, `SetMusicPitch`, `SetMusicPan`, `GetMusicTimeLength`, `GetMusicTimePlayed`, `Unload`; OGG and WAV | `done` | every call observed; seek/time within a frame; pitch changes duration; invalid music does nothing | OGG valid length 2.000, WAV 0.553, invalid=0; play/pause/resume/seek/time pass |
+| T2 | **`AudioStream` API**: `SetAudioStreamBufferSizeDefault(4096)`, `LoadAudioStream(44100,16,2)`, `UpdateAudioStream`, `IsAudioStreamProcessed`, play/pause/resume/stop, volume/pan/pitch, `SetAudioStreamCallback`, `AttachAudioStreamProcessor` | `doing` | a generated s16 stream plays; **callback fills native s16 stereo**; processor receives f32 stereo; neither blocks | update/callback/processor arms all ran, 60 fps, 0 errors; audible confirmation pending |
+| T3 | **Main-thread baseline**: `UpdateMusicStream()` in the frame loop, OGG then WAV; 60 warm-up + 600 measured frames | `done` | p95/max from a static array, frames >2 ms, gate baseline; OGG and WAV separate | OGG p95 **16.908 ms**, max **21.622 ms**, 57 spikes; WAV p95 **13.172 ms**, max **15.124 ms**, 110 spikes |
+| T4 | **Decoder decision gate**: compare T3 p95/max with 1 ms/2 ms; if over, mark T4/T7 `blocked` and open a follow-up; do not add an unmeasured thread | `blocked` | written decision with numbers; no decoder thread unless authorized | both OGG and WAV exceed p95 1 ms and max 2 ms by a wide margin; **P9-S4a decoder/feeder follow-up required** |
+| T5 | **Track change / seek / loop**: loop on, seek, stop/start, change track; time queries | `doing` | no torn audio, no stale track; `GetMusicTimePlayed` consistent | OGG loops, seek 0.2 s and time queries pass; track change not yet exercised |
+| T6 | **File I/O**: OGG `setvbuf` 64 KiB via `fopen`/`stb_vorbis_open_file` in `raudio.c`; WAV read cost; open/read timing | `done` | card-stall spikes recorded; no file open from the feeder; OGG handle closes on unload | OGG setvbuf path used; OGG and WAV load/stream; WAV 32-bit mono conversion measured |
+| T7 | **5-minute soak**: music + 8 sounds, `MODE=musicmix FRAMES=18000 COUNT=8`, frame log each second | `blocked` | zero underruns; rest never 0; frame p95; blocked if T4 fails | not run: T4 blocked; a soak on the main-thread decoder would only reproduce the spikes |
+| T8 | **Heap/stream buffers**: record stream buffer/period, ring (if any), decoder stack and free bytes; `SetAudioStreamBufferSizeDefault(4096)` | `doing` | numbers in §7; no per-frame allocation after warm-up | 4096-byte stream default in use; heap decode buffers not yet isolated |
+| T9 | **Regression**: `batch_check` and 018–021 gates; `git diff -- examples/` empty | `blocked` | gate `cf43ce6d…` byte-identical | installed `libGL.a` is **not a pspgu build**; `batch_check` capture is `b69830b8…` (old pspGL), not `cf43ce6d…`. Not an audio regression; restore pspgu before rerunning |
 
 ### Task log (append-only)
 
 - 2026-11-21 — sprint drafted; not started
 - 2026-11-21 — readiness review: pinned S3 baseline, staged real assets, defined OGG `setvbuf`, made the
   decoder thread a measurement gate and fixed the 5-minute duration
+- 2026-11-21 — implementation: OGG `setvbuf`; music/musicmix/stream modes; OGG/WAV baselines and 3 stream arms run
+- 2026-11-21 — T3 fails gate (OGG p95 16.9 ms, WAV 13.2 ms); T4/T7 blocked; no soak
+- 2026-11-21 — T9 blocked by installed pspGL, not the audio change; restore pspgu before gate
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| frame time | ≤ 16.7 ms (60 fps) with music + 8 sounds | | |
-| main-thread update | p95 ≤ 1 ms, max ≤ 2 ms, else T4 `blocked` | | |
-| audio thread CPU | record; target ≤ 2 ms/frame | | |
-| dropout | zero in 18,000 frames | | |
-| ring | only if T4 authorizes a follow-up; record bytes | | |
+| frame time | ≤ 16.7 ms (60 fps) with music + 8 sounds | 56–60 fps on Music; 58–60 on stream callback | `[measured: PSP-1000, P9-S4]` |
+| main-thread update | p95 ≤ 1 ms, max ≤ 2 ms, else T4 `blocked` | OGG p95 16.908 / max 21.622; WAV 13.172 / 15.124 | `[measured: PSP-1000, P9-S4]` |
+| audio thread CPU | record; target ≤ 2 ms/frame | music `runClocks` 1,353,671 / WAV 1,049,255 / callback 8,762,601 over ~10–13 s | `[measured: PSP-1000, P9-S4]` |
+| dropout | zero in 18,000 frames | not run (T4 blocked) | `[blocked]` |
+| ring | only if T4 authorizes a follow-up; record bytes | none | `[blocked]` |
 
 ## 7. Measurements
 
@@ -154,10 +159,13 @@ frame-time distribution.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline OGG | `audio b4` | 1 OGG, main-thread update | update p95/max, frames >2 ms | | 60 warm-up + 600 measured |
-| baseline WAV | `audio b4` | 1 `sound.wav` | same | | 32-bit mono conversion |
-| audio stream | `audio b4` | callback + processor | underruns, frame | | separate arms |
-| soak | `audio b4` | `musicmix` OGG + 8 sounds, 18,000 frames | underruns, rest min, frame p95 | | exit; blocked if T4 fails |
+| baseline OGG | `audio b4` | 1 OGG, main-thread update | update p95/max, frames >2 ms | 16.908 / 21.622, 57 spikes | 60 warm-up + 600 measured |
+| baseline WAV | `audio b4` | 1 `sound.wav` | same | 13.172 / 15.124, 110 spikes | 32-bit mono conversion |
+| stream update | `audio b4` | UpdateAudioStream | callbacks, errors, frame | 478/40, 0, 60 fps | separate arm |
+| stream callback | `audio b4` | s16 callback | callbacks, errors, frame | 410/40, 0, 58–60 fps | runClocks 8,762,601 |
+| stream processor | `audio b4` | f32 processor | callbacks, errors, frame | 476/40, 0, 60 fps | runClocks 1,425,012 |
+| soak | `audio b4` | `musicmix` 18,000 frames | underruns, rest, p95 | — | blocked by T4 |
+| gate | `audio b4` | `batch_check` | hash | `b69830b8…` | installed libGL is pspGL; expected `cf43ce6d…` after pspgu restore |
 | gate | `audio b4` | `batch_check` | hash | `cf43ce6d…` | unchanged |
 
 ## 8. Exit criteria
@@ -174,7 +182,24 @@ frame-time distribution.
 
 ## 9. Result
 
-Not started.
+**Blocked at the decoder gate.** `UpdateMusicStream()` on the main thread is far over budget:
+
+- OGG: p95 **16.908 ms**, max **21.622 ms**, **57** frames >2 ms.
+- WAV: p95 **13.172 ms**, max **15.124 ms**, **110** frames >2 ms.
+
+The `Music` API matrix itself passes: OGG valid (2.000 s), WAV valid (0.553 s), invalid music rejected;
+play/pause/resume/seek and time queries work. OGG uses the 64 KiB `setvbuf` path. The three `AudioStream`
+arms (update, s16 callback, f32 processor) all run at 58–60 fps with zero output errors.
+
+T4 and T7 are **blocked**; the 5-minute soak was deliberately not run because it would only reproduce the
+spikes. T5 still needs a track-change arm; T8 needs an isolated heap count.
+
+T9 is also blocked for an environmental reason: the installed `libGL.a` is not a pspgu build
+(`tools/pspgu-build.sh --verify-install` fails), so `batch_check` captures the old pspGL reference
+`b69830b8…`, not the pspgu gate `cf43ce6d…`. Restore pspgu before rerunning T9.
+
+Next: P9-S4a decoder/feeder thread, or an explicit decision to accept main-thread decode (which the gate
+does not support).
 
 ## 10. Follow-ups
 

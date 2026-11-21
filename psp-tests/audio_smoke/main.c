@@ -12,6 +12,8 @@
 #include <pspkernel.h>
 #include <pspthreadman.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <raylib.h>
@@ -31,9 +33,27 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #ifndef AUDIO_WAVE_MS
     #define AUDIO_WAVE_MS 1000
 #endif
+#ifndef MUSIC_PATH
+    #define MUSIC_PATH "/p9s4_target.ogg"
+#endif
+#ifndef MUSIC_WAV_PATH
+    #define MUSIC_WAV_PATH "/p9s4_sound.wav"
+#endif
+
+#define MAX_MEASURE 18000
+static float measureMs[MAX_MEASURE];
+static float sortedMs[MAX_MEASURE];
+static int CompareFloat(const void *a, const void *b)
+{
+    float fa = *(const float *)a;
+    float fb = *(const float *)b;
+    return (fa > fb) - (fa < fb);
+}
+static float StreamPhase = 0.0f;
 
 #if !defined(MODE_TONE) && !defined(MODE_SOUND) && !defined(MODE_API) && \
-    !defined(MODE_MIX) && !defined(MODE_PITCH) && !defined(MODE_LEVELS) && !defined(MODE_HEAP)
+    !defined(MODE_MIX) && !defined(MODE_PITCH) && !defined(MODE_LEVELS) && !defined(MODE_HEAP) && \
+    !defined(MODE_MUSIC) && !defined(MODE_MUSICMIX) && !defined(MODE_STREAM)
     #define MODE_TONE
 #endif
 
@@ -266,6 +286,213 @@ static void HeapMode(void)
 }
 #endif
 
+#if defined(MODE_MUSIC) || defined(MODE_MUSICMIX)
+static void MusicBaseline(const char *tag, int withSounds)
+{
+    SetAudioStreamBufferSizeDefault(4096);
+
+    Music music = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
+    if (!IsMusicValid(music))
+    {
+        TraceLog(LOG_ERROR, "MUSIC %s invalid path=%s", tag, MUSIC_PATH);
+        return;
+    }
+
+    TraceLog(LOG_INFO, "MUSIC %s valid=1 length=%.3f", tag, GetMusicTimeLength(music));
+    SetMusicVolume(music, 0.5f);
+    PlayMusicStream(music);
+
+    Sound *sounds = NULL;
+    if (withSounds)
+    {
+        sounds = (Sound *)MemAlloc(AUDIO_COUNT*sizeof(Sound));
+        for (int i = 0; i < AUDIO_COUNT; i++)
+        {
+            Wave wave = MakeWave(AUDIO_WAVE_MS, 300.0f + (float)i*20.0f);
+            sounds[i] = LoadSoundFromWave(wave);
+            FreeWaveData(&wave);
+            SetSoundVolume(sounds[i], 0.15f);
+            PlaySound(sounds[i]);
+        }
+        TraceLog(LOG_INFO, "MUSIC %s sounds=%d wave_ms=%d", tag, AUDIO_COUNT, AUDIO_WAVE_MS);
+    }
+
+    int measured = 0;
+    int totalFrames = 60 + AUDIO_FRAMES;
+
+    for (int frame = 0; frame < totalFrames; frame++)
+    {
+        double start = GetTime();
+        UpdateMusicStream(music);
+        double elapsedMs = (GetTime() - start)*1000.0;
+
+        if ((frame >= 60) && (measured < MAX_MEASURE))
+        {
+            measureMs[measured++] = (float)elapsedMs;
+        }
+
+        DrawFrame(frame, tag, TextFormat("t=%.1f up=%.2f", GetMusicTimePlayed(music), elapsedMs));
+        if ((frame > 0) && ((frame%60) == 0))
+        {
+            TraceLog(LOG_INFO, "MUSIC %s FRAME %d  fps %d  up=%.2f", tag, frame, GetFPS(), elapsedMs);
+        }
+    }
+
+    int n = measured;
+    for (int i = 0; i < n; i++) sortedMs[i] = measureMs[i];
+    qsort(sortedMs, n, sizeof(float), CompareFloat);
+
+    float p95 = (n > 0)? sortedMs[(int)(0.95f*(float)(n - 1))] : 0.0f;
+    float max = (n > 0)? sortedMs[n - 1] : 0.0f;
+    int spikes = 0;
+    for (int i = 0; i < n; i++) { if (measureMs[i] > 2.0f) spikes++; }
+
+    TraceLog(LOG_INFO, "MUSIC %s measured=%d p95=%.3fms max=%.3fms spikes>2ms=%d time=%.2f length=%.2f",
+             tag, n, p95, max, spikes, GetMusicTimePlayed(music), GetMusicTimeLength(music));
+
+    StopMusicStream(music);
+    UnloadMusicStream(music);
+
+    if (sounds != NULL)
+    {
+        for (int i = 0; i < AUDIO_COUNT; i++) UnloadSound(sounds[i]);
+        MemFree(sounds);
+    }
+}
+
+static void MusicApiMode(void)
+{
+    SetAudioStreamBufferSizeDefault(4096);
+
+    Music ogg = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
+    Music wav = LoadMusicStream(TextFormat("host0:%s", MUSIC_WAV_PATH));
+    Music invalid = { 0 };
+
+    TraceLog(LOG_INFO, "MUSIC API ogg=%d wav=%d invalid=%d", IsMusicValid(ogg), IsMusicValid(wav), IsMusicValid(invalid));
+
+    if (IsMusicValid(ogg))
+    {
+        TraceLog(LOG_INFO, "MUSIC API length ogg=%.3f", GetMusicTimeLength(ogg));
+        SetMusicVolume(ogg, 0.5f);
+        SetMusicPan(ogg, -0.5f);
+        SetMusicPitch(ogg, 1.25f);
+        PlayMusicStream(ogg);
+        UpdateMusicStream(ogg);
+        TraceLog(LOG_INFO, "MUSIC API playing=%d", IsMusicStreamPlaying(ogg));
+
+        PauseMusicStream(ogg);
+        ResumeMusicStream(ogg);
+        SeekMusicStream(ogg, 0.2f);
+        UpdateMusicStream(ogg);
+        TraceLog(LOG_INFO, "MUSIC API played=%.3f", GetMusicTimePlayed(ogg));
+        StopMusicStream(ogg);
+    }
+
+    if (IsMusicValid(wav))
+    {
+        TraceLog(LOG_INFO, "MUSIC API length wav=%.3f", GetMusicTimeLength(wav));
+        PlayMusicStream(wav);
+        UpdateMusicStream(wav);
+        StopMusicStream(wav);
+    }
+
+    if (IsMusicValid(ogg)) UnloadMusicStream(ogg);
+    if (IsMusicValid(wav)) UnloadMusicStream(wav);
+
+    RunFrames(60, "musicapi", "matrix done");
+}
+#endif
+
+#if defined(MODE_MUSIC)
+static void MusicMode(void)
+{
+    MusicApiMode();
+    MusicBaseline("music", 0);
+}
+#endif
+
+#if defined(MODE_MUSICMIX)
+static void MusicMixMode(void)
+{
+    MusicBaseline("musicmix", 1);
+}
+#endif
+
+#if defined(MODE_STREAM)
+static void StreamCallback(void *bufferData, unsigned int frames)
+{
+    // The callback receives the stream's native format: this is a 16-bit stream.
+    short *out = (short *)bufferData;
+    for (unsigned int i = 0; i < frames; i++)
+    {
+        float value = sinf(2.0f*3.14159265f*440.0f*(StreamPhase/44100.0f))*0.10f;
+        short sample = (short)(value*32767.0f);
+        out[i*2 + 0] = sample;
+        out[i*2 + 1] = sample;
+        StreamPhase += 1.0f;
+        if (StreamPhase >= 44100.0f) StreamPhase -= 44100.0f;
+    }
+}
+
+static void StreamProcessor(void *bufferData, unsigned int frames)
+{
+    float *out = (float *)bufferData;
+    for (unsigned int i = 0; i < frames*2; i++) out[i] *= 0.5f;
+}
+
+static void AudioStreamMode(void)
+{
+    SetAudioStreamBufferSizeDefault(4096);
+
+    AudioStream stream = LoadAudioStream(44100, 16, 2);
+    if (!IsAudioStreamValid(stream))
+    {
+        TraceLog(LOG_ERROR, "STREAM invalid AudioStream");
+        return;
+    }
+
+    SetAudioStreamVolume(stream, 0.5f);
+    SetAudioStreamPan(stream, -0.5f);
+    SetAudioStreamPitch(stream, 1.0f);
+
+#if defined(STREAM_CALLBACK)
+    SetAudioStreamCallback(stream, StreamCallback);
+#elif defined(STREAM_PROCESSOR)
+    AttachAudioStreamProcessor(stream, StreamProcessor);
+#endif
+
+    short pcm[1024*2];
+    PlayAudioStream(stream);
+
+    for (int frame = 0; frame < AUDIO_FRAMES; frame++)
+    {
+#if !defined(STREAM_CALLBACK)
+        if (IsAudioStreamProcessed(stream))
+        {
+            for (int i = 0; i < 1024; i++)
+            {
+                float value = sinf(2.0f*3.14159265f*440.0f*(StreamPhase/44100.0f))*0.10f;
+                short sample = (short)(value*32767.0f);
+                pcm[i*2 + 0] = sample;
+                pcm[i*2 + 1] = sample;
+                StreamPhase += 1.0f;
+                if (StreamPhase >= 44100.0f) StreamPhase -= 44100.0f;
+            }
+            UpdateAudioStream(stream, pcm, 1024);
+        }
+#endif
+        DrawFrame(frame, "stream", TextFormat("playing=%d", IsAudioStreamPlaying(stream)));
+        if ((frame > 0) && ((frame%60) == 0)) TraceLog(LOG_INFO, "STREAM FRAME %d  fps %d", frame, GetFPS());
+    }
+
+    StopAudioStream(stream);
+#if defined(STREAM_PROCESSOR)
+    DetachAudioStreamProcessor(stream, StreamProcessor);
+#endif
+    UnloadAudioStream(stream);
+}
+#endif
+
 #if defined(MODE_TONE) || defined(MODE_SOUND)
 static void ToneMode(void)
 {
@@ -291,6 +518,12 @@ int main(void)
 
 #if defined(MODE_API)
     ApiMatrix();
+#elif defined(MODE_MUSIC)
+    MusicMode();
+#elif defined(MODE_MUSICMIX)
+    MusicMixMode();
+#elif defined(MODE_STREAM)
+    AudioStreamMode();
 #elif defined(MODE_PITCH)
     PitchMode();
 #elif defined(MODE_LEVELS)

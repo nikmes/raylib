@@ -1413,8 +1413,16 @@ Music LoadMusicStream(const char *fileName)
 #if SUPPORT_FILEFORMAT_OGG
     else if (IsFileExtension(fileName, ".ogg"))
     {
-        // Open ogg audio stream
-        stb_vorbis *ctxOgg = stb_vorbis_open_filename(fileName, NULL, NULL);
+        // Open OGG with a larger stdio buffer: P9-S4 measures streaming reads
+        FILE *file = fopen(fileName, "rb");
+        stb_vorbis *ctxOgg = NULL;
+
+        if (file != NULL)
+        {
+            setvbuf(file, NULL, _IOFBF, 64*1024);
+            ctxOgg = stb_vorbis_open_file(file, TRUE, NULL, NULL);
+            if (ctxOgg == NULL) fclose(file);
+        }
 
         if (ctxOgg != NULL)
         {
@@ -1432,7 +1440,7 @@ Music LoadMusicStream(const char *fileName)
         }
         else
         {
-            stb_vorbis_close(ctxOgg);
+            if (ctxOgg != NULL) stb_vorbis_close(ctxOgg);
         }
     }
 #endif

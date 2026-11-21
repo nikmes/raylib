@@ -101,6 +101,7 @@ hardware.
 | PSP worker thread | default/32 KiB stack entered the audio loop and died before playback; `ma_device_init` waited on `stopEvent` forever; 128 KiB fixed it. Priority retained: `ma_thread_priority_normal` | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
 | PSP output backend (P9-S2) | one regular channel (unit: **7**), 1024-frame blocks, two alternating 64-byte-aligned buffers with cache writeback; 433 callbacks/10.03 s (43/s); rest 960–1024; errors 0; `runClocks` 410,966/411,441; 1 kHz tone audible | `[measured: PSP-1000, P9-S2, 2026-11-21]` |
 | PSP `Sound` API (P9-S3) | file+memory loads, aliases, Wave copy/crop/format/samples, `UpdateSound`, master/volume/pan/pitch all pass; levels loud-left/quiet-right; pitch 0.5/2.0 stops at frames 119/30; mix16/32 at 60 fps, rest 960–1024, errors 0; 32/32 sounds valid with 30,440 B free in the 4 MiB test heap | `[measured: PSP-1000, P9-S3, 2026-11-21]` |
+| PSP `Music`/`AudioStream` (P9-S4) | OGG/WAV API matrix passes; OGG `setvbuf` 64 KiB; AudioStream update/s16-callback/f32-processor all 58–60 fps, errors 0. **Main-thread `UpdateMusicStream` fails the gate**: OGG p95 16.908 / max 21.622 (57 spikes), WAV 13.172 / 15.124 (110 spikes). Soak not run; decoder follow-up required | `[measured: PSP-1000, P9-S4, 2026-11-21]` |
 
 ## What the reference implementations do
 
@@ -192,8 +193,8 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 | P9-S1 — Enable raudio and the silent backend | [045](../../sprints/045-phase9-enable-raudio.md) | build flags, `dlfcn`/atomics/pthread, silent custom backend, link line | **done** — 418 callbacks/41 per s; gate `cf43ce6d…` |
 | P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, two aligned buffers, `onDeviceWrite`, one sound | **done** — 433 callbacks/43 per s; tone audible; gate `cf43ce6d…` |
 | P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | **done** — API matrix, mix16/32, pitch, levels, heap; gate `cf43ce6d…` |
-| P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread decision, 5-minute soak | next |
-| P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | written |
+| P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread decision, 5-minute soak | **blocked** — OGG p95 16.9 ms; P9-S4a needed |
+| P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | blocked on P9-S4a |
 | P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | written |
 | P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | written; conditional |
 
