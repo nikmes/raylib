@@ -4,15 +4,17 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S6 |
-| Branch / base commit | `master` @ `dcfe2e61` (sprint 066 written) |
+| Branch / base commit | `master` @ `6982fe68` (sprint 066 closed) |
 | Started / closed | 2026-11-22 (written) / — |
-| Build number(s) | final pspgu and `libraylib.a` for the phase; content hashes recorded in §7 |
+| Build number(s) | pspgu `b29` (060–066 shipped b25–b29); `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 0/5 done |
 
 ## 0. Handover
 
-**Situation.** Sprints 060–066 give the phase a drawing mesh path, camera-relative matrices, GE-native vertices,
-lighting/fog, render-to-texture and culling/clipping. What is missing is the thing the exit criteria actually ask
+**Situation.** Sprints 060–066 give the phase a drawing mesh path, GE-native vertices, lighting/fog,
+render-to-texture and culling/clipping. Camera-relative was measured as a **null** in 061 and is not part of the
+sample; the sample uses a plain world offset. Lighting and fog are exact against pspGL; RTT and culling/clipping
+are measured. S6 adds no engine feature — only the sample, the freeze, the regression and the close. What is missing is the thing the exit criteria actually ask
 for: one frozen, deterministic 3D sample with frame-time percentiles, a full regression against every earlier gate,
 and an honest close of the phase — each criterion marked met with evidence or recorded as not met. This sprint builds
 that sample, measures its ceiling, and closes Phase 10.
@@ -33,14 +35,15 @@ that sample, measures its ceiling, and closes Phase 10.
 7. `../phases/07-2d-specialisation/index.md` — the shape of a closed phase page: checked criteria with numbers, a
    "done" sprint table, and a result paragraph.
 
-**First action.** Write the target rule and the sample spec into §5 T1 **before** running the final build: the
-object count is frozen from the 066 measurements, not chosen after seeing the sample's frame times.
+**First action.** Pre-register the target and the sample spec in §5 T1 **before** the final build: run the S6
+pre-sweep (250/500/750/1000 objects, `CULL=1`, two runs each) and freeze `N` by the work-based rule. 066 measured
+only 100 and 1,000 objects, so the 250-step sweep is part of this sprint, not a lookup.
 
 **Hard rules.**
 
-- **Pre-register the target.** The sample's object count is fixed by the rule in T1 from the 066 big-scene numbers;
-  the acceptance thresholds (median and p95) are written before the final run. Moving either afterwards makes the
-  exit criterion void.
+- **Pre-register the target.** `N` is the largest 250-step count whose **two** pre-sweep runs both had
+  `SPLIT work ≤ 15.0 ms`; the final thresholds are median ≤16.683, p95 ≤16.75, work ≤15.0. Written down before the
+  final run; moving either afterwards voids the criterion.
 - **Two runs per point, reset between.** A single run separates nothing at this variance. Record both; a point
   passes only if both runs pass.
 - **Measure work, not only the median.** The display quantises to 16.683 ms periods; `SPLIT work` is the signal for
@@ -117,8 +120,8 @@ moving the sample into `examples/`.
 
 ## 4. Preconditions
 
-- [ ] 060–066 `done`, or the missing ones listed in the phase close as not met (S6 still runs with the remainder)
-- [ ] `scene_3d` builds with every arm used by the earlier sprints; `psp_counters.o` is borrowed as in `scene_2d`
+- [x] 060–066 closed; 061's camera-relative null and 066's ME drop are recorded, not blockers
+- [ ] `scene_3d` builds with `SAMPLE=1` added; existing arms (`SCENE`, `FAR`, `INSTANCES`, `CULL`, `LIGHT`, `FOG`, `TEXENV`) still work
 - [ ] reference captures archived for: 2D gate, 060 cube, 062 lit/fog, 065 RTT readback, 066 cull-on/off
 - [ ] the 066 big-scene numbers exist; they are the input to T1's target rule
 - [ ] Device reset between runs; app logs `DONE` and sleeps; two identical captures per point
@@ -128,11 +131,18 @@ moving the sample into `examples/`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Freeze the target: write the sample spec (scene, lights, fog, RTT panel, cull/clip on, world offset, frame count) and the rule `N = largest 250-step count whose two 066 runs both had p95 ≤ 15.0 ms`; record N before the final run | `todo` | N and thresholds committed before measurement; scene spec in §7 | — |
-| T2 | Build `SAMPLE=1`: 480×272; a tessellated ground grid; N textured cubes via `DrawMesh`; one `GenMeshTorus` as the "model"; one directional + ambient light; linear fog; a 256×256 RTT panel rendered every frame; culling and clipping on; camera-relative at world offset 1000; fixed camera path; `STAT`/`SPLIT` + counters + `DONE` | `todo` | builds on pspgu and pspGL (RTT refuses cleanly there); two identical captures | — |
-| T3 | Measure: two runs per point at N and adjacent points; median/p95/worst, work/swap, draws/vertices/culled/clipped, RTT flushes/syncs, full waits, VRAM and list high-water | `todo` | adjacent last-passing/first-failing pair recorded; both frozen-N runs pass | — |
-| T4 | Full regression: 2D gate, `basic_shapes` 284, `scene_2d` corpus, bunnymark N=1,000 canary, 060 cube, 062 lit/fog, 065 RTT readback, 066 cull/clip; stub audit of pspgu (every unsupported call logs once) | `todo` | 0 diff / recorded tolerances; no silent no-op found | — |
-| T5 | Close Phase 10: check each exit criterion in the page with evidence or record it not met plus the deferring sprint; tick the two "before starting" blockers; mark the sprint table done with numbers; write the phase result; update memory-map facts; archive captures; restore pspGL; strict docs build | `todo` | page has no unchecked criterion without a reason; strict build passes; pspGL `2ab7378e` installed | — |
+| T1 | Pre-register: S6 sweep at `INSTANCES=250/500/750/1000`, `CULL=1`, two runs each; freeze `N` by `work ≤15.0 ms`; write the sample spec | `todo` | N and thresholds recorded before the final build | — |
+| T2 | Build `SAMPLE=1`: 480×272; tessellated ground grid; `N` textured cubes; one `GenMeshTorus`; directional + ambient light; linear fog; 256×256 RTT panel rendered each frame; culling and clipping on; **world offset 1000 (no camera-relative; 061 null)**; fixed camera; `STAT`/`SPLIT` + counters + `DONE` | `todo` | builds on pspgu and pspGL (RTT refuses there); two identical captures | — |
+| T3 | Measure: `N` and adjacent points, two runs each; median/p95/worst, work/swap; draws/vertices/culled/clipped; RTT flushes/syncs; `arenaOverflows`, full waits, VRAM/list high-water | `todo` | both frozen-N runs pass; adjacent failing point recorded | — |
+| T4 | Full regression: 2D, `basic_shapes`, `scene_2d` corpus, bunnymark canary, 060 cube, 061 packed, 062 lit/fog, 065 RTT, 066 cull/clip; pspgu stub audit | `todo` | 0 diff / recorded tolerances; no silent no-op | — |
+| T5 | Close Phase 10: each exit criterion met with evidence or recorded not met; tick the starting blockers (sample now exists; camera-relative is a recorded null, not a blocker); sprint table done; deferred list; memory map; archive; restore pspGL; strict build | `todo` | no unchecked criterion without a reason; `2ab7378e` installed | — |
+
+### Sample spec (fill in T1 before the final run)
+
+`SAMPLE=1` draws: a 16×16 ground grid with clip on; `N` textured cubes in a 10-wide grid spanning beyond the
+frustum; one `GenMeshTorus` at the centre; one directional + ambient light; linear fog start 6/end 14; a 256×256
+RTT panel of the same scene from a second camera, sampled at (216,16); culling on; world offset 1000 applied to
+camera and objects (no camera-relative). 300 frames, `SetTargetFPS(0)`. Record: frozen N = ____.
 
 Rules:
 
@@ -158,8 +168,9 @@ Rules:
 
 ## 7. Measurements
 
-T1 spec (fill before running): frozen N = ____; object mix = ____ cubes + 1 torus; lights = ____; fog = ____;
-RTT target = 256×256 8888; world offset = 1000; frames = 300; driver = ____.
+T1 spec (fill before running): frozen N = ____; object mix = ____ cubes + 1 torus; ground = 16×16 grid; lights = 1
+directional + ambient; fog = linear 6..14; RTT target = 256×256 8888 at (216,16); world offset = 1000;
+camera-relative = no (061 null); frames = 300; driver = pspgu; boot tag = b29.
 
 Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
@@ -196,6 +207,8 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
 - s8 normals and their lit-capture validation → Phase 11 or a Phase 10 follow-up sprint
 - Direct-path clipping without conversion, if it shows in the sample's work → Phase 11
-- ME culling shadow run, when Phase 9's runtime lands → Phase 9 roadmap
+- ME culling: Phase 9 sprint 051 **dropped** the ME takeover; no ME work is planned.
+- Deferred at close: index buffers/alignment (not implemented); camera-relative (measured null); s8 normals; s16
+  UVs; target alpha (GE 8888 keeps none); draws larger than the 128 KiB arena still take one sync.
 - MRT, post-processing effects, skinned models → sample-porting / later roadmap
 - The sample's numbers become the Phase 11 baseline and the release-gate reference
