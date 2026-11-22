@@ -205,6 +205,9 @@ Use the [sprint template](../../templates/sprint.md) for any added work.
 8 sounds plus one streamed OGG/WAV track at 60 fps, audio work measured on its own thread, five minutes
 without a dropout, and no `sceAudio` call in the frame loop. The SAS/ME alternative is deferred because
 route A has no failing budget; see [sprint 049 §9](../../sprints/049-phase9-close-and-decision.md#9-result).
+Reopen P9-S6 only when a named metric fails — a CPU-bound 3D scene where decode/mix is a measurable share
+of frame time, more simultaneous `Sound`s than the f32 mixer holds at 60 fps, or an ME/AVC workload — not
+because the phase page lists a route.
 
 **Gate-hash correction (P9-S4a).** The canonical `batch_check` gate is `b69830b8…` — the pspgu `b24`
 capture archived byte-identical from sprint 015 through sprint 041 and equal to the `par_pspgl` parity

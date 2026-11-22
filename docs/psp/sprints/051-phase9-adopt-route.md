@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S7 |
 | Branch / base commit | P9-S6 close sha (pin at start) |
-| Started / closed | — / — |
+| Started / closed | — / 2026-11-22 (`dropped` by P9-S5 T7) |
 | Build number(s) | `audio b7`; pspgu `b24` unchanged |
-| Tasks | 0/8 done |
+| Tasks | 0/8 done; sprint `dropped` |
 
 ## 0. Handover
 
@@ -15,6 +15,10 @@
 Engine mixer (route C). This sprint is **conditional**: it starts only if S6 authorized a route. If S6 says
 route A is sufficient, mark every task here `dropped`, write the decision into the memory map, and close
 Phase 9 — do not implement a route because the phase page lists it.
+
+**Dropped (2026-11-22).** S6 was dropped by P9-S5 T7 because route A met every budget, so there is no
+authorized route to adopt. The decision and the reopening triggers are in
+[sprint 049 §9/§10](049-phase9-close-and-decision.md#9-result).
 
 If S6 authorized route B, this sprint makes `sceSas` the implementation behind the existing raylib API. If
 S6 authorized route C, this sprint is the ME takeover gate and will almost certainly split into more than

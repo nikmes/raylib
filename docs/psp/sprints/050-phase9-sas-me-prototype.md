@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 9 — Audio](../phases/09-audio/index.md) |
 | Sprint | P9-S6 |
 | Branch / base commit | P9-S5 close sha (pin at start) |
-| Started / closed | — / — |
+| Started / closed | — / 2026-11-22 (`dropped` by P9-S5 T7) |
 | Build number(s) | `audio b6`; pspgu `b24` unchanged |
-| Tasks | 0/8 done |
+| Tasks | 0/8 done; sprint `dropped` |
 
 ## 0. Handover
 
@@ -19,6 +19,14 @@ numbers justify it.
 `sceSas` is attractive because the firmware mixer already runs outside the user thread and supports 32
 voices at 44.1 kHz. It is not free: it has its own voice model, a fixed 44.1 kHz rate, a grain size, and a
 firmware module boundary. This sprint measures that, rather than assuming the phase page's optimism.
+
+**Dropped (2026-11-22).** P9-S5 T7 found no failing budget: 60 fps with 8 sounds + 1 streamed track,
+0 dropouts in 18,000 frames, main-thread audio p95 0.028 ms, audio worker ≈0.009 ms/frame, 50 clean
+init/close cycles. Route A already runs mixing on the worker thread and decode on a feeder thread, so the
+most an ME/SAS route could recover is under ~1 ms/frame. This document stays as the measurement plan to
+reopen only when a named metric fails: a CPU-bound 3D scene where decode/mix is a measurable share of
+frame time, a need for more simultaneous `Sound`s than the f32 mixer holds at 60 fps, or an ME/AVC
+workload. Do not start it because the phase page lists it.
 
 **Read before acting**, in this order:
 

@@ -213,5 +213,10 @@ Two operational notes recorded for the next phase:
 
 - If T7 authorizes P9-S6, open it with the deficit in the handover; do not re-run the route-A baseline.
 - If route A is sufficient, mark P9-S6/S7 `dropped` with the numbers from §7 and close Phase 9.
+- **Reopen P9-S6 only with a measured deficit.** Route A leaves at most ~1 ms/frame on the table (main
+  thread 0.028 ms, worker 0.009 ms/frame, decoder a few percent of one core). Triggers: a CPU-bound 3D
+  scene where the decoder/mixer is a measurable share of frame time; a requirement for more simultaneous
+  `Sound`s than the f32 mixer holds at 60 fps; or an ME/AVC workload that makes a shared engine
+  attractive. A reopening proposal must name the metric that fails and the threshold it misses.
 - If the API matrix finds an unsupported function, name the phase that owns it (audio or another module);
   do not silently leave it out.
