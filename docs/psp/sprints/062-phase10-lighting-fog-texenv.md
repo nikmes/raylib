@@ -4,15 +4,15 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S3 |
-| Branch / base commit | `master` @ the commit that closes sprint 061 |
+| Branch / base commit | `master` @ `177cbe53` (sprint 061 closed) |
 | Started / closed | 2026-11-22 (written) / — |
-| Build number(s) | pspgu after the 060/061 format work plus this sprint's state mapping (content hash recorded); `libraylib.a` default `PSP_BATCH=1` |
+| Build number(s) | pspgu `b27` (060 = b25, 061 = b26); `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 0/6 done |
 
 ## 0. Handover
 
-**Situation.** Sprints 060 and 061 give us a mesh that draws, a camera-relative convention and a GE-native vertex
-layout. The engine still has no lighting at all: this fork's `src/` contains no `Light` type, no `CreateLight`, and
+**Situation.** Sprints 060 and 061 give us a mesh that draws, a GE-native vertex layout and a measured null for
+camera-relative rendering (pspgu composes view×model on the CPU). The engine still has no lighting at all: this fork's `src/` contains no `Light` type, no `CreateLight`, and
 no fog call — the shader examples define their own helpers, and the GL11 path emits only `glShadeModel`. This sprint
 introduces a PSP-only lighting/fog/texture-environment surface, maps it onto GE state in pspgu, and uses pspGL's
 fixed-function implementation as the mapping reference and pixel reference. Static lighting also gets a CPU bake,
@@ -21,21 +21,24 @@ because the blueprint's measured claim is that baked vertex colour is the cheape
 **Read before acting**, in this order:
 
 1. `../sprints/060-phase10-drawmesh-and-mesh-gate.md` and `../sprints/061-phase10-camera-relative-and-ge-native-models.md`
-   — the packing, the direct interleaved path, and whether its layout already has a colour slot. **This sprint needs
-   061 T3/T4 `done`; lighting adds a second vertex-colour path that must not break the first two.**
+   §9 — the packing, the direct interleaved path (normals f32 at +8), the driver gate, and the camera-relative null.
+   Both sprints are closed; their gates are the reference.
 2. `../phases/10-3d-advanced/index.md` §Guidelines from the renderer blueprint — lighting economics, baked vertex
    colour, `GU_TFX_MODULATE` + `GU_TCC_RGBA`, pass order; §What we already know.
 3. `tools/pspgu/gl_state.c:65-100` — `glEnable`/`glDisable`, which today ignores every cap it does not know;
-   `gl_texture.c:307-340` — `applyTexture` hardcodes `GU_TFX_MODULATE` + `GU_TCC_RGBA`; `gl_draw.c:422-480` —
-   the format bits and `convertVertex`.
+   `gl_texture.c:307-340` — `applyTexture` hardcodes `GU_TFX_MODULATE` + `GU_TCC_RGBA`; `gl_draw.c` — the format
+   bits, `vertexLayout`/`packVertex` and the direct-layout detector.
 4. `src/rmodels.c:1450-1495` — `DrawMesh` sets the material colour with `rlColor4ub`, enables `GL_COLOR_ARRAY` only
    when `mesh.colors != NULL`, and enables normals when the mesh has them.
 5. pspGL's reference mapping: `glLight.c:200`, `glMaterial.c:4`, `glLightModel.c:4`, `glFog.c:4`, `glTexEnv.c:11`.
-   Copy the mechanism, not the values; `glFog.c` has a known inverted-parameter workaround.
-6. libgu 6.60 manual: `sceGuLight` (§5770), `sceGuLightColor` (§5906), `sceGuLightSpot` (§6007),
+   Copy the mechanism, not the values; `glFog.c` has a known inverted-parameter workaround. pspGL is the A/B
+   reference and uses the float vertex path (061 gates packing to pspgu), so lit parity is comparable.
+6. 061's `UploadMesh` packer and pspgu's direct path (`fmt=0x163`, normals present): lighting consumes the same
+   buffer; do not bypass it to test lighting.
+7. libgu 6.60 manual: `sceGuLight` (§5770), `sceGuLightColor` (§5906), `sceGuLightSpot` (§6007),
    `sceGuLightAtt` (§6093), `sceGuLightMode` (§6169), `sceGuAmbient` (§6254), `sceGuModelColor` (§6541),
    `sceGuFog` (§8844) `[source scan: psp_sdk_660/.../libgu-Reference-English.htm]`.
-7. `../memory-map.md` §4 and §6 — VRAM and the measurement protocol; §9 — the traps.
+8. `../memory-map.md` §4 and §6 — VRAM and the measurement protocol; §9 — the traps.
 
 **First action.** Add `LIGHT=ge|bake|none`, `FOG=linear|none` and `TEXENV=modulate|replace|decal|add` arms to
 `scene_3d`, and capture the **pspGL** reference for a lit, a fogged and a texenv cube before touching pspgu. pspGL
@@ -43,6 +46,12 @@ already implements these GL calls; that capture is the comparison target for eve
 
 **Hard rules.**
 
+- **Bump the build tag to `b27` in T2.** A `b26` boot line means the lighting code is not in the archive.
+- **Light positions are world coordinates.** libgu takes the vector as given; GL would transform a position by
+  the current modelview at call time. pspgu deliberately takes it as world space, so set lights after
+  `BeginMode3D` with world coordinates and document the difference.
+- **Under lighting, `glColor*` maps to the model colour, not `sceGuColor`.** GE lighting ignores the vertex colour;
+  per-vertex colour arrays are documented as ignored while `GL_LIGHTING` is on.
 - **The 2D gate and the 060/061 3D gates are sacred.** The default texture environment stays MODULATE, and a frame
   with lighting and fog disabled must be byte-identical to the 061 build.
 - **No state leaks.** Lighting, fog and texenv are opt-in; `EndMode3D` restores what `BeginMode3D` changed. A 2D
@@ -119,8 +128,7 @@ more than four lights; shadow maps; render-to-texture (S4); performance work bey
 
 ## 4. Preconditions
 
-- [ ] 061 T3/T4 `done`: the direct interleaved path exists and its layout can carry a colour slot (or the sprint
-      adds it without changing the 2D path)
+- [x] 061 closed: packing/direct path on `b26`, 0-diff gates; the packed layout carries normals f32
 - [ ] pspGL `2ab7378e` available; its lit, fogged and texenv captures exist **before** pspgu work starts
 - [ ] `scene_3d` arms compile and are proven present in the binary
 - [ ] pspgu content hash recorded; `tools/pspgu-build.sh --check`
@@ -131,12 +139,48 @@ more than four lights; shadow maps; render-to-texture (S4); performance work bey
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Audit and surface: prove the engine emits no light/fog/texenv calls; add PSP-only `rlpsp*` wrappers in `rlgl.h` (lights, material, ambient, fog, texenv) that call GL, so both drivers accept them; add the scene arms | `todo` | boot log names each arm; pspGL captures exist for all three | — |
-| T2 | GE lighting in pspgu: caps `GL_LIGHTING`/`GL_LIGHT0..3`; `glLightfv` (position, ambient/diffuse/specular, attenuation, spot); `glLightModelfv` ambient; `glMaterialfv` and `glShadeModel`; four lights max, single-sided | `todo` | lit cube vs pspGL; light count/type table; per-frame cost at 1/10/100 draws | — |
-| T3 | Texture environment: `glTexEnvi`/`glTexEnvfv` for MODULATE, REPLACE, DECAL, ADD and the env colour; `GL_COMBINE*` rejected once; default MODULATE unchanged | `todo` | parity vs pspGL for each mode; 2D gate 0 diff | — |
-| T4 | Fog: `glFogf`/`glFogfv` for GL_LINEAR and `GL_FOG_COLOR`; calibrate `sceGuFog` against pspGL's gradient; GL_EXP/GL_EXP2 rejected once | `todo` | gradient edge within 1 px of pspGL; cost at 1/10/100 draws | — |
-| T5 | CPU bake: `rlpspBakeLighting(mesh, lights, ambient)` computes Lambert + ambient into `mesh.colors` once at load; compare with GE lighting under identical lights | `todo` | visual diff bounded; bake cost and per-frame saving measured | — |
-| T6 | Regression and write-back: lit/fogged/texenv parity, 2D gate, 061 cube gate, `basic_shapes` 284; feature/limits table on the Phase 10 page | `todo` | tables in §7; 0 diff 2D; 284 colours; unsupported list recorded | — |
+| T1 | Audit and surface: prove the engine emits no light/fog/texenv calls; add PSP-only `rlpsp*` wrappers in `rlgl.h` (lights, material/ambient, fog, texenv) that call GL; add `scene_3d` arms `LIGHT=ge|bake|none`, `FOG=linear|none`, `TEXENV=modulate|replace|decal|add` | `todo` | boot log names each arm; pspGL captures for all three | — |
+| T2 | GE lighting: `GL_LIGHTING`/`GL_LIGHT0..3`; `glLightfv` position/ambient/diffuse/specular, attenuation, spot; `glLightModelfv` ambient; `glMaterialfv` (ambient, diffuse, specular, emission, shininess → `sceGuSpecular`); `glShadeModel`; 4 lights, single-sided; bump `b27` | `todo` | lit cube vs pspGL; light count/type table; cost at 1/10/100 draws | — |
+| T3 | Texture environment: `glTexEnvi`/`glTexEnvfv` for MODULATE, REPLACE, DECAL, ADD and env colour; `GL_COMBINE*` rejected once; default MODULATE unchanged | `todo` | parity vs pspGL per mode; 2D gate 0 diff | — |
+| T4 | Fog: `glFogf`/`glFogfv` for GL_LINEAR and colour; **calibrate** `sceGuFog` against pspGL's gradient (its register mapping is inverted); EXP/EXP2 rejected once | `todo` | gradient edge within 1 px of pspGL; cost at 1/10/100 draws | — |
+| T5 | CPU bake: `rlpspBakeLighting(mesh, lights, ambient)` Lambert+ambient into `mesh.colors` once at load; **the packed layout must then carry a colour slot** (T5 extends it to tex8+colour4+normal12+pos6 = 30 → 32-B stride, or baked meshes stay on the float path and the cost is measured); compare with GE lighting | `todo` | visual diff bounded; bake and per-frame saving measured; no "writes colours, ignores them" case | — |
+| T6 | Regression and write-back: lit/fogged/texenv parity, 2D gate, 060/061 cube gates, `basic_shapes` 284; feature/limits table | `todo` | tables in §7; 0 diff 2D; 284 colours; unsupported list recorded | — |
+
+### Design notes (implementation-ready mapping)
+
+**Light state.** `glLightfv(GL_POSITION)` with `w == 0` → `SCEGU_LIGHT_DIRECTION`, `w != 0` → `SCEGU_LIGHT_POINT`
+(spot if a spot direction/cutoff was set); vector passed as world coordinates (see the hard rule).
+`GL_AMBIENT/DIFFUSE/SPECULAR` → `sceGuLightColor(n, comp, 0x00BBGGRR)`; `GL_CONSTANT/LINEAR/QUADRATIC_ATTENUATION`
+→ `sceGuLightAtt`; `GL_SPOT_DIRECTION/EXPONENT/CUTOFF` → `sceGuLightSpot`; `glLightModelfv(GL_LIGHT_MODEL_AMBIENT)`
+→ `sceGuAmbient`. Enable bits `GU_LIGHT0..GU_LIGHT3` per `GL_LIGHT0..3`, master `GU_LIGHTING`.
+
+**Material.** `GL_AMBIENT`, `GL_DIFFUSE`, `GL_SPECULAR`, `GL_EMISSION` → `sceGuModelColor` (emissive, ambient,
+diffuse, specular); `GL_AMBIENT_AND_DIFFUSE` sets both; `GL_SHININESS` → `sceGuSpecular(power)`;
+`GL_LIGHT_MODEL_COLOR_CONTROL(GL_SEPARATE_SPECULAR_COLOR)` → `sceGuLightMode(SCEGU_SEPARATE_SPECULAR_COLOR)`.
+`GL_LIGHT_MODEL_TWO_SIDE` and `glColorMaterial` have no GE equivalent: log once, keep single-sided, and let
+`glColor*` update the model diffuse. `GL_NORMALIZE` likewise: require unit normals and record the rejection.
+
+**Colour while lit.** `DrawMesh` calls `glColor4ub(material colour)` and has no colour array; with `GL_LIGHTING`
+on, pspgu updates the model **diffuse** from that colour instead of emitting `sceGuColor`. A per-vertex colour
+array is ignored by GE lighting; document it, do not emulate.
+
+**Texture environment.** Map `GL_MODULATE/REPLACE/DECAL/ADD` to `GU_TFX_*`; `GL_TEXTURE_ENV_COLOR` →
+`sceGuTexEnvColor`; keep `GU_TCC_RGBA` as the alpha source. `GL_COMBINE*` is rejected once and the last valid mode
+stays. The 2D path's default must remain MODULATE.
+
+**Fog.** `GL_LINEAR` only: `GL_FOG_START/END/COLOR` → `sceGuFog`. pspGL writes `1/(far-near)` and `far` to
+different registers than libgu's `sceGuFog(near, far, colour)` implies, so calibrate: capture a gradient at known
+start/end and adjust the argument order/scale until the edge matches. Do not copy pspGL's constants. EXP/EXP2:
+log once, keep fog off.
+
+**Normals and the packed path.** 061's GE-native buffer has normals f32 at +8 and the direct path is active on
+pspgu; lighting consumes the same buffer. pspGL takes the float fallback, so the A/B compares like geometry.
+
+**Baked colour and packing.** 061's packed layout has no colour field, so writing `mesh.colors` and drawing the
+packed path would silently ignore the bake — the same failure class as 060's missing colour slot. T5 must either
+extend the packer to tex8 + colour4 + normal12 + position-s16 6 = 30 → 32-B stride (pspgu already supports
+`GU_COLOR_8888` and direct detection), or skip packing for colour-bearing meshes and measure the float-path cost.
+Choose with the work table, not by assumption.
 
 Rules:
 
@@ -167,7 +211,7 @@ Protocol: device only; pspGL reference first, then pspgu; two identical captures
 |---|---|---|---|---|---|
 | reference | pspGL | `LIGHT=ge` | pixels | | pspGL fixed-function |
 | change | T2 | `LIGHT=ge` | differing pixels / max channel Δ | | |
-| change | T2 | lit cube, 1/10/100 draws | work (ms) | | |
+| change | T2 | `SCENE=tex INSTANCES=1/10/100` lit | work (ms) | | pspGL uses the float path |
 | reference | pspGL | `TEXENV=replace` | pixels | | |
 | change | T3 | each texenv mode | differing pixels | | MODULATE must stay 0 |
 | reference | pspGL | `FOG=linear` | gradient edge x | | |
