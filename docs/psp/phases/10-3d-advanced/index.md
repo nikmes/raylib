@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| State | **ready to plan** — dependencies 6 and 7 are done; two blockers found in the readiness review |
+| State | **closed** — renderer paths built and measured; two exit criteria not met and recorded (067) |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
-| Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait |
+| Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **not met**: 20 fps, one sync/frame (067) |
 
 ## What this phase is about
 
@@ -103,7 +103,8 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [ ] Index buffers where type and alignment allow — **deferred at close**: indices are copied per chunk; no VBO path
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
-- [ ] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency
+- [x] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency — 065:
+      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only
 - [x] Static bounds and GE-side object culling for scenes with many objects — 066: 917/1,000 culled,
       0 pixel change, 233.6 → 50 ms
 - [x] Tessellate large triangles on the CPU where the GE would drop them at the window edge — 066:
