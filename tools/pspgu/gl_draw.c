@@ -36,6 +36,7 @@ static PspGuArray arrVertex, arrTexCoord, arrColor, arrNormal;
 typedef struct {
     unsigned int stride;
     unsigned int offTex, offCol, offNrm, offVtx;
+    int vshort;                         // vertex field is signed 16-bit
 } PspGuLayout;
 
 // The converting path understands float texcoords/normals/positions and u8 colours.
@@ -44,7 +45,7 @@ typedef struct {
 static int arraysSupported(void)
 {
     static int logged = 0;
-    int ok = (arrVertex.type == GL_FLOAT);
+    int ok = (arrVertex.type == GL_FLOAT) || (arrVertex.type == GL_SHORT);
 
     if (pspgu.clientBits & PSPGU_CS_TEXCOORD) ok = ok && (arrTexCoord.type == GL_FLOAT);
     if (pspgu.clientBits & PSPGU_CS_NORMAL)   ok = ok && (arrNormal.type == GL_FLOAT);
@@ -70,8 +71,48 @@ static void vertexLayout(unsigned int fmt, PspGuLayout *l)
     l->offTex = off; if (fmt & GU_TEXTURE_BITS) off += 8;
     l->offCol = off; if (fmt & GU_COLOR_BITS)   off += 4;
     l->offNrm = off; if (fmt & GU_NORMAL_BITS)  off += 12;
-    l->offVtx = off; off += 12;
-    l->stride = off;
+    l->offVtx = off;
+    l->vshort = ((fmt & GU_VERTEX_BITS) == GU_VERTEX_16BIT);
+    off += l->vshort? 6 : 12;
+    l->stride = (off + 3) & ~3u;        // f32 fields in the next vertex must stay aligned
+}
+
+// Does the application already hold one GE-ordered interleaved buffer? Then pspgu can
+// hand the pointer to GU instead of packing. Every enabled array must share the stride and
+// sit at the layout offset from the same base, with the type the format implies.
+static int isDirectLayout(unsigned int fmt, const PspGuLayout *l)
+{
+    const unsigned char *base;
+
+    if (!(pspgu.clientBits & PSPGU_CS_VERTEX) || (arrVertex.ptr == NULL)) return 0;
+    if (!(fmt & GU_VERTEX_BITS)) return 0;
+    if (l->vshort != (arrVertex.type == GL_SHORT)) return 0;
+    if (arrVertex.stride != (int)l->stride) return 0;
+
+    base = arrVertex.ptr - l->offVtx;
+
+    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
+    {
+        if (arrTexCoord.ptr != (const void *)(base + l->offTex)) return 0;
+        if (arrTexCoord.stride != (int)l->stride) return 0;
+        if (arrTexCoord.type != GL_FLOAT) return 0;
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_COLOR)
+    {
+        if (arrColor.ptr != (const void *)(base + l->offCol)) return 0;
+        if (arrColor.stride != (int)l->stride) return 0;
+        if ((arrColor.type != GL_UNSIGNED_BYTE) || (arrColor.size != 4)) return 0;
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_NORMAL)
+    {
+        if (arrNormal.ptr != (const void *)(base + l->offNrm)) return 0;
+        if (arrNormal.stride != (int)l->stride) return 0;
+        if (arrNormal.type != GL_FLOAT) return 0;
+    }
+
+    return 1;
 }
 
 // One application vertex -> one GU vertex, only the fields the format advertises
@@ -112,9 +153,20 @@ static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)
     }
 
     {
-        const float *p = (const float *)(arrVertex.ptr + (arrVertex.stride? index*arrVertex.stride : 0));
-        float *o = (float *)(dst + l->offVtx);
-        o[0] = p[0]; o[1] = p[1]; o[2] = (arrVertex.size >= 3)? p[2] : 0.0f;
+        const unsigned char *base = arrVertex.ptr + (arrVertex.stride? (size_t)index*arrVertex.stride : 0);
+
+        if (l->vshort)
+        {
+            const short *p = (const short *)base;
+            short *o = (short *)(dst + l->offVtx);
+            o[0] = p[0]; o[1] = p[1]; o[2] = (arrVertex.size >= 3)? p[2] : 0;
+        }
+        else
+        {
+            const float *p = (const float *)base;
+            float *o = (float *)(dst + l->offVtx);
+            o[0] = p[0]; o[1] = p[1]; o[2] = (arrVertex.size >= 3)? p[2] : 0.0f;
+        }
     }
 }
 
@@ -506,7 +558,7 @@ static unsigned int guVertexFormat(void)
     if (pspgu.clientBits & PSPGU_CS_COLOR)    fmt |= GU_COLOR_8888;
     if (pspgu.clientBits & PSPGU_CS_NORMAL)   fmt |= GU_NORMAL_32BITF;
 
-    fmt |= GU_VERTEX_32BITF;
+    fmt |= (arrVertex.type == GL_SHORT)? GU_VERTEX_16BIT : GU_VERTEX_32BITF;
 
     return fmt;
 }
@@ -530,13 +582,13 @@ static int isBatchedLayout(void)
 void glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
 {
     arrVertex.ptr = ptr; arrVertex.size = size; arrVertex.type = type;
-    arrVertex.stride = stride? stride : size*(int)sizeof(float);
+    arrVertex.stride = stride? stride : size*((type == GL_SHORT)? 2 : (int)sizeof(float));
 }
 
 void glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
 {
     arrTexCoord.ptr = ptr; arrTexCoord.size = size; arrTexCoord.type = type;
-    arrTexCoord.stride = stride? stride : size*(int)sizeof(float);
+    arrTexCoord.stride = stride? stride : size*((type == GL_SHORT)? 2 : (int)sizeof(float));
 }
 
 void glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
@@ -548,7 +600,7 @@ void glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
 void glNormalPointer(GLenum type, GLsizei stride, const GLvoid *ptr)
 {
     arrNormal.ptr = ptr; arrNormal.size = 3; arrNormal.type = type;
-    arrNormal.stride = stride? stride : 3*(int)sizeof(float);
+    arrNormal.stride = stride? stride : 3*((type == GL_BYTE)? 1 : (int)sizeof(float));
 }
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count)
@@ -612,6 +664,22 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
     {
         int done = 0;
         int chunk = (int)((pspgu.arenaBytes > 64)? ((pspgu.arenaBytes - 64) / layout.stride) : 0);
+
+        if (isDirectLayout(fmt, &layout))
+        {
+            static int directLogged = 0;
+            const unsigned char *base = (const unsigned char *)arrVertex.ptr - layout.offVtx;
+
+            pspguBeginFrame();
+            applyGlobalColor(fmt);
+            sceGuDrawArray(prim, fmt, count, NULL, base + (size_t)first*layout.stride);
+            if (directLogged < 4)
+            {
+                pspguLog("draw direct=1 count=%d fmt=0x%x stride=%u", (int)count, fmt, layout.stride);
+                directLogged++;
+            }
+            return;
+        }
 
         if (chunk > PSPGU_MAX_CONVERT) chunk = PSPGU_MAX_CONVERT;
         if (chunk <= 0) return;
@@ -736,6 +804,35 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
             unsigned short *rebased = NULL;
 
             pspguBeginFrame();
+
+            if (isDirectLayout(fmt, &layout))
+            {
+                static int directLogged = 0;
+                unsigned short *rb = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
+                const unsigned char *base = (const unsigned char *)arrVertex.ptr - layout.offVtx;
+
+                if (rb == NULL)
+                {
+                    rb = (unsigned short *)arenaAllocHard((unsigned int)n*sizeof(unsigned short));
+                    if (rb == NULL) return;
+                }
+
+                for (int i = 0; i < n; i++) rb[i] = idx[done + i] - lo;
+                pspguWriteback(rb, (unsigned int)n*sizeof(unsigned short));
+                applyGlobalColor(fmt);
+                sceGuDrawArray(prim, drawFmt, n, rb,
+                               base + (size_t)lo*layout.stride);
+
+                if (directLogged < 4)
+                {
+                    pspguLog("drawElements direct=1 n=%d lo=%d fmt=0x%x stride=%u",
+                             n, lo, drawFmt, layout.stride);
+                    directLogged++;
+                }
+
+                done += n;
+                continue;
+            }
 
             if (((unsigned int)range*layout.stride + (unsigned int)n*2 + 64) <= budget)
             {

@@ -13,8 +13,24 @@ OBJS = main.o psp_counters.o
 
 SCENE ?= both
 FRAMES ?= 120
+FAR ?= 0
+CAMREL ?= 0
+JITTER ?= 0
+INSTANCES ?= 1
 
-CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_NAME="\"$(SCENE)\""
+ifeq ($(JITTER),1)
+    FRAMES := 16
+endif
+
+CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_NAME="\"$(SCENE)\"" \
+         -DFAR_VALUE=$(FAR) -DINSTANCES=$(INSTANCES)
+
+ifeq ($(JITTER),1)
+    CFLAGS += -DJITTER_ARM
+endif
+ifeq ($(CAMREL),1)
+    CFLAGS += -DCAMREL_ARM
+endif
 
 ifeq ($(SCENE),flat)
     CFLAGS += -DSCENE_FLAT

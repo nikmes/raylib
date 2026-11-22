@@ -55,6 +55,13 @@
 #include <string.h>         // Required for: strlen(), memcmp()
 #include <math.h>           // Required for: sinf(), cosf(), sqrtf(), fabsf()
 
+#if defined(GRAPHICS_API_OPENGL_11)
+    #include <GL/gl.h>      // Required for: gl*Pointer() in the packed-mesh path
+#endif
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    #include <pspkernel.h>  // Required for: sceKernelDcacheWritebackRange()
+#endif
+
 #if SUPPORT_FILEFORMAT_OBJ || SUPPORT_FILEFORMAT_MTL
     #define TINYOBJ_MALLOC RL_MALLOC
     #define TINYOBJ_CALLOC RL_CALLOC
@@ -1275,6 +1282,112 @@ BoundingBox GetModelBoundingBox(Model model)
 }
 
 // Upload vertex data into a VAO (if supported) and VBO
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+// One-time GE-native copy of a static mesh: texcoord f32, normal f32, position s16 about
+// the mesh centre, 28-byte stride. The model matrix restores centre and scale.
+typedef struct {
+    unsigned int *key;                  // mesh->vboId, unique per mesh and copied by value
+    unsigned char *verts;
+    unsigned int stride;
+    float cx, cy, cz;
+    float K;
+} PspGeMesh;
+
+#define PSP_GE_MAX 256
+static PspGeMesh pspGe[PSP_GE_MAX];
+static int pspGeCount = 0;
+
+static PspGeMesh *pspGeFind(unsigned int *key)
+{
+    if (key == NULL) return NULL;
+    for (int i = 0; i < pspGeCount; i++) if (pspGe[i].key == key) return &pspGe[i];
+    return NULL;
+}
+
+static void pspGeRemove(unsigned int *key)
+{
+    for (int i = 0; i < pspGeCount; i++)
+    {
+        if (pspGe[i].key != key) continue;
+        free(pspGe[i].verts);
+        pspGe[i] = pspGe[pspGeCount - 1];
+        pspGeCount--;
+        return;
+    }
+}
+
+// Packing is for the shipping driver only. pspGL does not render the same interleaved
+// GL_SHORT layout (it produced no pixels in the 061 A/B), and the reference build must keep
+// working from the same libraylib.a: ask the driver once and fall back to float arrays.
+static int pspGeAvailable(void)
+{
+    static int cached = -1;
+    if (cached < 0)
+    {
+        const char *vendor = (const char *)glGetString(GL_VENDOR);
+        if (vendor == NULL) return 0;   // before GL init: ask again later
+        cached = (strstr(vendor, "pspgu") != NULL);
+    }
+    return cached;
+}
+
+static void pspGePack(Mesh *mesh, bool dynamic)
+{
+    if (!pspGeAvailable()) return;
+    if (dynamic || (mesh->animVertices != NULL) || (mesh->animNormals != NULL)) return;
+    if ((mesh->vertices == NULL) || (mesh->texcoords == NULL) || (mesh->normals == NULL)) return;
+    if ((mesh->vertexCount <= 0) || (mesh->vboId == NULL)) return;
+    if ((pspGeCount >= PSP_GE_MAX) || (pspGeFind(mesh->vboId) != NULL)) return;
+
+    float minx = mesh->vertices[0], maxx = minx;
+    float miny = mesh->vertices[1], maxy = miny;
+    float minz = mesh->vertices[2], maxz = minz;
+    for (int i = 1; i < mesh->vertexCount; i++)
+    {
+        float x = mesh->vertices[i*3 + 0], y = mesh->vertices[i*3 + 1], z = mesh->vertices[i*3 + 2];
+        if (x < minx) minx = x; if (x > maxx) maxx = x;
+        if (y < miny) miny = y; if (y > maxy) maxy = y;
+        if (z < minz) minz = z; if (z > maxz) maxz = z;
+    }
+
+    float cx = (minx + maxx)*0.5f, cy = (miny + maxy)*0.5f, cz = (minz + maxz)*0.5f;
+    float hx = (maxx - minx)*0.5f, hy = (maxy - miny)*0.5f, hz = (maxz - minz)*0.5f;
+    float half = hx; if (hy > half) half = hy; if (hz > half) half = hz;
+    if (half <= 0.0f) return;
+
+    float K = 32767.0f/half;
+    unsigned int stride = 28;
+    unsigned char *verts = (unsigned char *)calloc((size_t)mesh->vertexCount, stride);
+    if (verts == NULL) return;
+
+    for (int i = 0; i < mesh->vertexCount; i++)
+    {
+        unsigned char *o = verts + (size_t)i*stride;
+        float *uv = (float *)(o + 0);
+        float *n  = (float *)(o + 8);
+        short *p  = (short *)(o + 20);
+
+        uv[0] = mesh->texcoords[i*2 + 0];
+        uv[1] = mesh->texcoords[i*2 + 1];
+        n[0] = mesh->normals[i*3 + 0];
+        n[1] = mesh->normals[i*3 + 1];
+        n[2] = mesh->normals[i*3 + 2];
+        p[0] = (short)lrintf((mesh->vertices[i*3 + 0] - cx)*K);
+        p[1] = (short)lrintf((mesh->vertices[i*3 + 1] - cy)*K);
+        p[2] = (short)lrintf((mesh->vertices[i*3 + 2] - cz)*K);
+    }
+
+    sceKernelDcacheWritebackRange(verts, (unsigned int)mesh->vertexCount*stride);
+
+    pspGe[pspGeCount].key = mesh->vboId;
+    pspGe[pspGeCount].verts = verts;
+    pspGe[pspGeCount].stride = stride;
+    pspGe[pspGeCount].cx = cx; pspGe[pspGeCount].cy = cy; pspGe[pspGeCount].cz = cz;
+    pspGe[pspGeCount].K = K;
+    pspGeCount++;
+}
+#endif
+
 void UploadMesh(Mesh *mesh, bool dynamic)
 {
     if (mesh->vaoId > 0)
@@ -1438,6 +1551,10 @@ void UploadMesh(Mesh *mesh, bool dynamic)
 
     rlDisableVertexArray();
 #endif
+
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    pspGePack(mesh, dynamic);
+#endif
 }
 
 // Update mesh vertex data in GPU for a specific buffer index
@@ -1457,23 +1574,61 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
-    if (mesh.animVertices != NULL) rlEnableStatePointer(GL_VERTEX_ARRAY, mesh.animVertices);
-    else rlEnableStatePointer(GL_VERTEX_ARRAY, mesh.vertices);
+#if defined(PLATFORM_PSP)
+    PspGeMesh *pg = pspGeFind(mesh.vboId);
+#else
+    void *pg = NULL;
+#endif
 
-    if (mesh.texcoords) rlEnableStatePointer(GL_TEXTURE_COORD_ARRAY, mesh.texcoords);
+    if (pg == NULL)
+    {
+        if (mesh.animVertices != NULL) rlEnableStatePointer(GL_VERTEX_ARRAY, mesh.animVertices);
+        else rlEnableStatePointer(GL_VERTEX_ARRAY, mesh.vertices);
 
-    if (mesh.animNormals != NULL) rlEnableStatePointer(GL_NORMAL_ARRAY, mesh.animNormals);
-    else if (mesh.normals != NULL) rlEnableStatePointer(GL_NORMAL_ARRAY, mesh.normals);
+        if (mesh.texcoords) rlEnableStatePointer(GL_TEXTURE_COORD_ARRAY, mesh.texcoords);
 
-    if (mesh.colors != NULL) rlEnableStatePointer(GL_COLOR_ARRAY, mesh.colors);
+        if (mesh.animNormals != NULL) rlEnableStatePointer(GL_NORMAL_ARRAY, mesh.animNormals);
+        else if (mesh.normals != NULL) rlEnableStatePointer(GL_NORMAL_ARRAY, mesh.normals);
+
+        if (mesh.colors != NULL) rlEnableStatePointer(GL_COLOR_ARRAY, mesh.colors);
+    }
 
     rlPushMatrix();
+#if defined(PLATFORM_PSP)
+        if (pg != NULL)
+        {
+            float sc = 32768.0f/pg->K;
+            // Row-vector composition: quantised position is scaled, moved to the mesh
+            // centre, then transformed by the caller's model matrix.
+            Matrix drawMat = MatrixMultiply(MatrixMultiply(MatrixScale(sc, sc, sc),
+                                             MatrixTranslate(pg->cx, pg->cy, pg->cz)),
+                                            transform);
+            rlMultMatrixf(MatrixToFloat(drawMat));
+        }
+        else
+#endif
         rlMultMatrixf(MatrixToFloat(transform));
+
         rlColor4ub(material.maps[MATERIAL_MAP_DIFFUSE].color.r,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.g,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.b,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.a);
 
+#if defined(PLATFORM_PSP)
+        if (pg != NULL)
+        {
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glVertexPointer(3, GL_SHORT, (GLsizei)pg->stride, pg->verts + 20);
+            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+            glTexCoordPointer(2, GL_FLOAT, (GLsizei)pg->stride, pg->verts + 0);
+            glEnableClientState(GL_NORMAL_ARRAY);
+            glNormalPointer(GL_FLOAT, (GLsizei)pg->stride, pg->verts + 8);
+
+            if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
+            else rlDrawVertexArray(0, mesh.vertexCount);
+        }
+        else
+#endif
         if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
         else rlDrawVertexArray(0, mesh.vertexCount);
     rlPopMatrix();
@@ -1945,6 +2100,9 @@ void UnloadMesh(Mesh mesh)
     // Unload rlgl mesh vboId data
     rlUnloadVertexArray(mesh.vaoId);
 
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    pspGeRemove(mesh.vboId);
+#endif
     if (mesh.vboId != NULL) for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) rlUnloadVertexBuffer(mesh.vboId[i]);
     RL_FREE(mesh.vboId);
 

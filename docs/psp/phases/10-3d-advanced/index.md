@@ -98,7 +98,8 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 
 - [x] **Carried from phase 5, first:** make `glDrawElements`/`DrawMesh` produce pixels — the converting path and
       index rebasing in `tools/pspgu/gl_draw.c`; verified 0 diff vs pspGL, bbox x 193..286, y 92..188 (060)
-- [ ] Convert model vertex data **once**, offline or at load, into GE-native formats; no per-frame conversion
+- [x] Convert model vertex data **once**, offline or at load, into GE-native formats; no per-frame conversion
+      — 061: s16 about the centre, 28-B stride, `direct=1 converted=0` on static meshes
 - [ ] Index buffers where type and alignment allow; verify alignment costs are not paid at draw time
 - [ ] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
 - [ ] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency
@@ -153,6 +154,11 @@ must be set for indexed draws, and a format without a colour field takes its col
 | tex, vertex | `0x183` | 20 B |
 | colour, vertex | `0x19c` | 16 B |
 | vertex only | `0x180` | 12 B |
+| GE-native (061): tex f32, normal f32, position s16 | `0x163` | 26 B fields, 28 B stride |
+
+The GE-native row is packed once in `UploadMesh` and handed straight to GU by pspgu (`direct=1`); the table's other
+rows are the converting path. Packing is gated to the pspgu driver: pspGL does not render the interleaved `GL_SHORT`
+layout and stays on the float path.
 
 
 **Depth, clipping, passes:**
@@ -266,7 +272,7 @@ follow from the sources:
 | Sprint | Focus | Status |
 |---|---|---|
 | [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | **done** — 0 diff vs pspGL; b25 |
-| [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | rotation-only view + camera offset, one-time s16 packing, direct interleaved path | written |
+| [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | one-time s16 packing, direct interleaved path; camera-relative measured null | **done** — 0 diff, `direct=1`; T2 dropped |
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, CPU bake, explicit limits | written |
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | written |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | measured 4096 boundary, CPU clip + re-tessellation, conservative object culling, conditional ME shadow run | written |

@@ -20,6 +20,7 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include <GL/gl.h>
 #include "psp_counters.h"
 
 PSP_MODULE_INFO("scene_3d", 0, 1, 1);
@@ -30,6 +31,15 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #endif
 #ifndef SCENE_NAME
 #define SCENE_NAME "both"
+#endif
+#ifndef FAR_VALUE
+#define FAR_VALUE 0.0f
+#endif
+#ifndef INSTANCES
+#define INSTANCES 1
+#endif
+#ifdef JITTER_ARM
+#define JITTER_FRAMES 16
 #endif
 
 static int cmpFloat(const void *a, const void *b)
@@ -79,14 +89,27 @@ static Mesh makeGrid(void)
 }
 #endif
 
+#ifdef JITTER_ARM
+// Diagnostic: read one RGBA row of the current frame and return the left edge of the
+// white cube. glReadPixels finishes and waits by design; this arm is excluded from timing.
+static int cubeLeftEdge(int y)
+{
+    unsigned char row[480*4];
+    glReadPixels(0, y, 480, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
+    for (int x = 0; x < 480; x++)
+        if (row[x*4] > 128) return x;
+    return -1;
+}
+#endif
+
 int main(void)
 {
     InitWindow(480, 272, "scene_3d");
     SetTargetFPS(0);
 
     Camera cam = { 0 };
-    cam.position = (Vector3){ 0.0f, 1.0f, 4.0f };
-    cam.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+    cam.position = (Vector3){ FAR_VALUE, 1.0f, 4.0f };
+    cam.target = (Vector3){ FAR_VALUE, 0.0f, 0.0f };
     cam.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     cam.fovy = 45.0f;
     cam.projection = CAMERA_PERSPECTIVE;
@@ -107,16 +130,65 @@ int main(void)
 
 #if defined(SCENE_GRID)
     Mesh grid = makeGrid();
+    UploadMesh(&grid, false);          // one-time GE-native pack; exercises the direct path
     Material gridMat = LoadMaterialDefault();
 #endif
 
-    Matrix flatXform = MatrixTranslate(-1.2f, 0.0f, 0.0f);
-    Matrix texXform  = MatrixTranslate( 1.2f, 0.0f, 0.0f);
-    Matrix idXform   = MatrixIdentity();
+    Matrix flatXform = MatrixTranslate(FAR_VALUE - 1.2f, 0.0f, 0.0f);
+    Matrix texXform  = MatrixTranslate(FAR_VALUE + 1.2f, 0.0f, 0.0f);
+    Matrix idXform   = MatrixTranslate(FAR_VALUE, 0.0f, 0.0f);
 
     float *frameTimes = (float *)malloc((size_t)SCENE_FRAMES*sizeof(float));
     double sum = 0.0;
 
+#ifdef JITTER_ARM
+    int edges[JITTER_FRAMES];
+    for (int frame = 0; frame < JITTER_FRAMES; frame++)
+    {
+        // Camera and cube travel together; the orbit step is constant, so any irregularity
+        // in the measured edge is quantisation, not the intended motion.
+        cam.position.x = FAR_VALUE + ((float)frame - 7.5f)*0.1f;
+        cam.target.x   = FAR_VALUE + ((float)frame - 7.5f)*0.1f;
+
+        BeginDrawing();
+            ClearBackground(BLACK);
+            BeginMode3D(cam);
+                DrawMesh(cube, flatMat, flatXform);
+            EndMode3D();
+        EndDrawing();
+        // After the swap, the last submitted frame is readable without a mid-frame finish.
+        edges[frame] = cubeLeftEdge(136);
+
+        TraceLog(LOG_INFO, "JITTER frame=%d edge=%d", frame, edges[frame]);
+    }
+    int lo = 480, hi = -1;
+    for (int i = 0; i < JITTER_FRAMES; i++)
+    {
+        if (edges[i] < 0) continue;
+        if (edges[i] < lo) lo = edges[i];
+        if (edges[i] > hi) hi = edges[i];
+    }
+    // mean step and worst deviation from it
+    double stepSum = 0.0; int stepN = 0;
+    for (int i = 1; i < JITTER_FRAMES; i++)
+    {
+        if ((edges[i] >= 0) && (edges[i-1] >= 0)) { stepSum += edges[i] - edges[i-1]; stepN++; }
+    }
+    double stepMean = (stepN > 0)? stepSum/stepN : 0.0;
+    double worstDev = 0.0;
+    for (int i = 1; i < JITTER_FRAMES; i++)
+    {
+        if ((edges[i] >= 0) && (edges[i-1] >= 0))
+        {
+            double d = (edges[i] - edges[i-1]) - stepMean;
+            if (d < 0) d = -d;
+            if (d > worstDev) worstDev = d;
+        }
+    }
+    TraceLog(LOG_INFO, "JITTER_RESULT far=%d min=%d max=%d span=%d step=%.3f worst=%.3f",
+             (int)FAR_VALUE, lo, hi, hi - lo, stepMean, worstDev);
+#else
+    int drawn = 0;
     for (int frame = 0; frame < SCENE_FRAMES; frame++)
     {
         BeginDrawing();
@@ -129,7 +201,18 @@ int main(void)
                 DrawMesh(cube, flatMat, flatXform);
   #endif
   #if defined(SCENE_TEX) || defined(SCENE_BOTH)
-                DrawMesh(cube, texMat, texXform);
+                if (INSTANCES == 1) DrawMesh(cube, texMat, texXform);
+                else
+                {
+                    for (int i = 0; i < INSTANCES; i++)
+                    {
+                        int rows = (INSTANCES + 9)/10;
+                        float ox = ((float)(i % 10) - 4.5f)*0.8f;
+                        float oy = ((float)(i / 10) - (float)(rows - 1)*0.5f)*0.8f;
+                        DrawMesh(cube, texMat, MatrixTranslate(FAR_VALUE + ox, oy, 0.0f));
+                    }
+                }
+                drawn += INSTANCES;
   #endif
 #endif
             EndMode3D();
@@ -137,6 +220,7 @@ int main(void)
 
         frameTimes[frame] = (float)GetFrameTime();
         sum += frameTimes[frame];
+        (void)drawn;
 
         if (((frame + 1) % 60) == 0)
         {
@@ -144,6 +228,7 @@ int main(void)
             PspCountersDump("frame", frame + 1);
         }
     }
+#endif
 
     qsort(frameTimes, SCENE_FRAMES, sizeof(float), cmpFloat);
 

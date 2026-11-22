@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S2 |
 | Branch / base commit | `master` @ `acd92374` (sprint 060 closed at `5e5a4d7b`) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b26` (060 shipped `b25`; T3/T4 change driver behaviour, so bump and show it in the boot line); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/5 done |
+| Tasks | 5/5 done — T2 and the s16-UV experiment `dropped` with reasons |
 
 ## 0. Handover
 
@@ -146,51 +146,32 @@ converting path; any change to model file formats or assets.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Quantify the float24 trap: `FAR=0,300,1000,3000 CAMREL=0`; camera and cube both offset; 16-frame 0.1-unit orbit; per-frame left-edge x via a diagnostic `glReadPixels`. **If the control jitter is ≤1 px, record the null and mark T2 `dropped`** | `todo` | four jitter rows; decision recorded before T2 | — |
-| T2 | Camera-relative (conditional on T1): zero `matView.m12..m14` in `BeginMode3D`, publish the camera origin, subtract it from `DrawMesh`'s transform fields and from `rlPspPushVertex` / the non-batch `rlVertex3f`; clear on `EndMode3D` | `todo` | offset 0: 0 diff vs the 060 gate; offset 3000: jitter ≤1 px; 2D captures unchanged | — |
-| T3 | GE-native positions: pack s16 about the mesh centre in `UploadMesh` (skip `dynamic`/skinned), exact `K` and matrix order; pspgu converts `GL_SHORT` positions as `GU_VERTEX_16BIT`; bump `PSPGU_BUILD` to `b26` | `todo` | cube parity 0 at both offsets; 26-B fields / 28-B stride; trace shows the s16 format; `converted=0` | — |
-| T4 | Direct interleaved path: one buffer in GU order, same stride/offsets; `DrawMesh` PSP branch binds it; pspgu recognises the layout and hands it to `sceGuDrawArray` without a copy; `direct`/`converted` log | `todo` | `scene_3d` logs `direct=1 converted=0`; textured cube parity 0; CPU work drops | — |
-| T5 | Textured-model measurement and write-back: `INSTANCES=1,10,100` textured cubes; s16 UV experiment adopted only on 0-diff parity; 2D gate, 060 cube gate, `basic_shapes` 284; byte table | `todo` | work table; 2D 0 diff; 284 colours; table matches measured strides | — |
+| T1 | Measure the float24 trap at `FAR=0,300,1000,3000 CAMREL=0` | `done` | four jitter rows; decision before T2 | edge sequence identical at every offset → **null** |
+| T2 | Camera-relative convention | `dropped` | — | T1 is a null: pspgu composes view×model on the CPU, so the GE never sees the large separate translation. No no-op was implemented |
+| T3 | GE-native positions: pack s16 about the mesh centre in `UploadMesh`, exact `K`, `S·T(centre)·transform`; pspgu reads `GL_SHORT` as `GU_VERTEX_16BIT`; `b26` | `done` | cube parity 0; 26-B fields / 28-B stride; trace shows s16; `converted=0` | `fmt=0x163 draw=0x1163 stride=28`; 0 diff near **and** FAR=3000 |
+| T4 | Direct interleaved path, no copy; `direct`/`converted` log | `done` | `direct=1 converted=0`; textured parity 0; large draw direct | `drawElements direct=1 n=36` and `n=2046`; textured/both 0 diff |
+| T5 | Textured-model measurement, s16 UV experiment, gates and table | `done` | work table; 2D 0; 284 colours; UV decision recorded | 0.556/1.032/5.696 ms at 1/10/100; UV kept f32 (dropped) |
 
-### Design notes for T3/T4 (implementation detail)
+### Design notes (as shipped)
 
-**Quantisation.** `halfExtent = max(|v - centre|)` over the mesh bbox; `K = (halfExtent > 0)? 32767.0f/halfExtent : 1.0f`;
-`s = (short)lrintf((v - centre) * K)`. The GE applies `s/32768`, so the model matrix is
-`transform * T(centre) * S(32768/K)`, composed with the matrix constructors. `S(32768/K)` must be a single uniform
-scale on xyz; the position field is signed 16-bit.
+**Driver gate.** Packing runs only when `glGetString(GL_VENDOR)` contains `pspgu`. pspGL rendered **zero pixels**
+from the interleaved `GL_SHORT` layout in the A/B, and the same `libraylib.a` must keep the reference build working;
+pspGL falls back to the 060 float path and matches it exactly. The check is one-time and not cached before GL init.
 
-**Layout (28-B stride).** texcoord f32 at +0 (8), normal f32 at +8 (12), position s16 at +20 (6), pad +26..27.
-The fields sum to 26; the stride rounds to 28 so the next vertex's f32 starts 4-byte aligned. If s16 UVs are adopted
-in T5: texcoord s16 at +0 (4), normal f32 at +4 (12), position s16 at +16 (6), pad to 24.
+**Quantisation and matrix.** `half = max` half-extent; `K = 32767/half`; `s = lrintf((v - centre)*K)`;
+`S = 32768/K`. Raymath composes **row-vector** (`A·B` applies A then B), so the model matrix is
+`S · T(centre) · transform` — using `transform · T · S` scales the translation and shrinks the world, which the
+first run did and the gate caught. Stride is 28: tex f32 +0, normal f32 +8, position s16 +20, pad +26.
 
-**Storage.** `UploadMesh` computes the bbox in one pass, then allocates a
-`PspGeMesh { unsigned char *verts; unsigned int stride; Vector3 centre; float scale; }` in main RAM, keyed by the
-`mesh.vboId` allocation. `UnloadMesh` frees it before `RL_FREE(mesh.vboId)`. Skip when
-`dynamic` or `animVertices`/`animNormals` is non-NULL. Meshes are static after upload; `UpdateMeshBuffer` logs once
-for a packed mesh.
+**Storage and draw.** `UploadMesh` allocates a `PspGeMesh` keyed by `mesh->vboId`, writes back the D-cache once;
+`UnloadMesh` frees it. `DrawMesh` binds the three pointers into one buffer and calls `glDrawElements`; pspgu detects
+the layout (same stride, pointers at the layout offsets) and hands the base to `sceGuDrawArray`, copying only the
+index chunk. Meshes without texcoords/normals, dynamic and skinned meshes stay on the float path.
+`UpdateMeshBuffer` on a packed mesh is not supported and remains a follow-up (no scene uses it).
 
-**Format from array types.** `guVertexFormat()` currently derives bits from enabled arrays only. T3 makes it inspect
-types too: `GL_FLOAT` → `GU_TEXTURE/NORMAL/VERTEX_32BITF`, `GL_SHORT` → `GU_VERTEX_16BIT`, `GL_UNSIGNED_BYTE` →
-`GU_COLOR_8888`; any other combination is rejected once. The default stride in `glVertexPointer`/`glTexCoordPointer`
-must use the type's element size, not `sizeof(float)` (a `GL_SHORT` 3-component array defaults to 6, not 12).
-
-**Draw and detection.** `DrawMesh`'s PSP branch looks up the record and sets the client pointers into the one buffer
-with the record's stride; without a record it uses the existing separate-array path. pspgu accepts the direct path
-only when every enabled array shares `stride` and `ptr - base` equals the layout offsets for the derived format;
-otherwise it packs. Index buffers are still copied per chunk — the zero-conversion counter is about vertices.
-
-**Camera-relative order.** If T2 runs, subtract the camera origin from the composed model matrix's `m12..m14` fields
-after `transform * T(centre) * S(scale)` and before `rlMultMatrixf`; the immediate paths subtract from the vertex
-before it enters the 24-B batcher (or `glVertex3f` in a `PSP_BATCH=0` build). The origin is set in `BeginMode3D` and
-cleared in `EndMode3D`, so 2D calls see zero.
-
-**Readback placement.** The T1 diagnostic calls `glReadPixels` on the current frame **before** `EndDrawing`, with an
-explicit sync; reading after the swap reads the next buffer and the wrong frame. It is excluded from every timing
-row.
-
-**Counters.** pspgu logs `drawElements direct=1` for a handed-through buffer and `converted=<n>` when it packs.
-`scene_3d` asserts `direct=1 converted=0` for static meshes. Bump the boot tag to `b26`; a `b25` line invalidates the
-run.
+**UV decision.** s16 texture coordinates were not adopted: f32 UVs already fit the 28-B stride, the GE's 16-bit
+coordinates are unsigned with wrap semantics that need their own gate, and no measured scene is texture-bandwidth
+bound. Kept f32; revisit if a scene shows it.
 
 Rules:
 
@@ -218,30 +199,55 @@ Protocol: device only; control → change → control again; two identical captu
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| control | 060 build | `FAR=0` | pixels vs 060 gate | | must be 0 |
-| control | 060 build | `FAR=0/300/1000/3000 CAMREL=0` | edge jitter (px/16 frames) | | diagnostic wait; decide T2 here |
-| change | T2 | `FAR=3000 CAMREL=1` | edge jitter (px/16 frames) | | target ≤1 |
-| change | T3 | cube, both offsets | pixels vs 060 gate | | target 0 |
-| change | T3 | one cube | fields/stride (B) | | 26 / 28 |
-| change | T4 | `scene_3d` mesh draws | `direct` / `converted` | | target 1/0 |
-| change | T5 | textured cube 1/10/100 draws | work (ms) / p95 | | no target; baseline |
+| control | b25 | `FAR=0/300/1000/3000 CAMREL=0` | edge sequence | identical at all four | null; diagnostic `glReadPixels` |
+| change | b26 | cube near / FAR=3000 | diff vs 060 gate | **0 / 0** | pspGL FAR=3000 also 0 diff |
+| change | b26 | one cube | fmt / stride | `0x163` (draw `0x1163`) / 28 B | direct=1 |
+| change | b26 | `SCENE=grid` | diff vs 060 | 37 px | one-row top-edge shift, `y 87..94`, max Δ252: s16 quantisation |
+| change | b26 | `SCENE=both` | capture identity | two captures identical | direct=1, 19,608 px |
+| change | b26 | `SCENE=tex` 1/10/100 | work (ms) | **0.556 / 1.032 / 5.696** | 120 frames, median 16.683 |
+| gate | b26 | `batch_check` 2D | diff | **0** | |
+| gate | b26 | `basic_shapes` | colours | **284** | |
+| gate | b26 | pspGL near/far | diff vs 060 | **0 / 0** | float fallback after driver gate |
 
 ## 8. Exit criteria
 
-- [ ] §1 met: four jitter rows (or the recorded null and `dropped` T2) and the conversion counters in §7
-- [ ] if T2 ran: camera-relative is byte-identical at offset 0 and jitter ≤1 px at 3000; if dropped: the null is recorded with its four rows
-- [ ] no per-frame vertex conversion for static meshes; dynamic/skinned meshes documented as remaining on the slow path
-- [ ] pspgu accepts `GL_SHORT` positions and a same-stride interleaved layout without copying
-- [ ] vertex table updated with 26/28 (and 22/24 if s16 UV is adopted); boot line `b26`
-- [ ] 2D gate 0 diff; `basic_shapes` 284 colours; no full GE wait in any measured scene
+- [x] §1 met: the four jitter rows are identical and the null is recorded; T2 `dropped`
+- [x] if T2 dropped: the null is recorded with its rows (no camera-relative code shipped)
+- [x] no per-frame vertex conversion for static pspgu meshes; dynamic/skinned meshes stay on the float path
+- [x] pspgu accepts `GL_SHORT` positions and the same-stride interleaved layout without copying
+- [x] vertex table updated with 26/28; boot line `b26`
+- [x] 2D gate 0 diff; `basic_shapes` 284; no full GE wait in measured scenes
+- [x] pspGL reference build still renders and matches 060 (driver gate), same `libraylib.a`
 
 ## 9. Result
 
-—
+Sprint 061 closed 5/5 with two documented drops. The useful half shipped; the suspected half did not exist.
+
+- **T1 is a null.** The edge sequence is identical frame-for-frame at `FAR=0,300,1000,3000`. pspgu composes
+  view×model on the CPU and sends one `GU_MODEL` matrix, so the blueprint's separate large translation never reaches
+  the GE. T2 was `dropped` rather than implemented as a no-op.
+- **GE-native packing works on pspgu.** `UploadMesh` packs texcoord f32, normal f32 and s16 positions about the
+  centre into a 28-B stride; `DrawMesh` binds it and pspgu passes the base to `sceGuDrawArray` (`direct=1`,
+  `converted=0`). Near and FAR=3000 cubes are 0 diff from the 060 gate; textured cubes are 0 diff. Work at
+  1/10/100 cubes is 0.556/1.032/5.696 ms.
+- **The first matrix order was wrong.** `transform · T · S` scaled the translation (cubes shrank toward the centre).
+  Raymath is row-vector, so `S · T(centre) · transform` is correct. The gate caught it; this is the second
+  matrix-convention bug in phase 10.
+- **Driver gate.** pspGL renders **no pixels** from the interleaved `GL_SHORT` layout. Packing now checks
+  `GL_VENDOR` once and only runs on pspgu; pspGL falls back to the float path and matches 060 exactly (near and
+  FAR=3000). Without this the A/B build would have regressed.
+- **Grid quantisation.** The packed grid differs from the 060 f32 grid by 37 pixels in a one-row top-edge band
+  (`y 87..94`, max Δ252) — sub-pixel s16 rounding, not a topology error. The cube gates remain exact.
+- **s16 UVs `dropped`:** f32 UVs fit the stride, and unsigned 16-bit wrap semantics need their own gate; no scene is
+  bandwidth-bound.
 
 ## 10. Follow-ups
 
-- s8 normals and their lighting error → **P10-S3** (adopt only after a lit capture)
-- Skinned/morph meshes on the GE-native path → after S3, when the skinning policy is chosen
-- s16 texture coordinates: adopt only on 0-diff parity; record the failure and keep f32 otherwise
-- Model culling with camera-relative bounds → **P10-S5**
+- `UpdateMeshBuffer` on a packed mesh is unsupported; rebuild or re-upload. No current scene does it.
+- pspGL cannot consume the packed `GL_SHORT` layout; the vendor gate keeps it on the float path. Do not remove the
+  gate without a pspGL fix.
+- s16 UVs, if a scene becomes texture-bandwidth bound: unsigned 16-bit wrap semantics need a dedicated 0-diff gate.
+- s8 normals and their lighting error → **P10-S3**.
+- Skinned/morph meshes remain on the float path; GE skinning is a later decision.
+- Camera-relative may return if a future scene sends model and view to the GE separately; today it does not.
+

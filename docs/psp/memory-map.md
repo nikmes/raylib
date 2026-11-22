@@ -548,6 +548,12 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 - **A format without a colour field uses `sceGuColor`.** Emit the current `glColor*` before the draw; the register
   keeps GU's reset value (transparent black) otherwise, and a correctly packed mesh draws nothing
   `[measured: sprint 060]`.
+- **GE-native packs must be driver-gated.** pspGL rendered zero pixels from the interleaved `GL_SHORT` layout
+  (stride 28, three aliased arrays). Detect `GL_VENDOR` once and fall back to float arrays on anything that is not
+  pspgu; one `libraylib.a` must serve both `[measured: sprint 061 A/B]`.
+- **Raymath composes row-vector.** `MatrixMultiply(A,B)` applies A then B, so a quantised mesh is
+  `S · T(centre) · transform`, not `transform · T · S`; the wrong order scales the translation
+  `[measured: sprint 061, cubes shrank toward the centre]`.
 - **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
   `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
   all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.
