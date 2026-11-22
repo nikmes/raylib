@@ -123,6 +123,7 @@ nav:
               - P10-S2 — Camera-relative and GE-native models: psp/sprints/061-phase10-camera-relative-and-ge-native-models.md
               - P10-S3 — Lighting, fog and texenv: psp/sprints/062-phase10-lighting-fog-texenv.md
               - P10-S4 — Render-to-texture: psp/sprints/065-phase10-render-to-texture.md
+              - P10-S5 — Culling and guard-band: psp/sprints/066-phase10-culling-and-guard-band.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
