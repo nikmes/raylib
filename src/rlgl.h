@@ -946,6 +946,7 @@ RLAPI void rlpspMaterial(unsigned int ambient, unsigned int diffuse, unsigned in
 RLAPI void rlpspEnableFog(int enable);
 RLAPI void rlpspFog(float start, float end, unsigned int color);
 RLAPI void rlpspTexEnv(int mode, unsigned int color);   // GL_MODULATE/REPLACE/DECAL/ADD/BLEND
+RLAPI void rlpspEnableCulling(int enable);              // object frustum culling in DrawMesh
 #endif
 RLAPI void rlEnableScissorTest(void);                   // Enable scissor test
 RLAPI void rlDisableScissorTest(void);                  // Disable scissor test

@@ -185,6 +185,251 @@ static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)
     }
 }
 
+//------------------------------------------------------------------------------------
+// Sprint 066: CPU clip + re-tessellation for triangles that leave the screen. The GE
+// drops a primitive whole when a vertex leaves its guard band, so any triangle with a
+// vertex outside NDC is clipped against the six screen planes and re-fanned.
+//------------------------------------------------------------------------------------
+
+static void *arenaAllocHard(unsigned int bytes);
+
+typedef struct {
+    float x, y, z;
+    float u, v;
+    float nx, ny, nz;
+    float r, g, b, a;
+} ClipV;
+
+static void fetchClipVertex(ClipV *out, int index)
+{
+    memset(out, 0, sizeof(*out));
+
+    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
+    {
+        const float *uv = (const float *)(arrTexCoord.ptr + (arrTexCoord.stride? index*arrTexCoord.stride : index*8));
+        out->u = uv[0]; out->v = uv[1];
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_NORMAL)
+    {
+        const float *n = (const float *)(arrNormal.ptr + (arrNormal.stride? index*arrNormal.stride : index*12));
+        out->nx = n[0]; out->ny = n[1]; out->nz = n[2];
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_COLOR)
+    {
+        const unsigned char *c = arrColor.ptr + (arrColor.stride? index*arrColor.stride : index*4);
+        out->r = c[0]/255.0f; out->g = c[1]/255.0f; out->b = c[2]/255.0f; out->a = c[3]/255.0f;
+    }
+    else
+    {
+        out->r = pspgu.cr/255.0f; out->g = pspgu.cg/255.0f;
+        out->b = pspgu.cb/255.0f; out->a = pspgu.ca/255.0f;
+    }
+
+    if (arrVertex.type == GL_SHORT)
+    {
+        const short *p = (const short *)(arrVertex.ptr + (arrVertex.stride? (size_t)index*arrVertex.stride : 0));
+        out->x = p[0]/32768.0f;
+        out->y = p[1]/32768.0f;
+        out->z = (arrVertex.size >= 3)? p[2]/32768.0f : 0.0f;
+    }
+    else
+    {
+        const float *p = (const float *)(arrVertex.ptr + (arrVertex.stride? (size_t)index*arrVertex.stride : 0));
+        out->x = p[0]; out->y = p[1]; out->z = (arrVertex.size >= 3)? p[2] : 0.0f;
+    }
+}
+
+static void clipTransform(const float m[16], const ClipV *v, float out[4])
+{
+    out[0] = m[0]*v->x + m[4]*v->y + m[8]*v->z + m[12];
+    out[1] = m[1]*v->x + m[5]*v->y + m[9]*v->z + m[13];
+    out[2] = m[2]*v->x + m[6]*v->y + m[10]*v->z + m[14];
+    out[3] = m[3]*v->x + m[7]*v->y + m[11]*v->z + m[15];
+}
+
+static float clipDistance(const float c[4], int plane)
+{
+    switch (plane)
+    {
+        case 0: return c[0] + c[3];
+        case 1: return c[3] - c[0];
+        case 2: return c[1] + c[3];
+        case 3: return c[3] - c[1];
+        case 4: return c[2] + c[3];
+        default: return c[3] - c[2];
+    }
+}
+
+static ClipV clipLerp(const ClipV *a, const ClipV *b, float t)
+{
+    ClipV o;
+    o.x = a->x + (b->x - a->x)*t;
+    o.y = a->y + (b->y - a->y)*t;
+    o.z = a->z + (b->z - a->z)*t;
+    o.u = a->u + (b->u - a->u)*t;
+    o.v = a->v + (b->v - a->v)*t;
+    o.nx = a->nx + (b->nx - a->nx)*t;
+    o.ny = a->ny + (b->ny - a->ny)*t;
+    o.nz = a->nz + (b->nz - a->nz)*t;
+    o.r = a->r + (b->r - a->r)*t;
+    o.g = a->g + (b->g - a->g)*t;
+    o.b = a->b + (b->b - a->b)*t;
+    o.a = a->a + (b->a - a->a)*t;
+    return o;
+}
+
+static int clipPolygon(ClipV *poly, int n, const float mvp[16], ClipV *out)
+{
+    ClipV a[8], b[8];
+
+    if (n > 8) n = 8;
+    memcpy(a, poly, (size_t)n*sizeof(ClipV));
+
+    for (int plane = 0; plane < 6; plane++)
+    {
+        int m = 0;
+        for (int i = 0; i < n; i++)
+        {
+            ClipV *p = &a[i];
+            ClipV *q = &a[(i + 1)%n];
+            float cp[4], cq[4];
+            clipTransform(mvp, p, cp);
+            clipTransform(mvp, q, cq);
+            float dp = clipDistance(cp, plane);
+            float dq = clipDistance(cq, plane);
+
+            if (dp >= 0.0f) b[m++] = *p;
+            if ((dp >= 0.0f) != (dq >= 0.0f))
+            {
+                float t = dp/(dp - dq);
+                b[m++] = clipLerp(p, q, t);
+                if (m >= 8) break;
+            }
+        }
+        n = m;
+        memcpy(a, b, (size_t)n*sizeof(ClipV));
+        if (n < 3) return 0;
+    }
+
+    memcpy(out, a, (size_t)n*sizeof(ClipV));
+    return n;
+}
+
+static void packClipVertex(unsigned char *dst, const PspGuLayout *l, const ClipV *v)
+{
+    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
+    {
+        float *o = (float *)(dst + l->offTex); o[0] = v->u; o[1] = v->v;
+    }
+    if (pspgu.clientBits & PSPGU_CS_COLOR)
+    {
+        unsigned int *o = (unsigned int *)(dst + l->offCol);
+        *o = ((unsigned int)(v->a*255.0f + 0.5f) << 24) |
+             ((unsigned int)(v->b*255.0f + 0.5f) << 16) |
+             ((unsigned int)(v->g*255.0f + 0.5f) << 8) |
+             ((unsigned int)(v->r*255.0f + 0.5f));
+    }
+    if (pspgu.clientBits & PSPGU_CS_NORMAL)
+    {
+        float *o = (float *)(dst + l->offNrm); o[0] = v->nx; o[1] = v->ny; o[2] = v->nz;
+    }
+    {
+        float *o = (float *)(dst + l->offVtx); o[0] = v->x; o[1] = v->y; o[2] = v->z;
+    }
+}
+
+static int clipNeeds(const unsigned short *idx, int count, int first)
+{
+    float mvp[16];
+
+    if (!(arrVertex.type == GL_FLOAT || arrVertex.type == GL_SHORT)) return 0;
+    pspguGetMVP(mvp);
+
+    for (int i = 0; i < count; i++)
+    {
+        int index = idx? idx[i] : (first + i);
+        ClipV v; float c[4];
+        fetchClipVertex(&v, index);
+        clipTransform(mvp, &v, c);
+        float w = c[3];
+        if ((c[0] < -w) || (c[0] > w) || (c[1] < -w) || (c[1] > w) ||
+            (c[2] < -w) || (c[2] > w)) return 1;
+    }
+
+    return 0;
+}
+
+static void drawClipped(unsigned int prim, unsigned int fmt, int count, int first,
+                        const unsigned short *idx)
+{
+    float mvp[16];
+    unsigned int cfmt = (fmt & ~GU_VERTEX_BITS) | GU_VERTEX_32BITF;
+    PspGuLayout cl;
+    const int chunkTris = 256;
+
+    vertexLayout(cfmt, &cl);
+    pspguGetMVP(mvp);
+
+    int tris = count/3;
+    int t = 0;
+    int clipped = 0;
+
+    while (t < tris)
+    {
+        int nTris = tris - t;
+        if (nTris > chunkTris) nTris = chunkTris;
+
+        unsigned int bytes = (unsigned int)nTris*6*cl.stride;
+        unsigned char *buf = (unsigned char *)pspguArenaAlloc(bytes);
+        if (buf == NULL)
+        {
+            buf = (unsigned char *)arenaAllocHard(bytes);
+            if (buf == NULL) return;
+        }
+
+        int outVerts = 0;
+        for (int k = 0; k < nTris; k++)
+        {
+            int base = (t + k)*3;
+            ClipV in[3], poly[8];
+            for (int v = 0; v < 3; v++)
+            {
+                int index = idx? idx[base + v] : (first + base + v);
+                fetchClipVertex(&in[v], index);
+            }
+
+            int n = clipPolygon(in, 3, mvp, poly);
+            if (n < 3) continue;
+
+            for (int f = 1; f < n - 1; f++)
+            {
+                packClipVertex(buf + (size_t)outVerts*cl.stride, &cl, &poly[0]);
+                packClipVertex(buf + (size_t)(outVerts + 1)*cl.stride, &cl, &poly[f]);
+                packClipVertex(buf + (size_t)(outVerts + 2)*cl.stride, &cl, &poly[f + 1]);
+                outVerts += 3;
+            }
+            clipped++;
+        }
+
+        if (outVerts > 0)
+        {
+            pspguWriteback(buf, (unsigned int)outVerts*cl.stride);
+            applyGlobalColor(cfmt);
+            sceGuDrawArray(prim, cfmt, outVerts, NULL, buf);   // re-fanned, non-indexed
+        }
+        t += nTris;
+    }
+
+    static int logged = 0;
+    if (clipped && (logged < 4))
+    {
+        pspguLog("clip tris=%d fmt=0x%x stride=%u", clipped, cfmt, cl.stride);
+        logged++;
+    }
+}
+
 // Vertices live in the current list's arena, never in a shared scratch buffer: with two
 // lists in flight a single scratch buffer would be rewritten by frame N while frame N-1
 // still pointed at it. This is the per-list vertex memory T5 requires.
@@ -680,6 +925,14 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
         int done = 0;
         int chunk = (int)((pspgu.arenaBytes > 64)? ((pspgu.arenaBytes - 64) / layout.stride) : 0);
 
+#ifndef PSPGU_NO_CLIP
+        if ((prim == GU_TRIANGLES) && clipNeeds(NULL, count, first))
+        {
+            drawClipped(prim, fmt, count, first, NULL);
+            return;
+        }
+#endif
+
         if (isDirectLayout(fmt, &layout))
         {
             static int directLogged = 0;
@@ -819,6 +1072,15 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
             unsigned short *rebased = NULL;
 
             pspguBeginFrame();
+
+#ifndef PSPGU_NO_CLIP
+            if ((prim == GU_TRIANGLES) && clipNeeds(idx + done, n, 0))
+            {
+                drawClipped(prim, fmt, n, 0, idx + done);
+                done += n;
+                continue;
+            }
+#endif
 
             if (isDirectLayout(fmt, &layout))
             {

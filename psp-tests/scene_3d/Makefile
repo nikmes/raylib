@@ -17,6 +17,7 @@ FAR ?= 0
 CAMREL ?= 0
 JITTER ?= 0
 INSTANCES ?= 1
+CULL ?= 1
 LIGHT ?= none
 FOG ?= none
 TEXENV ?= modulate
@@ -31,6 +32,7 @@ CFLAGS = -Wall -O2 -I../bunnymark -DSCENE_FRAMES=$(FRAMES) -DSCENE_NAME="\"$(SCE
 ifeq ($(JITTER),1)
     CFLAGS += -DJITTER_ARM
 endif
+CFLAGS += -DCULL_ON=$(CULL)
 ifeq ($(CAMREL),1)
     CFLAGS += -DCAMREL_ARM
 endif

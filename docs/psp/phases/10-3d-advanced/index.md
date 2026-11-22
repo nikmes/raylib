@@ -104,9 +104,12 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
 - [ ] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency
-- [ ] Static bounds and GE-side object culling for scenes with many objects
-- [ ] Tessellate large triangles on the CPU where the GE would drop them at the window edge
-- [ ] Optional: build display-list words or cull on the Media Engine — measured at 0 failures elsewhere, but a
+- [x] Static bounds and GE-side object culling for scenes with many objects — 066: 917/1,000 culled,
+      0 pixel change, 233.6 → 50 ms
+- [x] Tessellate large triangles on the CPU where the GE would drop them at the window edge — 066:
+      clip at NDC, 236 px where the GE drew 0; near plane 720 vs 0
+- [ ] Optional: build display-list words or cull on the Media Engine — **dropped**: Phase 9 sprint 051 dropped
+      the ME takeover — measured at 0 failures elsewhere, but a
       second CPU with its own cache protocol ([§10.2](../../memory-map.md#102-media-engine-the-second-mips-core))
 
 ## What we already know
@@ -282,5 +285,5 @@ cannot supply (largest free 106,496 B at creation) — rejected with numbers, no
 | [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | one-time s16 packing, direct interleaved path; camera-relative measured null | **done** — 0 diff, `direct=1`; T2 dropped |
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, bake measurement | **done** — lit/texenv/fog 0 diff; bake measured |
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | **done** — 256² 0 diff; 300×200 rejected |
-| [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | measured 4096 boundary, CPU clip + re-tessellation, conservative object culling, conditional ME shadow run | written |
+| [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | NDC clip + fan, conservative culling, ME dropped | **done** — 236/720 vs 0; 917 culled, 0 diff |
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | written |

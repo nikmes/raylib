@@ -573,6 +573,14 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   overwrite 8 rows of the colour block `[measured: sprint 065]`.
 - **Dither once.** Dithering an offscreen target and then the sample doubles the pattern; disable `GU_DITHER` while
   an FBO is bound `[measured: sprint 065]`.
+- **The guard band is at GU 4096, not at the screen edge.** For a 480-wide viewport that is NDC |x| ≈ 8.53; a
+  triangle draws at screen x 2280 and drops at 2290. Clip against the six NDC planes (the visible screen) rather than
+  mapping 4096 `[measured: sprint 066]`.
+- **Clip before the direct/convert choice.** A clean triangle draw keeps the direct pointer; a dirty one falls back
+  to pack+clip for that draw. The scan is O(vertices), so measure it `[measured: sprint 066]`.
+- **Frustum culling needs live matrices.** `RLGL.State` is not maintained on GL11; read projection/modelview with
+  `glGetFloatv` and keep per-mesh bounds keyed by `vboId`. At 1,000 objects the per-call test costs ~50 µs
+  `[measured: sprint 066]`.
 - **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
   `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
   all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.

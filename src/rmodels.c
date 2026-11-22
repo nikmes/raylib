@@ -1291,7 +1291,17 @@ typedef struct {
     unsigned int stride;
     float cx, cy, cz;
     float K;
+    float bmin[3], bmax[3];
 } PspGeMesh;
+
+typedef struct {
+    unsigned int *key;
+    float bmin[3], bmax[3];
+} PspGeBounds;
+
+int rlpspCulling = 1;
+
+void rlpspEnableCulling(int enable) { rlpspCulling = enable; }
 
 #define PSP_GE_MAX 256
 static PspGeMesh pspGe[PSP_GE_MAX];
@@ -1329,6 +1339,110 @@ static int pspGeAvailable(void)
         cached = (strstr(vendor, "pspgu") != NULL);
     }
     return cached;
+}
+
+#define PSP_GE_BOUNDS_MAX 256
+static PspGeBounds pspBounds[PSP_GE_BOUNDS_MAX];
+static int pspBoundsCount = 0;
+
+static PspGeBounds *pspGeFindBounds(unsigned int *key)
+{
+    if (key == NULL) return NULL;
+    for (int i = 0; i < pspBoundsCount; i++) if (pspBounds[i].key == key) return &pspBounds[i];
+    return NULL;
+}
+
+static void pspGeStoreBounds(Mesh *mesh, bool dynamic)
+{
+    if (dynamic || (mesh->vertices == NULL) || (mesh->vertexCount <= 0) || (mesh->vboId == NULL)) return;
+    if (pspGeFindBounds(mesh->vboId) != NULL) return;
+    if (pspBoundsCount >= PSP_GE_BOUNDS_MAX) return;
+
+    PspGeBounds *b = &pspBounds[pspBoundsCount];
+    b->key = mesh->vboId;
+    for (int c = 0; c < 3; c++) { b->bmin[c] = mesh->vertices[c]; b->bmax[c] = mesh->vertices[c]; }
+    for (int i = 1; i < mesh->vertexCount; i++)
+        for (int c = 0; c < 3; c++)
+        {
+            float v = mesh->vertices[i*3 + c];
+            if (v < b->bmin[c]) b->bmin[c] = v;
+            if (v > b->bmax[c]) b->bmax[c] = v;
+        }
+    pspBoundsCount++;
+}
+
+static void pspGeRemoveBounds(unsigned int *key)
+{
+    for (int i = 0; i < pspBoundsCount; i++)
+    {
+        if (pspBounds[i].key != key) continue;
+        pspBounds[i] = pspBounds[pspBoundsCount - 1];
+        pspBoundsCount--;
+        return;
+    }
+}
+
+static void mat4Mul(float out[16], const float a[16], const float b[16])
+{
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            out[c*4 + r] = a[0*4+r]*b[c*4+0] + a[1*4+r]*b[c*4+1] +
+                           a[2*4+r]*b[c*4+2] + a[3*4+r]*b[c*4+3];
+}
+
+// Conservative object cull: the mesh AABB's 8 corners transformed by
+// projection * modelview * model; skip only when all 8 are outside one NDC plane.
+static int pspGeCullMesh(Mesh *mesh, Matrix transform)
+{
+    if (!rlpspCulling) return 0;
+
+    PspGeBounds *b = pspGeFindBounds(mesh->vboId);
+    if (b == NULL) return 0;
+
+    GLfloat P[16], V[16];
+    glGetFloatv(GL_PROJECTION_MATRIX, P);
+    glGetFloatv(GL_MODELVIEW_MATRIX, V);
+    if (P[11] == 0.0f) return 0;                 // ortho/2D: not a 3D frustum
+
+    float M[16];
+    memcpy(M, MatrixToFloat(transform), sizeof(M));
+
+    float VM[16], MVP[16];
+    mat4Mul(VM, V, M);
+    mat4Mul(MVP, P, VM);
+
+    float c[8][4] = {
+        { b->bmin[0], b->bmin[1], b->bmin[2], 1.0f }, { b->bmax[0], b->bmin[1], b->bmin[2], 1.0f },
+        { b->bmin[0], b->bmax[1], b->bmin[2], 1.0f }, { b->bmax[0], b->bmax[1], b->bmin[2], 1.0f },
+        { b->bmin[0], b->bmin[1], b->bmax[2], 1.0f }, { b->bmax[0], b->bmin[1], b->bmax[2], 1.0f },
+        { b->bmin[0], b->bmax[1], b->bmax[2], 1.0f }, { b->bmax[0], b->bmax[1], b->bmax[2], 1.0f }
+    };
+
+    int allLeft = 1, allRight = 1, allDown = 1, allUp = 1, allNear = 1, allFar = 1;
+    for (int i = 0; i < 8; i++)
+    {
+        float x = MVP[0]*c[i][0] + MVP[4]*c[i][1] + MVP[8]*c[i][2] + MVP[12];
+        float y = MVP[1]*c[i][0] + MVP[5]*c[i][1] + MVP[9]*c[i][2] + MVP[13];
+        float z = MVP[2]*c[i][0] + MVP[6]*c[i][1] + MVP[10]*c[i][2] + MVP[14];
+        float w = MVP[3]*c[i][0] + MVP[7]*c[i][1] + MVP[11]*c[i][2] + MVP[15];
+
+        if (!(x < -w)) allLeft = 0;
+        if (!(x >  w)) allRight = 0;
+        if (!(y < -w)) allDown = 0;
+        if (!(y >  w)) allUp = 0;
+        if (!(z < -w)) allNear = 0;
+        if (!(z >  w)) allFar = 0;
+    }
+
+    if (allLeft || allRight || allDown || allUp || allNear || allFar)
+    {
+        static unsigned int culled = 0;
+        culled++;
+        if ((culled % 1000) == 1) TRACELOG(RL_LOG_INFO, "CULL total=%u", culled);
+        return 1;
+    }
+
+    return 0;
 }
 
 static void pspGePack(Mesh *mesh, bool dynamic)
@@ -1389,6 +1503,8 @@ static void pspGePack(Mesh *mesh, bool dynamic)
     pspGe[pspGeCount].stride = stride;
     pspGe[pspGeCount].cx = cx; pspGe[pspGeCount].cy = cy; pspGe[pspGeCount].cz = cz;
     pspGe[pspGeCount].K = K;
+    pspGe[pspGeCount].bmin[0] = minx; pspGe[pspGeCount].bmin[1] = miny; pspGe[pspGeCount].bmin[2] = minz;
+    pspGe[pspGeCount].bmax[0] = maxx; pspGe[pspGeCount].bmax[1] = maxy; pspGe[pspGeCount].bmax[2] = maxz;
     pspGeCount++;
 }
 #endif
@@ -1558,6 +1674,7 @@ void UploadMesh(Mesh *mesh, bool dynamic)
 #endif
 
 #if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    pspGeStoreBounds(mesh, dynamic);
     pspGePack(mesh, dynamic);
 #endif
 }
@@ -1580,6 +1697,11 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
 #if defined(PLATFORM_PSP)
+    if (pspGeCullMesh(&mesh, transform))
+    {
+        rlDisableTexture();
+        return;
+    }
     // A colour array added after upload (a bake) must reach the generic path.
     PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(mesh.vboId) : NULL;
 #else
@@ -2108,6 +2230,7 @@ void UnloadMesh(Mesh mesh)
 
 #if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
     pspGeRemove(mesh.vboId);
+    pspGeRemoveBounds(mesh.vboId);
 #endif
     if (mesh.vboId != NULL) for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) rlUnloadVertexBuffer(mesh.vboId[i]);
     RL_FREE(mesh.vboId);

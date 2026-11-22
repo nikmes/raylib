@@ -136,6 +136,7 @@ int main(void)
 {
     InitWindow(480, 272, "scene_3d");
     SetTargetFPS(0);
+    rlpspEnableCulling(CULL_ON);
 
     Camera cam = { 0 };
     cam.position = (Vector3){ FAR_VALUE, 1.0f, 4.0f };

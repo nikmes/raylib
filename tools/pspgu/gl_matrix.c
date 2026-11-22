@@ -274,3 +274,9 @@ void glGetFloatvMatrices(GLenum pname, GLfloat *params)
 
     memcpy(params, m->m, sizeof(m->m));
 }
+
+// Composed projection * modelview for the CPU clip pass (column-major).
+void pspguGetMVP(float out[16])
+{
+    multiply((PspGuMatrix *)out, stackProjection[depthProjection].m, stackModelview[depthModelview].m);
+}

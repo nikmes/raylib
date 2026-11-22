@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b28"
+#define PSPGU_BUILD "b29"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -265,6 +265,7 @@ void pspguInitTextures(void);
 void pspguResetMatrices(void);
 void pspguUploadMatrices(void);
 void glGetFloatvMatrices(GLenum pname, GLfloat *params);
+void pspguGetMVP(float out[16]);      // projection * modelview, column-major
 float pspguProjectionW(void);       // m[11]: 0 for ortho, -1 for a frustum
 
 // glEnableClientState bits: one source of truth, set in gl_state.c, read in gl_draw.c

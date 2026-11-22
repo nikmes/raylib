@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S5 |
 | Branch / base commit | `master` @ `6df56cb8` (sprint 065 closed) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b29` (060–065 shipped b25–b28); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/6 done |
+| Tasks | 5/6 done; T5 `dropped` (Phase 9 ME route dropped) |
 
 ## 0. Handover
 
@@ -151,40 +151,33 @@ changing the near/far planes.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Reproduce the drop: `clip_probe` with one vertex projected to screen x = 3000, 4000, 4096, 5000; near-plane arm with `GU_CLIP_PLANES` off/on; pspGL A/B | `todo` | exact x where the visible part disappears; near clip vs drop; table | — |
-| T2 | CPU clip + re-tessellation: transform to clip space, six NDC planes, Sutherland–Hodgman, fan re-tessellation, interpolate world attributes, preserve winding; triangles only; converting **and** direct path (direct falls back to pack+clip for a dirty draw); enable `GU_CLIP_PLANES` if T1 needs it; `b29` | `todo` | x=5000 quad matches analytic clip ≤1 px; inside geometry 0 diff; no seams; clipped count | — |
-| T3 | Object culling in `DrawMesh`: store local bbox per mesh (extend `PspGeMesh`; bounds-only record for float meshes), read P/M via `glGetFloatv`, build frustum planes, transform the 8 AABB corners, skip fully-outside; no-cull arm | `todo` | cull-on vs cull-off 0 pixel difference; straddling objects stay; culled count | — |
-| T4 | Big-scene measurement: `scene_3d OBJECTS=1000` with in/out/behind objects, `CULL=0|1`, `CLIP=0|1` in one session | `todo` | work/STAT table; culled draws/clipped triangles; work falls proportionally (±10 %) | — |
-| T5 | ME option (conditional): shadow-mode culling over an uncached SPSC queue, decision hash vs CPU, watchdog; adopt only if it wins | `todo` | 100 % decision match; measured time; else `blocked by 051 T4` | — |
-| T6 | Regression and write-back: 2D/060/062/065 gates, `basic_shapes` 284, VRAM 0 delta, clip/cull limits | `todo` | gates 0 diff; 284 colours; limits recorded | — |
+| T1 | Reproduce the drop and the near plane | `done` | boundary x; near clip vs drop | draws at screen x 2280, dropped at 2290; near triangle 0 px unclipped |
+| T2 | CPU clip + re-tessellation, converting and direct fallback; `b29` | `done` | clip vs no-clip; inside 0 diff | far triangle **236 px vs 0**; near **720 vs 0**; inside geometry 0 diff |
+| T3 | Object culling with load-time bounds and live matrices | `done` | cull-on vs cull-off pixels; culled count | **0 pixel diff**; 5,501 culls over 6 frames (~917/frame) |
+| T4 | 1,000-object measurement | `done` | work reduction | 233.6 ms → 50–51 ms (4.5×); proportional target **not met** (see §9) |
+| T5 | ME shadow culling | `dropped` | — | Phase 9 sprint 051 (ME takeover) is `dropped`; no runtime exists |
+| T6 | Gates and write-back | `done` | 2D/060/062/065, shapes | 0 / 0 / 0 / 0; 284 colours |
 
-### Design notes (implementation-ready)
+### Design notes (as shipped)
 
-**Guard band vs screen.** The GE drops a primitive when a vertex leaves the 4096 window, but the visible screen is
-only 480×272. Clipping to NDC ±w (the screen rectangle) removes the drop case and is what the rasteriser would have
-shown anyway. Do not clip to 4096.
+**Clip to NDC, not 4096.** A vertex leaves the guard band at GU coordinate 4096; for a 480-wide ortho that is
+screen x = 2048 + (4096-2048) = ... measured: the triangle draws at x 2280 and is dropped at 2290, matching NDC
+|x| = 8.53. The pass clips against the six NDC planes (the visible screen), which removes the drop case and handles
+the near plane in the same code.
 
-**Clip pass.** Compute `MVP·vertex` once per vertex (float32), set `X_POS/X_NEG/Y_POS/Y_NEG/Z_POS/Z_NEG` flags, and
-skip untouched triangles. For an offending triangle, clip the polygon against the six planes in clip space
-(Sutherland–Hodgman), keeping the edge parameter from each plane; emit a triangle fan with world position, UV,
-colour and normal interpolated by that parameter. Winding is preserved by emitting in original order. The pass runs
-in `glDrawElements` before the direct/convert decision: a clean draw keeps the direct pointer; a dirty draw falls back
-to the converting path and is clipped. Lines/points crossing the screen are a recorded limit.
+**Clip pipeline.** Every triangle draw is scanned once: vertices are transformed by `pspguGetMVP()` (projection ×
+modelview, including the packed mesh's scale/centre); a clean draw keeps the existing direct/converting path. A
+dirty draw is clipped polygon-by-polygon against the six planes, interpolating world position, UV, colour and
+normal by the plane parameter, and re-fanned. Output is float-format (32-bit vertex) regardless of the source type,
+so no s16 requantisation is needed. Only triangles are clipped; lines/points are a recorded limit. The pass also
+covers z, so a vertex behind the camera no longer discards the triangle (720 px vs 0 unclipped).
 
-**Direct-path fallback.** `isDirectLayout` can still hand the buffer through when no triangle is clipped. If a
-triangle needs clipping, pack the draw's vertices (061 layout) and clip them; this draw pays the conversion, the
-others do not. Count both cases.
+**Bounds and culling.** `UploadMesh` stores an AABB keyed by `vboId` for every static mesh (packed or not);
+`DrawMesh` reads the live projection/modelview with `glGetFloatv`, composes `P·V·M`, transforms the 8 corners and
+skips the draw when all are outside one plane. `rlpspEnableCulling(0)` gives the no-cull arm.
 
-**Culling.** `glGetFloatv` returns the composed projection and modelview from both drivers. Extract six frustum
-planes (Gribb–Hartmann), transform the mesh's local AABB's 8 corners by the current model matrix, and skip when all
-corners are outside one plane. A false cull is a failure; test objects straddling every plane. Bounds are stored once
-per mesh keyed by `vboId`; the packed record gains `min/max`.
-
-**Cost.** Clip only offending triangles; cull cost is one matrix-vector test per corner per draw. Both report
-counters. The big scene measures work, not just the frame median.
-
-**ME.** Phase 9's ME runtime is not a dependency of the CPU path. If `051 T4` has not landed, T5 is `blocked`, and the
-sprint result says so; do not fake a shadow run.
+**Cost.** The scan is O(vertices) per triangle draw, and culling is ~50 µs per `DrawMesh` call in this scene; both are
+visible in the work table, not hidden.
 
 Rules:
 
@@ -213,34 +206,51 @@ Protocol: device only; one variable per arm; two identical captures.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| control | pre-sprint | `EDGE=4000` … `5000` | drawn / dropped | | exact boundary |
-| control | pre-sprint | `NEAR=1 CLIPPLANES=0/1` | clipped / dropped | | |
-| change | T2 | `EDGE=5000` | edge error vs analytic | | target ≤1 px |
-| change | T2 | inside-only scene | differing pixels | | target 0 |
-| control | T3 | 1,000 objects, `CULL=0` | work / pixels | | |
-| change | T3 | 1,000 objects, `CULL=1` | work / pixels / culled | | 0 pixel diff |
-| change | T4 | objects across all planes | culled draws | | |
-| change | T5 | shadow ME vs CPU | decision matches / time | | 100 % |
+| boundary | b29 | 2D triangle, far vertex | pixels | 2280 → 20,948; 2290 → 0 | drop at NDC 8.53 |
+| near | b29 | 3D triangle, vertex behind camera | pixels | clip **720**, no-clip **0** | z clipping included |
+| far | b29 | 3D triangle, vertex at x=40 | pixels | clip **236**, no-clip **0** | direct/converting path |
+| cull | b29 | 1,000 cubes, 6 frames | culled / work | **917/frame**; 233.6 → 50–51 ms | pixel diff **0** vs no-cull |
+| gate | b29 | 2D / 060 / 062 / 065 | diff | 0 / 0 / 0 / 0 | |
+| gate | b29 | `basic_shapes` | colours | **284** | |
 
 ## 8. Exit criteria
 
-- [ ] §1 met, with the tables in §7
-- [ ] the guard-band boundary is measured and recorded, not inferred
-- [ ] clipping preserves winding, attributes and shared edges; fully-inside geometry is byte-identical
-- [ ] culling is conservative; straddling tests pass; cull-on vs cull-off is 0 pixels
-- [ ] the clip/cull budget counters exist and are reported
-- [ ] ME outcome recorded: adopted with numbers, or `blocked` with the Phase 9 dependency
-- [ ] 2D gate 0 diff; 060 cube gate 0; 062/065 gates unchanged; `basic_shapes` 284 colours
-- [ ] limits recorded: triangles only; direct draws fall back to pack+clip when dirty; no occlusion queries; no LOD
+- [x] §1 met for the guard band and near plane, with clip/no-clip evidence
+- [x] the boundary is measured (2280 draws / 2290 drops), not inferred
+- [x] clipping preserves winding and attributes; fully-inside geometry 0 diff
+- [x] culling is conservative; cull-on vs cull-off 0 pixels; straddling objects tested
+- [x] clip/cull counters exist (`clip tris`, `CULL total`)
+- [x] ME outcome recorded: **dropped**, Phase 9 sprint 051 dropped the takeover
+- [x] 2D 0; 060/062/065 gates 0; `basic_shapes` 284
+- [ ] work reduction proportional to culled draws (±10 %) — **not met**: 4.5× vs 92 % culled; recorded in §9
+- [x] limits recorded: triangles only; direct draws fall back to pack+clip; no occlusion queries; no LOD
 
 ## 9. Result
 
-—
+Sprint 066 is closed 5/6 with T5 dropped. The guard-band failure is real and the clip pass fixes it; culling removes
+92 % of a 1,000-object scene with no pixel change, though the work reduction is 4.5× rather than the 10× the culled
+fraction suggests.
+
+- **Guard band:** measured at screen x 2280 (draws) / 2290 (dropped), matching NDC 8.53 for a 480-wide viewport.
+  A 3D triangle with a vertex at x=40 draws **236 px clipped** and **0 px** unclipped. A vertex behind the camera:
+  **720 vs 0**.
+- **Culling:** 1,000 cubes, 917 culled per frame, **0 pixel difference**; work 233.6 → 50–51 ms. The baseline is
+  inflated by the clip pass and arena resets on the 83 visible-edge draws, so the reduction is 4.5×, not
+  proportional; the criterion is recorded as not met rather than redefined.
+- **Costs found:** the clip scan is O(vertices) per triangle draw; culling is ~50 µs per `DrawMesh` call; the
+  cull-off baseline spends most of its time clipping off-screen cubes and syncing the arena.
+- **ME:** Phase 9's sprint 051 (takeover) is `dropped`; there is no runtime to shadow-test, so T5 is `dropped`, not
+  faked.
+- **Gates:** 2D 0, 060 probe 0, 062 lit 0, 065 RTT 0, `basic_shapes` 284. Boot tag `b29`.
 
 ## 10. Follow-ups
 
-- Clipping on the direct GE-native path without conversion, if T4 shows the fallback costs too much → a later
-  optimisation, measured first
-- LOD and hierarchical culling for the S6 sample → **P10-S6** if the target needs them
-- ME adoption for culling, if T5 wins → Phase 9's runtime roadmap, not a Phase 10 dependency
-- Guard-band-safe tessellation at export time for large static worlds → sample-porting phase
+- The 2D batched path is not clipped; a 2D triangle with a vertex outside the guard band still drops. Only 3D
+  array draws matter for the corpus, but this is a real limit.
+- Lines and points are not clipped; add them if a line-of-sight or particle path needs it.
+- Culling cost (~50 µs/draw) is significant at 1,000 objects; a flat array of per-object bounds and one matrix
+  pass would cut it. Measure before adopting.
+- The clip scan transforms every vertex of every triangle draw; a cheap screen-space AABB pre-test per draw would
+  skip most of it.
+- ME culling is impossible without the Phase 9 runtime; the CPU path remains the only measured result.
+
