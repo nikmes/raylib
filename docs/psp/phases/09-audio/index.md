@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **planned** — seven sprints written (P9-S1…S7, 045–051); no code started |
+| State | **done** — route A (P9-S1…S5); SAS/ME (P9-S6/S7) deferred with numbers (2026-11-22) |
 | Depends on | Phase 1 (a running build) — independent of the renderer phases |
 | Exit criterion | several sounds plus one streamed track on the device, 60 fps held, audio thread cost measured, five minutes without a dropout, no `sceAudio` call in the steady-state frame loop |
 
@@ -16,10 +16,10 @@ audio module.
 
 ## What has to be true before starting
 
-- [ ] A build that runs for minutes without a crash
-- [ ] A way to measure the audio thread separately from the frame loop (`sceKernelReferThreadRunStatus().runClocks`)
-- [ ] raudio compiles and links on PSP with a custom miniaudio backend (P9-S1)
-- [ ] The asset question settled: Memory Stick (`ms0:`) or `host0:` under PSPLink
+- [x] A build that runs for minutes without a crash
+- [x] A way to measure the audio thread separately from the frame loop (`sceKernelReferThreadRunStatus().runClocks`)
+- [x] raudio compiles and links on PSP with a custom miniaudio backend (P9-S1)
+- [x] The asset question settled: Memory Stick (`ms0:`) or `host0:` under PSPLink
 
 ## Tasks
 
@@ -31,13 +31,13 @@ audio module.
       **s16, 44100, stereo** as its internal format and a **1024-frame** period. Do not set
       `AUDIO_DEVICE_FORMAT` to s16 — raylib's mixer writes `float` (`src/raudio.c:2468-2645`); measure the
       f32→s16 conversion miniaudio performs on the audio thread
-- [ ] Reserve a regular channel with `sceAudioChReserve()`: 64–65,472 samples, a multiple of **64 samples**
+- [x] Reserve a regular channel with `sceAudioChReserve()`: 64–65,472 samples, a multiple of **64 samples**
       (`PSP_AUDIO_SAMPLE_ALIGN`), 64-byte-aligned buffer memory; a stereo s16 buffer is `samplecount*4` bytes.
       `sceAudioOutput2*`/`sceAudioSRCChReserve()` take 17–4,111 samples and are the same single output channel
-- [ ] Put `sceAudioOutputPannedBlocking()` on the **audio thread**, never in the frame loop — it paces to playback,
+- [x] Put `sceAudioOutputPannedBlocking()` on the **audio thread**, never in the frame loop — it paces to playback,
       and the thread must not be starved for more than a few hundred microseconds. In route A that thread is
       miniaudio's; `onDeviceWrite()` is where the blocking call belongs
-- [ ] Use at least a double buffer; the blocking call returns when the block is accepted, not when it has finished
+- [x] Use at least a double buffer; the blocking call returns when the block is accepted, not when it has finished
       playing
 - [x] Copy miniaudio's frames into a static 64-byte-aligned PCM buffer before the output call: the pointer
       `onDeviceWrite()` receives is a stack buffer (`src/external/miniaudio.h:20742`)
@@ -46,19 +46,19 @@ audio module.
       audio thread is already the feeder; do not add a second one without evidence
 - [x] Keep `UpdateMusicStream()` as the public API; measure its main-thread decode first, then move decode/read
       behind an internal decoder thread while preserving the public call
-- [ ] Prefer a regular 44.1 kHz channel and CPU resampling; if using `sceAudioSRCChReserve()`, reserve it **once**
+- [x] Prefer a regular 44.1 kHz channel and CPU resampling; if using `sceAudioSRCChReserve()`, reserve it **once**
       and keep it — re-reserving after release failed repeatedly on hardware in another project
-- [ ] Software-mix sounds into one or two channels, leaving hardware channels free for streamed music
+- [x] Software-mix sounds into one or two channels, leaving hardware channels free for streamed music
 - [x] Stream music: decode ahead on the decoder thread into a ring buffer (~1 s), never open a file from the
       feeder or the miniaudio callback; batch reads with a 64 KB `setvbuf`
-- [ ] Respect memory-stick cost: ~17 ms per `sceIoOpen`, so few long-lived handles and large reads
-- [ ] `SetSoundPitch` is resampling — profile it rather than assuming it is free
+- [x] Respect memory-stick cost: ~17 ms per `sceIoOpen`, so few long-lived handles and large reads
+- [x] `SetSoundPitch` is resampling — profile it rather than assuming it is free
 - [ ] Make audio threads persistent; retry failed bring-up on a timer and log every failure
-- [ ] Decide the Media Engine route (see below): route A (miniaudio custom backend), `sceSas` through
+- [x] Decide the Media Engine route (see below): route A (miniaudio custom backend), `sceSas` through
       `pspsascore`, or an owned ME mixer. Record the decision and the measurement behind it
-- [ ] If the ME is taken over: gate it behind a config file next to the EBOOT, keep route A compiled in,
-      and handle suspend/resume
-- [ ] Define the exit path: stop and join the audio threads, release channels, then exit — in that order
+- [x] If the ME is taken over: gate it behind a config file next to the EBOOT, keep route A compiled in,
+      and handle suspend/resume — **not applicable**: the ME route is deferred (T7)
+- [x] Define the exit path: stop and join the audio threads, release channels, then exit — in that order
 
 ## What we already know
 
@@ -101,6 +101,7 @@ hardware.
 | PSP worker thread | default/32 KiB stack entered the audio loop and died before playback; `ma_device_init` waited on `stopEvent` forever; 128 KiB fixed it. Priority retained: `ma_thread_priority_normal` | `[measured: PSP-1000, P9-S1, 2026-11-21]` |
 | PSP output backend (P9-S2) | one regular channel (unit: **7**), 1024-frame blocks, two alternating 64-byte-aligned buffers with cache writeback; 433 callbacks/10.03 s (43/s); rest 960–1024; errors 0; `runClocks` 410,966/411,441; 1 kHz tone audible | `[measured: PSP-1000, P9-S2, 2026-11-21]` |
 | PSP `Sound` API (P9-S3) | file+memory loads, aliases, Wave copy/crop/format/samples, `UpdateSound`, master/volume/pan/pitch all pass; levels loud-left/quiet-right; pitch 0.5/2.0 stops at frames 119/30; mix16/32 at 60 fps, rest 960–1024, errors 0; 32/32 sounds valid with 30,440 B free in the 4 MiB test heap | `[measured: PSP-1000, P9-S3, 2026-11-21]` |
+| PSP close and route decision (P9-S5) | 5 runs × 10 init/close all ready; free 782,336 / max free 524,288 constant (zero drift); `thlist` after close has no `pthread*` worker; 5-minute soak 18,000 frames, update p95 0.028 / max 0.152, 0 spikes, 13,033 callbacks (42/s), rest 960–1024, errors 0; seven renderer captures byte-identical; route A adopted, SAS/ME dropped | `[measured: PSP-1000, P9-S5, 2026-11-22]` |
 | PSP `Music`/`AudioStream` (P9-S4/S4a) | OGG/WAV API matrix passes; OGG `setvbuf` 64 KiB; AudioStream update/s16-callback/f32-processor all 58–60 fps, errors 0. Main-thread decode failed the gate (OGG p95 16.908 / max 21.622, 57 spikes; WAV 13.172 / 15.124, 110 spikes), so a per-track decoder thread now decodes outside `AUDIO.System.lock`. Final main-thread update: OGG 0.027 / 0.112 ms, WAV 0.027 / 0.099 ms, 0 spikes. 5-minute soak: 18,000 frames, 0.027 / 0.165 ms, 0 spikes, 13,032 callbacks, rest 960–1024, errors 0 | `[measured: PSP-1000, P9-S4a, 2026-11-21]` |
 
 ## What the reference implementations do
@@ -194,11 +195,16 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 | P9-S2 — Custom backend and first output | [046](../../sprints/046-phase9-custom-backend.md) | channel reserve, two aligned buffers, `onDeviceWrite`, one sound | **done** — 433 callbacks/43 per s; tone audible; gate `cf43ce6d…` |
 | P9-S3 — `Sound` API and mixing | [047](../../sprints/047-phase9-sound-api.md) | play/stop/pause, volume/pan/pitch, wave/alias/update, 16 sounds | **done** — API matrix, mix16/32, pitch, levels, heap; gate `cf43ce6d…` |
 | P9-S4 — `Music` and `AudioStream` streaming | [048](../../sprints/048-phase9-music-streaming.md) | `UpdateMusicStream`, decoder thread, 5-minute soak | **done (S4a)** — OGG 0.027/0.112 ms, WAV 0.027/0.099 ms, 0 spikes; soak 18,000 frames, 0 errors; gate `b69830b8…` |
-| P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | open — T5 track change |
-| P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | written |
-| P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | written; conditional |
+| P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | **done** — route A adopted; SAS/ME deferred; Phase 9 closed |
+| P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | **dropped** — route A meets every budget |
+| P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | **dropped** — no route switch needed |
 
 Use the [sprint template](../../templates/sprint.md) for any added work.
+
+**Close (2026-11-22).** Route A is the shipped audio path. The exit criterion is met on the PSP-1000:
+8 sounds plus one streamed OGG/WAV track at 60 fps, audio work measured on its own thread, five minutes
+without a dropout, and no `sceAudio` call in the frame loop. The SAS/ME alternative is deferred because
+route A has no failing budget; see [sprint 049 §9](../../sprints/049-phase9-close-and-decision.md#9-result).
 
 **Gate-hash correction (P9-S4a).** The canonical `batch_check` gate is `b69830b8…` — the pspgu `b24`
 capture archived byte-identical from sprint 015 through sprint 041 and equal to the `par_pspgl` parity

@@ -10,6 +10,8 @@
 #   make MODE=music FRAMES=18000 COUNT=8           # optional long music run
 #   make MODE=musicmix COUNT=8 FRAMES=18000        # 5-minute soak
 #   make MODE=stream STREAM_ARM=update|callback|processor
+#   make MODE=lifecycle                            # 10 init/close cycles (P9-S5 T1)
+#   make MODE=trackchange                          # OGG -> WAV live swap (P9-S5 T0)
 #
 # Runtime libs must be appended after build.mak so its SDK stubs are linked first.
 
@@ -48,8 +50,12 @@ else ifeq ($(MODE),musicmix)
     CFLAGS += -DMODE_MUSICMIX
 else ifeq ($(MODE),stream)
     CFLAGS += -DMODE_STREAM
+else ifeq ($(MODE),lifecycle)
+    CFLAGS += -DMODE_LIFECYCLE
+else ifeq ($(MODE),trackchange)
+    CFLAGS += -DMODE_TRACKCHANGE
 else
-    $(error MODE must be tone, sound, api, mix, pitch, levels, heap, music, musicmix or stream)
+    $(error MODE must be tone, sound, api, mix, pitch, levels, heap, music, musicmix, stream, lifecycle or trackchange)
 endif
 
 ifeq ($(STREAM_ARM),update)
@@ -81,9 +87,16 @@ else ifeq ($(MODE),music)
 else ifeq ($(MODE),api)
     WAVE_MS ?= 1000
     PSP_HEAP_SIZE_KB ?= 2048
+else ifeq ($(MODE),trackchange)
+    WAVE_MS ?= 1000
+    PSP_HEAP_SIZE_KB ?= 2048
 else
     WAVE_MS ?= 1000
     PSP_HEAP_SIZE_KB ?= 1024
+endif
+
+ifdef LOGFILE
+    CFLAGS += -DLOG_FILE=\"$(LOGFILE)\"
 endif
 
 CFLAGS += -DAUDIO_COUNT=$(COUNT) -DAUDIO_FRAMES=$(FRAMES) \
@@ -94,7 +107,7 @@ CFLAGS += -DAUDIO_COUNT=$(COUNT) -DAUDIO_FRAMES=$(FRAMES) \
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
 EXTRA_TARGETS = EBOOT.PBP
-PSP_EBOOT_TITLE = audio smoke (P9-S4)
+PSP_EBOOT_TITLE = audio smoke (P9-S5)
 
 # PSP-1000: 32 MB. Never request the 40 MB partition the PSPSDK default asks for.
 PSP_LARGE_MEMORY = 0

@@ -106,6 +106,9 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | Depth buffer on a 2D-on-rails renderer | allocatable but useless; the reference engine allocates and never enables it | `[measured: PSPRuntime]` |
 | Hardware audio channels | 8 (indices 0–7); per-channel buffer 64–65,472 samples, a multiple of 64; volume 0–`0x8000` | `[public: pspdev/psp/sdk/include/pspaudio.h]` |
 | Audio sample-rate conversion | `sceAudioSRCChReserve(samplecount, freq, channels)` + `sceAudioSRCOutputBlocking()` — hardware SRC for arbitrary rates instead of resampling on the CPU | `[public: same header]` |
+| Audio backend measured | one regular channel (unit 7/6), 1024-frame blocks, internal 44100 Hz s16 stereo; 43 callbacks/s; rest 960–1024, errors 0 | `[measured: PSP-1000, P9-S5]` |
+| Audio memory measured | free **782,336** / max free **524,288** constant across 50 init/close cycles; worker stack 128 KiB, decoder stack 64 KiB, decoder PCM 4 KiB per track | `[measured: PSP-1000, P9-S5]` |
+| Audio CPU measured | audio worker `runClocks` 35,686,545 over 305.7 s ≈ **0.009 ms/frame**; main-thread `UpdateMusicStream` p95 0.028 ms | `[measured: PSP-1000, P9-S5]` |
 | Input hardware | one nub (2 axes, raw 0–255), D-pad, 4 face buttons, 2 shoulder buttons, SELECT/START/HOME/HOLD/NOTE. **No analog triggers, no rumble** | `[public: pspctrl.h]` |
 
 **What the toolchain actually gives us** — GU primitives, vertex formats, GUM, VFPU contexts, VRAM limits — is
@@ -517,6 +520,9 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 | 2026-11-20 | Stage A on pspGL before any native backend | gives a working 6.2 to compare against, and the GL11 call list becomes the GU spec |
 | 2026-11-20 | Do not run `pspbuild.sh` | would rebuild older 5.5 sources over a matching pspdev library |
 | 2026-11-20 | Optimise raylib submission before optimising pspGL internals | per-sprite submits cost 512–1024x the necessary draw calls; fix the structural problem first |
+| 2026-11-22 | **Adopt route A for audio; defer SAS/ME (P9-S6/S7 dropped)** | Route A meets every Phase 9 budget on the PSP-1000: 60 fps with 8 sounds + 1 streamed track, main-thread audio 0.028 ms p95, audio worker ≈0.009 ms/frame, 0 dropouts in 18,000 frames, 50 clean init/close cycles, 0 leaked threads. No failing metric to justify an ME prototype |
+| 2026-11-22 | **Decode `Music` on a per-track thread above the mixer** | Main-thread decode was 16.9 ms p95; a 64 KiB-stack thread at priority `0x30` decoding outside `AUDIO.System.lock` drops `UpdateMusicStream` to 0.028 ms with 0 spikes. Priority `0x2E` competed with PSPLink's USB thread and lost console output |
+| 2026-11-22 | **Keep pspgu as the installed `libGL.a`; verify before gate builds** | Another session switched the installed library back to pspGL at 23:03, which broke `scene_2d` linking (`pspguResidencyStats` undefined). `tools/pspgu-build.sh --check` is the first step before any renderer gate |
 | 2026-11-21 | Track the upstream `core`/`shapes`/`textures` corpus as **Phase 13**, gated by capability | Static audit of 127 samples: 13 drop-in, 61 input-gated, 49 blocked, 4 ported. Each wave names the phase whose capability it consumes; wave 0 needs none. Findings, gates and sprints 024–034 in [Phase 13](phases/13-samples-porting/index.md) |
 
 ---
@@ -544,6 +550,13 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   inside `main` never show the pre-heap figure. Declare `PSP_HEAP_SIZE_KB` and interpret accordingly.
 - **Blocking audio on the main thread.** `sceAudioOutput*Blocking()` paces itself to playback: call it
   in the frame loop and the frame time becomes the audio buffer length. Audio gets its own thread.
+- **Music has two loaders.** `LoadMusicStream(path)` and `LoadMusicStreamFromMemory()` are separate
+  implementations; a PSP decoder hook added to one is silently absent from the other. Wire both.
+- **Keep the music decoder below the USB thread.** At priority `0x2E` the decoder competed with
+  PSPLink's USB thread and console output stopped mid-run. `0x30` fixed it without missing deadlines.
+- **Long PSPLink runs lose stdout.** The SIO buffer drops output after a few minutes of a busy app; the
+  app keeps running. Write evidence to `host0:` (the harness takes `LOGFILE=host0:/file`) instead of
+  trusting the console capture.
 - **A thread stack comes from the user partition, not the heap.** A thread created after boot fails
   with `0x80020190` while the log shows megabytes free. Reserve stacks early `[measured]`.
 - **Threads touching the VFPU need `PSP_THREAD_ATTR_VFPU`**, including the audio and loader threads if

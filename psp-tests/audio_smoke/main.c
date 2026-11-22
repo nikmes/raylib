@@ -2,7 +2,8 @@
 *
 *   audio_smoke - P9-S3 Sound/Wave API and mixing harness
 *
-*   Modes: tone/sound (S2 control), api, mix, pitch, heap.
+*   Modes: tone/sound (S2), api, mix, pitch, levels, heap, music, musicmix,
+*   stream, lifecycle, trackchange (P9-S5).
 *   The game path uses raylib.h only; PSP headers appear only in this test harness.
 *
 **********************************************************************************************/
@@ -58,7 +59,8 @@ static int StreamPcmOffset;
 
 #if !defined(MODE_TONE) && !defined(MODE_SOUND) && !defined(MODE_API) && \
     !defined(MODE_MIX) && !defined(MODE_PITCH) && !defined(MODE_LEVELS) && !defined(MODE_HEAP) && \
-    !defined(MODE_MUSIC) && !defined(MODE_MUSICMIX) && !defined(MODE_STREAM)
+    !defined(MODE_MUSIC) && !defined(MODE_MUSICMIX) && !defined(MODE_STREAM) && \
+    !defined(MODE_LIFECYCLE) && !defined(MODE_TRACKCHANGE)
     #define MODE_TONE
 #endif
 
@@ -121,11 +123,33 @@ static void ApiMatrix(void)
     Sound source = LoadSoundFromWave(wave);
     TraceLog(LOG_INFO, "API LoadSoundFromWave valid=%d", IsSoundValid(source));
 
+    Wave fileWave = LoadWave("host0:" MUSIC_WAV_PATH);
+    TraceLog(LOG_INFO, "API LoadWave valid=%d", IsWaveValid(fileWave));
+    if (IsWaveValid(fileWave)) UnloadWave(fileWave);
+
+    int memSize = 0;
+    unsigned char *memData = LoadFileData("host0:" MUSIC_WAV_PATH, &memSize);
+    if (memData != NULL)
+    {
+        Wave memWave = LoadWaveFromMemory(".wav", memData, memSize);
+        TraceLog(LOG_INFO, "API LoadWaveFromMemory valid=%d", IsWaveValid(memWave));
+        UnloadFileData(memData);
+        if (IsWaveValid(memWave)) UnloadWave(memWave);
+    }
+    else TraceLog(LOG_WARNING, "API LoadFileData failed for %s", MUSIC_WAV_PATH);
+
+    Wave invalidWave = { 0 };
+    TraceLog(LOG_INFO, "API IsWaveValid(invalid)=%d", IsWaveValid(invalidWave));
+
     Sound invalid = { 0 };
     TraceLog(LOG_INFO, "API IsSoundValid(invalid)=%d", IsSoundValid(invalid));
 
     int exported = ExportWave(wave, "host0:/audio_smoke_tone.wav");
     TraceLog(LOG_INFO, "API ExportWave=%d", exported);
+
+    bool exportedCode = ExportWaveAsCode(wave, "host0:/audio_smoke_wave.h");
+    TraceLog(LOG_INFO, "API ExportWaveAsCode=%d", exportedCode);
+    if (exportedCode) remove("host0:/audio_smoke_wave.h");
     if (exported)
     {
         Sound fileSound = LoadSound("host0:/audio_smoke_tone.wav");
@@ -375,6 +399,18 @@ static void MusicApiMode(void)
 
     TraceLog(LOG_INFO, "MUSIC API ogg=%d wav=%d invalid=%d", IsMusicValid(ogg), IsMusicValid(wav), IsMusicValid(invalid));
 
+    int memMusicSize = 0;
+    unsigned char *memMusic = LoadFileData(TextFormat("host0:%s", MUSIC_PATH), &memMusicSize);
+    if (memMusic != NULL)
+    {
+        const char *memType = (strstr(MUSIC_PATH, ".wav") != NULL)? ".wav" : ".ogg";
+        Music fromMemory = LoadMusicStreamFromMemory(memType, memMusic, memMusicSize);
+        TraceLog(LOG_INFO, "MUSIC API frommemory valid=%d", IsMusicValid(fromMemory));
+        if (IsMusicValid(fromMemory)) UnloadMusicStream(fromMemory);
+        UnloadFileData(memMusic);
+    }
+    else TraceLog(LOG_WARNING, "MUSIC API LoadFileData failed for %s", MUSIC_PATH);
+
     if (IsMusicValid(ogg))
     {
         TraceLog(LOG_INFO, "MUSIC API length ogg=%.3f", GetMusicTimeLength(ogg));
@@ -423,6 +459,78 @@ static void MusicMixMode(void)
 }
 #endif
 
+#if defined(MODE_LIFECYCLE)
+static void LifecycleMode(void)
+{
+    // main() already initialized the device: close it and cycle from a clean state
+    CloseAudioDevice();
+
+    for (int i = 0; i < 10; i++)
+    {
+        int freeBefore = (int)sceKernelTotalFreeMemSize();
+        int maxBefore = (int)sceKernelMaxFreeMemSize();
+
+        InitAudioDevice();
+        bool ready = IsAudioDeviceReady();
+        CloseAudioDevice();
+
+        int freeAfter = (int)sceKernelTotalFreeMemSize();
+        int maxAfter = (int)sceKernelMaxFreeMemSize();
+        TraceLog(LOG_INFO, "LIFECYCLE %d ready=%d free=%d maxfree=%d after=%d maxafter=%d",
+                 i, ready, freeBefore, maxBefore, freeAfter, maxAfter);
+    }
+
+    RunFrames(30, "lifecycle", "10 cycles done");
+    TraceLog(LOG_INFO, "LIFECYCLE DONE cycles=10 ready=%d", IsAudioDeviceReady());
+}
+#endif
+
+#if defined(MODE_TRACKCHANGE)
+static void TrackChangeMode(void)
+{
+    SetAudioStreamBufferSizeDefault(AUDIO_STREAM_BUFFER);
+
+    Music a = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
+    Music b = LoadMusicStream(TextFormat("host0:%s", MUSIC_WAV_PATH));
+    TraceLog(LOG_INFO, "TRACKCHANGE valid a=%d b=%d", IsMusicValid(a), IsMusicValid(b));
+
+    if (IsMusicValid(a))
+    {
+        SetMusicVolume(a, 0.5f);
+        PlayMusicStream(a);
+        RunFrames(240, "trackchange", "A playing");
+        TraceLog(LOG_INFO, "TRACKCHANGE A time=%.2f playing=%d", GetMusicTimePlayed(a), IsMusicStreamPlaying(a));
+        StopMusicStream(a);
+        UnloadMusicStream(a);
+        TraceLog(LOG_INFO, "TRACKCHANGE A unloaded");
+    }
+
+    if (IsMusicValid(b))
+    {
+        SetMusicVolume(b, 0.5f);
+        PlayMusicStream(b);
+        RunFrames(240, "trackchange", "B playing");
+        TraceLog(LOG_INFO, "TRACKCHANGE B time=%.2f playing=%d", GetMusicTimePlayed(b), IsMusicStreamPlaying(b));
+        StopMusicStream(b);
+        UnloadMusicStream(b);
+        TraceLog(LOG_INFO, "TRACKCHANGE B unloaded");
+    }
+
+    // Reload the first track to prove the decoder can start again after a swap
+    Music c = LoadMusicStream(TextFormat("host0:%s", MUSIC_PATH));
+    TraceLog(LOG_INFO, "TRACKCHANGE reload valid=%d", IsMusicValid(c));
+    if (IsMusicValid(c))
+    {
+        PlayMusicStream(c);
+        RunFrames(60, "trackchange", "C playing");
+        StopMusicStream(c);
+        UnloadMusicStream(c);
+    }
+
+    TraceLog(LOG_INFO, "TRACKCHANGE DONE");
+}
+#endif
+
 #if defined(MODE_STREAM)
 static void StreamCallback(void *bufferData, unsigned int frames)
 {
@@ -442,6 +550,12 @@ static void StreamProcessor(void *bufferData, unsigned int frames)
 {
     float *out = (float *)bufferData;
     for (unsigned int i = 0; i < frames*2; i++) out[i] *= 0.5f;
+}
+
+static void MixedProcessor(void *bufferData, unsigned int frames)
+{
+    float *out = (float *)bufferData;
+    for (unsigned int i = 0; i < frames*2; i++) out[i] *= 0.9f;
 }
 
 static void AudioStreamMode(void)
@@ -481,6 +595,13 @@ static void AudioStreamMode(void)
     StreamPcmOffset = 0;
 
     PlayAudioStream(stream);
+    AttachAudioMixedProcessor(MixedProcessor);
+    TraceLog(LOG_INFO, "STREAM mixed processor attached");
+
+    PauseAudioStream(stream);
+    RunFrames(2, "stream", "paused");
+    ResumeAudioStream(stream);
+    TraceLog(LOG_INFO, "STREAM pause/resume done");
 
     for (int frame = 0; frame < AUDIO_FRAMES; frame++)
     {
@@ -502,6 +623,8 @@ static void AudioStreamMode(void)
     }
 
     StopAudioStream(stream);
+    DetachAudioMixedProcessor(MixedProcessor);
+    TraceLog(LOG_INFO, "STREAM mixed processor detached");
 #if defined(STREAM_PROCESSOR)
     DetachAudioStreamProcessor(stream, StreamProcessor);
 #endif
@@ -526,13 +649,24 @@ static void ToneMode(void)
 
 int main(void)
 {
-    InitWindow(480, 272, "audio smoke (P9-S3)");
+#ifdef LOG_FILE
+    // Long runs exceed PSPLink's SIO buffer; write the log to host0 instead.
+    if (freopen(LOG_FILE, "w", stdout) == NULL) { }
+    setvbuf(stdout, NULL, _IOLBF, 0);
+#endif
+
+    InitWindow(480, 272, "audio smoke (P9-S5)");
     SetTargetFPS(60);
 
+    TraceLog(LOG_INFO, "AUDIO build b5");
     InitAudioDevice();
     if (!IsAudioDeviceReady()) TraceLog(LOG_ERROR, "AUDIO: device is not ready");
 
-#if defined(MODE_API)
+#if defined(MODE_LIFECYCLE)
+    LifecycleMode();
+#elif defined(MODE_TRACKCHANGE)
+    TrackChangeMode();
+#elif defined(MODE_API)
     ApiMatrix();
 #elif defined(MODE_MUSIC)
     MusicMode();
