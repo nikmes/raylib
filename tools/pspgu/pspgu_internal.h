@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b26"
+#define PSPGU_BUILD "b27"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -156,6 +156,26 @@ typedef struct {
     unsigned char cr, cg, cb, ca;           // Current colour: what GL11 uses when GL_COLOR_ARRAY is off
     int texEnabled;                         // GL_TEXTURE_2D enable state (GU has no query)
     unsigned int boundTexture;              // texture id currently bound
+
+    // Lighting/fog/texture environment (sprint 062). GU has no queries, so the driver
+    // mirrors what GL last set; the draw path needs the lighting flag and model colours.
+    int lighting;                           // GL_LIGHTING
+    unsigned int lightEnable;               // 1 << n for GL_LIGHT0..3
+    int lightType[4];                       // GU_DIRECTIONAL / GU_POINTLIGHT / GU_SPOTLIGHT
+    ScePspFVector3 lightPos[4];             // world position or direction
+    unsigned int lightAmbient[4], lightDiffuse[4], lightSpecular[4];
+    float lightAtt[4][3];                   // constant, linear, quadratic
+    ScePspFVector3 lightSpotDir[4];
+    float lightSpotExp[4], lightSpotCut[4];
+    int lightHasSpot[4];
+    unsigned int matEmissive, matAmbient, matDiffuse, matSpecular;
+    float matShininess;
+    unsigned int sceneAmbient;
+    int texEnvMode;                         // GU_TFX_*
+    unsigned int texEnvColor;
+    int fogEnabled;
+    float fogStart, fogEnd;
+    unsigned int fogColor;
 } PspGuContext;
 
 extern PspGuContext pspgu;

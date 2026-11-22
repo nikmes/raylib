@@ -20,6 +20,7 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <GL/gl.h>
 #include "psp_counters.h"
 
@@ -38,6 +39,35 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #ifndef INSTANCES
 #define INSTANCES 1
 #endif
+#if defined(LIGHT_BAKE)
+// CPU Lambert + ambient into mesh.colors, once. Alpha stays opaque; the packed path is
+// bypassed for colour meshes, so this is the float-path comparison for T5.
+static void bakeCube(Mesh *mesh, Vector3 dir, unsigned ambient, unsigned diffuse)
+{
+    mesh->colors = (unsigned char *)malloc((size_t)mesh->vertexCount*4);
+    if (mesh->colors == NULL) return;
+
+    float lx = dir.x, ly = dir.y, lz = dir.z;
+    float len = sqrtf(lx*lx + ly*ly + lz*lz);
+    if (len > 0.0f) { lx /= len; ly /= len; lz /= len; }
+
+    for (int i = 0; i < mesh->vertexCount; i++)
+    {
+        float d = mesh->normals[i*3 + 0]*lx + mesh->normals[i*3 + 1]*ly + mesh->normals[i*3 + 2]*lz;
+        if (d < 0.0f) d = 0.0f;
+        for (int c = 0; c < 3; c++)
+        {
+            float a = (float)((ambient >> (c*8)) & 0xFF);
+            float m = (float)((diffuse >> (c*8)) & 0xFF);
+            float v = a + m*d;
+            if (v > 255.0f) v = 255.0f;
+            mesh->colors[i*4 + c] = (unsigned char)(v + 0.5f);
+        }
+        mesh->colors[i*4 + 3] = 255;
+    }
+}
+#endif
+
 #ifdef JITTER_ARM
 #define JITTER_FRAMES 16
 #endif
@@ -193,6 +223,31 @@ int main(void)
     {
         BeginDrawing();
             ClearBackground(BLACK);
+
+            if (frame == 0)
+            {
+#if defined(LIGHT_BAKE)
+                bakeCube(&cube, (Vector3){ -0.39f, -0.79f, -0.47f }, 0xFF404040, 0xFFCCCCCC);
+#endif
+#if defined(LIGHT_GE)
+                rlpspEnableLighting(1);
+                rlpspLightAmbient(0xFF404040);
+                rlpspMaterial(0xFF333333, 0xFFCCCCCC, 0xFF000000, 0xFF000000, 0.0f);
+                rlpspLight(0, 1, 0.39f, 0.79f, 0.47f, 0xFFFFFFFF, 0xFF000000, 1.0f, 0.0f, 0.0f);
+#endif
+#if defined(FOG_LINEAR)
+                rlpspFog(3.0f, 6.0f, 0xFF0000FF);
+                rlpspEnableFog(1);
+#endif
+#if defined(TEXENV_REPLACE)
+                rlpspTexEnv(GL_REPLACE, 0xFFFFFFFF);
+#elif defined(TEXENV_DECAL)
+                rlpspTexEnv(GL_DECAL, 0xFFFFFFFF);
+#elif defined(TEXENV_ADD)
+                rlpspTexEnv(GL_ADD, 0x00000000);
+#endif
+            }
+
             BeginMode3D(cam);
 #if defined(SCENE_GRID)
                 DrawMesh(grid, gridMat, idXform);

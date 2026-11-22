@@ -931,6 +931,22 @@ RLAPI void rlEnableBackfaceCulling(void);               // Enable backface culli
 RLAPI void rlDisableBackfaceCulling(void);              // Disable backface culling
 RLAPI void rlColorMask(bool r, bool g, bool b, bool a); // Color mask control
 RLAPI void rlSetCullFace(int mode);                     // Set face culling mode
+
+#if defined(__psp__)
+// PSP-only fixed-function lighting/fog/texture environment (sprint 062). Colours are
+// 0xAABBGGRR, the GE's order; lights are world-space (see sprint 062).
+RLAPI void rlpspEnableLighting(int enable);             // GL_LIGHTING on/off
+RLAPI void rlpspLight(int index, int directional, float x, float y, float z,
+                      unsigned int diffuse, unsigned int specular,
+                      float att0, float att1, float att2); // light 0..3
+RLAPI void rlpspLightSpot(int index, float x, float y, float z, float exponent, float cutoff);
+RLAPI void rlpspLightAmbient(unsigned int color);       // GL_LIGHT_MODEL_AMBIENT
+RLAPI void rlpspMaterial(unsigned int ambient, unsigned int diffuse, unsigned int specular,
+                         unsigned int emissive, float shininess);
+RLAPI void rlpspEnableFog(int enable);
+RLAPI void rlpspFog(float start, float end, unsigned int color);
+RLAPI void rlpspTexEnv(int mode, unsigned int color);   // GL_MODULATE/REPLACE/DECAL/ADD/BLEND
+#endif
 RLAPI void rlEnableScissorTest(void);                   // Enable scissor test
 RLAPI void rlDisableScissorTest(void);                  // Disable scissor test
 RLAPI void rlScissor(int x, int y, int width, int height); // Scissor test
@@ -2238,6 +2254,94 @@ void rlDisableBackfaceCulling(void) { RLPSP_FLUSH(); glDisable(GL_CULL_FACE); }
 
 // Set color mask active for screen read/draw
 void rlColorMask(bool r, bool g, bool b, bool a) { glColorMask(r, g, b, a); }
+
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+static void rlpspToFloats(unsigned int c, GLfloat *f)
+{
+    f[0] = (GLfloat)(c & 0xFF)/255.0f;
+    f[1] = (GLfloat)((c >> 8) & 0xFF)/255.0f;
+    f[2] = (GLfloat)((c >> 16) & 0xFF)/255.0f;
+    f[3] = (GLfloat)((c >> 24) & 0xFF)/255.0f;
+}
+
+void rlpspEnableLighting(int enable) { if (enable) glEnable(GL_LIGHTING); else glDisable(GL_LIGHTING); }
+
+void rlpspLight(int index, int directional, float x, float y, float z,
+                unsigned int diffuse, unsigned int specular,
+                float att0, float att1, float att2)
+{
+    GLfloat pos[4] = { x, y, z, (directional != 0)? 0.0f : 1.0f };
+    GLfloat col[4];
+
+    if ((index < 0) || (index > 3)) return;
+
+    rlpspToFloats(diffuse, col);
+    glLightfv(GL_LIGHT0 + index, GL_DIFFUSE, col);
+    rlpspToFloats(specular, col);
+    glLightfv(GL_LIGHT0 + index, GL_SPECULAR, col);
+    glLightfv(GL_LIGHT0 + index, GL_POSITION, pos);
+    glLightf(GL_LIGHT0 + index, GL_CONSTANT_ATTENUATION, att0);
+    glLightf(GL_LIGHT0 + index, GL_LINEAR_ATTENUATION, att1);
+    glLightf(GL_LIGHT0 + index, GL_QUADRATIC_ATTENUATION, att2);
+
+    if (directional == 0) glLightf(GL_LIGHT0 + index, GL_SPOT_CUTOFF, 180.0f);
+    glEnable(GL_LIGHT0 + index);
+}
+
+void rlpspLightSpot(int index, float x, float y, float z, float exponent, float cutoff)
+{
+    GLfloat dir[3] = { x, y, z };
+
+    if ((index < 0) || (index > 3)) return;
+
+    glLightfv(GL_LIGHT0 + index, GL_SPOT_DIRECTION, dir);
+    glLightf(GL_LIGHT0 + index, GL_SPOT_EXPONENT, exponent);
+    glLightf(GL_LIGHT0 + index, GL_SPOT_CUTOFF, cutoff);
+}
+
+void rlpspLightAmbient(unsigned int color)
+{
+    GLfloat f[4];
+    rlpspToFloats(color, f);
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, f);
+}
+
+void rlpspMaterial(unsigned int ambient, unsigned int diffuse, unsigned int specular,
+                   unsigned int emissive, float shininess)
+{
+    GLfloat f[4];
+
+    rlpspToFloats(ambient, f);  glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, f);
+    rlpspToFloats(diffuse, f);  glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, f);
+    rlpspToFloats(specular, f); glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, f);
+    rlpspToFloats(emissive, f); glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, f);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+}
+
+void rlpspEnableFog(int enable) { if (enable) glEnable(GL_FOG); else glDisable(GL_FOG); }
+
+void rlpspFog(float start, float end, unsigned int color)
+{
+    GLfloat f[4];
+
+    glFogf(GL_FOG_START, start);
+    glFogf(GL_FOG_END, end);
+    rlpspToFloats(color, f);
+    glFogfv(GL_FOG_COLOR, f);
+}
+
+void rlpspTexEnv(int mode, unsigned int color)
+{
+    GLfloat f[4];
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, mode);
+
+    if ((color >> 24) != 0)
+    {
+        rlpspToFloats(color, f);
+        glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, f);
+    }
+}
+#endif
 
 // Set face culling mode
 void rlSetCullFace(int mode)

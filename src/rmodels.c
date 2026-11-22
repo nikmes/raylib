@@ -1335,6 +1335,7 @@ static void pspGePack(Mesh *mesh, bool dynamic)
 {
     if (!pspGeAvailable()) return;
     if (dynamic || (mesh->animVertices != NULL) || (mesh->animNormals != NULL)) return;
+    if (mesh->colors != NULL) return;      // baked colour lives in the float path's colour array
     if ((mesh->vertices == NULL) || (mesh->texcoords == NULL) || (mesh->normals == NULL)) return;
     if ((mesh->vertexCount <= 0) || (mesh->vboId == NULL)) return;
     if ((pspGeCount >= PSP_GE_MAX) || (pspGeFind(mesh->vboId) != NULL)) return;
@@ -1369,9 +1370,13 @@ static void pspGePack(Mesh *mesh, bool dynamic)
 
         uv[0] = mesh->texcoords[i*2 + 0];
         uv[1] = mesh->texcoords[i*2 + 1];
-        n[0] = mesh->normals[i*3 + 0];
-        n[1] = mesh->normals[i*3 + 1];
-        n[2] = mesh->normals[i*3 + 2];
+        // The model matrix carries the uniform quantisation scale S. The GE's normal
+        // transform is the inverse-transpose, so a unit normal would come out divided by
+        // S; pre-multiplying by S keeps it unit and the lit result matches the float path.
+        float S = 32768.0f/K;
+        n[0] = mesh->normals[i*3 + 0]*S;
+        n[1] = mesh->normals[i*3 + 1]*S;
+        n[2] = mesh->normals[i*3 + 2]*S;
         p[0] = (short)lrintf((mesh->vertices[i*3 + 0] - cx)*K);
         p[1] = (short)lrintf((mesh->vertices[i*3 + 1] - cy)*K);
         p[2] = (short)lrintf((mesh->vertices[i*3 + 2] - cz)*K);
@@ -1575,7 +1580,8 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
 #if defined(PLATFORM_PSP)
-    PspGeMesh *pg = pspGeFind(mesh.vboId);
+    // A colour array added after upload (a bake) must reach the generic path.
+    PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(mesh.vboId) : NULL;
 #else
     void *pg = NULL;
 #endif

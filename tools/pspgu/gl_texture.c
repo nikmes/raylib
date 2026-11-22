@@ -325,7 +325,8 @@ static void applyTexture(PspGuTexture *t)
     // batcher always sends as 255) - which is exactly how a 50 %-alpha texel rendered as
     // full opacity and a transparent one as opaque black. Every reference sets this pair;
     // PSPRuntime gpumanager.cpp:126, PGE pgeGfx.c:170.
-    sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+    sceGuTexFunc(pspgu.texEnvMode, GU_TCC_RGBA);
+    sceGuTexEnvColor(pspgu.texEnvColor);
     sceGuTexFilter(t->filter, t->filter);
     sceGuTexWrap(t->wrap, t->wrap);
     // GU's texture coordinate transform is not identity by default, and every reference
@@ -892,4 +893,67 @@ void pspguTextureReport(const char *when)
     pspguResidencyStats(&st);
     pspguLog("RESIDENCY [%s]: resident=%u shadow=%u evictions=%u reloads=%u failed=%u coalesced=%u (bytes/events)",
              when, st.resident, st.shadowBytes, st.evictions, st.reloads, st.failed, st.coalesced);
+}
+
+//------------------------------------------------------------------------------------
+// Texture environment (sprint 062). MODULATE is the default and the 2D path's mode.
+//------------------------------------------------------------------------------------
+
+void glTexEnvi(GLenum target, GLenum pname, GLint param)
+{
+    if (!pspgu.current) return;
+
+    if (target != GL_TEXTURE_ENV) return;
+
+    if (pname == GL_TEXTURE_ENV_MODE)
+    {
+        int mode;
+        switch (param)
+        {
+            case GL_MODULATE: mode = GU_TFX_MODULATE; break;
+            case GL_REPLACE:  mode = GU_TFX_REPLACE;  break;
+            case GL_DECAL:    mode = GU_TFX_DECAL;    break;
+            case GL_ADD:      mode = GU_TFX_ADD;      break;
+            case GL_BLEND:    mode = GU_TFX_BLEND;    break;
+            default:
+            {
+                static int logged = 0;
+                if (!logged) { pspguLog("glTexEnv: unsupported mode 0x%x (COMBINE?); keeping 0x%x", (unsigned)param, pspgu.texEnvMode); logged = 1; }
+            } return;
+        }
+        pspgu.texEnvMode = mode;
+        return;
+    }
+
+    {
+        static int logged = 0;
+        if (!logged) { pspguLog("glTexEnvi: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+    }
+}
+
+void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *params)
+{
+    if (!pspgu.current || (params == NULL) || (target != GL_TEXTURE_ENV)) return;
+
+    if (pname == GL_TEXTURE_ENV_MODE) { glTexEnvi(target, pname, (GLint)params[0]); return; }
+
+    if (pname == GL_TEXTURE_ENV_COLOR)
+    {
+        unsigned int r = (unsigned int)(params[0]*255.0f + 0.5f);
+        unsigned int g = (unsigned int)(params[1]*255.0f + 0.5f);
+        unsigned int b = (unsigned int)(params[2]*255.0f + 0.5f);
+        unsigned int a = (unsigned int)(params[3]*255.0f + 0.5f);
+        pspgu.texEnvColor = (a << 24) | (b << 16) | (g << 8) | r;
+        return;
+    }
+
+    {
+        static int logged = 0;
+        if (!logged) { pspguLog("glTexEnvfv: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+    }
+}
+
+void glTexEnvf(GLenum target, GLenum pname, GLfloat param)
+{
+    if (pname == GL_TEXTURE_ENV_MODE) glTexEnvi(target, pname, (GLint)param);
 }

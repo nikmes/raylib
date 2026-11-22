@@ -92,6 +92,12 @@ static void immFlush(void)
     pspguUploadMatrices();
     pspguWriteback(data, (unsigned int)count*sizeof(PspGuImmVertex));
     pspguBeginFrame();
+    if (pspgu.lighting)
+    {
+        unsigned int col = ((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
+                           ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr;
+        sceGuModelColor(pspgu.matEmissive, pspgu.matAmbient, col, pspgu.matSpecular);
+    }
     sceGuDrawArray(prim, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF, count, NULL, data);
 }
 

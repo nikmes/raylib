@@ -65,6 +65,25 @@ void glClear(GLbitfield mask)
     }
 }
 
+// Push one light's stored state. GU keeps no query, so glLight* mirrors it here and
+// re-emits the whole light; the command stream is small and this only runs on change.
+static void emitLight(int n)
+{
+    sceGuLight(n, pspgu.lightType[n], GU_DIFFUSE_AND_SPECULAR, &pspgu.lightPos[n]);
+    sceGuLightColor(n, GU_AMBIENT, pspgu.lightAmbient[n]);
+    sceGuLightColor(n, GU_DIFFUSE, pspgu.lightDiffuse[n]);
+    sceGuLightColor(n, GU_SPECULAR, pspgu.lightSpecular[n]);
+    sceGuLightAtt(n, pspgu.lightAtt[n][0], pspgu.lightAtt[n][1], pspgu.lightAtt[n][2]);
+    if (pspgu.lightHasSpot[n])
+        sceGuLightSpot(n, &pspgu.lightSpotDir[n], pspgu.lightSpotExp[n], pspgu.lightSpotCut[n]);
+}
+
+static void emitMaterial(void)
+{
+    sceGuModelColor(pspgu.matEmissive, pspgu.matAmbient, pspgu.matDiffuse, pspgu.matSpecular);
+    sceGuSpecular(pspgu.matShininess);
+}
+
 void glEnable(GLenum cap)
 {
     if (!pspgu.current) return;
@@ -77,6 +96,22 @@ void glEnable(GLenum cap)
         case GL_CULL_FACE:      sceGuEnable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuEnable(GU_SCISSOR_TEST); break;
         case GL_TEXTURE_2D:     pspgu.texEnabled = 1; sceGuEnable(GU_TEXTURE_2D); break;
+        case GL_LIGHTING:       pspgu.lighting = 1; sceGuEnable(GU_LIGHTING); break;
+        case GL_LIGHT0:
+        case GL_LIGHT1:
+        case GL_LIGHT2:
+        case GL_LIGHT3:
+        {
+            int n = (int)cap - (int)GL_LIGHT0;
+            pspgu.lightEnable |= (1u << n);
+            emitLight(n);
+            sceGuEnable(GU_LIGHT0 + n);
+        } break;
+        case GL_FOG:
+            pspgu.fogEnabled = 1;
+            sceGuFog(pspgu.fogStart, pspgu.fogEnd, pspgu.fogColor);
+            sceGuEnable(GU_FOG);
+            break;
         case GL_LINE_SMOOTH:    break;      // the GE has no line antialiasing
         default: break;
     }
@@ -94,6 +129,17 @@ void glDisable(GLenum cap)
         case GL_CULL_FACE:      sceGuDisable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuDisable(GU_SCISSOR_TEST); break;
         case GL_TEXTURE_2D:     pspgu.texEnabled = 0; sceGuDisable(GU_TEXTURE_2D); break;
+        case GL_LIGHTING:       pspgu.lighting = 0; sceGuDisable(GU_LIGHTING); break;
+        case GL_LIGHT0:
+        case GL_LIGHT1:
+        case GL_LIGHT2:
+        case GL_LIGHT3:
+        {
+            int n = (int)cap - (int)GL_LIGHT0;
+            pspgu.lightEnable &= ~(1u << n);
+            sceGuDisable(GU_LIGHT0 + n);
+        } break;
+        case GL_FOG:            pspgu.fogEnabled = 0; sceGuDisable(GU_FOG); break;
         default: break;
     }
 }
@@ -245,4 +291,192 @@ void glDisableClientState(GLenum array)
         case GL_NORMAL_ARRAY:        pspgu.clientBits &= ~PSPGU_CS_NORMAL; break;
         default: break;
     }
+}
+
+//------------------------------------------------------------------------------------
+// Lighting / material / fog (sprint 062)
+//------------------------------------------------------------------------------------
+
+void glLightfv(GLenum light, GLenum pname, const GLfloat *params)
+{
+    int n = (int)light - (int)GL_LIGHT0;
+
+    if (!pspgu.current || (n < 0) || (n > 3) || (params == NULL)) return;
+    pspguBeginFrame();
+
+    switch (pname)
+    {
+        case GL_POSITION:
+            pspgu.lightPos[n].x = params[0];
+            pspgu.lightPos[n].y = params[1];
+            pspgu.lightPos[n].z = params[2];
+            pspgu.lightType[n] = (params[3] == 0.0f)? GU_DIRECTIONAL :
+                                 (pspgu.lightHasSpot[n]? GU_SPOTLIGHT : GU_POINTLIGHT);
+            break;
+        case GL_AMBIENT:        pspgu.lightAmbient[n]  = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_DIFFUSE:        pspgu.lightDiffuse[n]  = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_SPECULAR:       pspgu.lightSpecular[n] = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_CONSTANT_ATTENUATION:  pspgu.lightAtt[n][0] = params[0]; break;
+        case GL_LINEAR_ATTENUATION:    pspgu.lightAtt[n][1] = params[0]; break;
+        case GL_QUADRATIC_ATTENUATION: pspgu.lightAtt[n][2] = params[0]; break;
+        case GL_SPOT_DIRECTION:
+            pspgu.lightSpotDir[n].x = params[0];
+            pspgu.lightSpotDir[n].y = params[1];
+            pspgu.lightSpotDir[n].z = params[2];
+            pspgu.lightHasSpot[n] = 1;
+            if (pspgu.lightType[n] != GU_DIRECTIONAL) pspgu.lightType[n] = GU_SPOTLIGHT;
+            break;
+        case GL_SPOT_EXPONENT:  pspgu.lightSpotExp[n] = params[0]; pspgu.lightHasSpot[n] = 1; break;
+        case GL_SPOT_CUTOFF:
+            pspgu.lightSpotCut[n] = params[0];
+            if (params[0] >= 180.0f) pspgu.lightHasSpot[n] = 0;
+            else { pspgu.lightHasSpot[n] = 1; if (pspgu.lightType[n] != GU_DIRECTIONAL) pspgu.lightType[n] = GU_SPOTLIGHT; }
+            break;
+        default:
+        {
+            static int logged = 0;
+            if (!logged) { pspguLog("glLightfv: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+            return;
+        }
+    }
+
+    emitLight(n);
+}
+
+void glLightf(GLenum light, GLenum pname, GLfloat param)
+{
+    GLfloat p[4] = { param, 0.0f, 0.0f, 0.0f };
+    glLightfv(light, pname, p);
+}
+
+void glLightModelfv(GLenum pname, const GLfloat *params)
+{
+    if (!pspgu.current || (params == NULL)) return;
+    pspguBeginFrame();
+
+    switch (pname)
+    {
+        case GL_LIGHT_MODEL_AMBIENT:
+            pspgu.sceneAmbient = guColor(params[0], params[1], params[2], params[3]);
+            sceGuAmbient(pspgu.sceneAmbient);
+            break;
+        case GL_LIGHT_MODEL_COLOR_CONTROL:
+            sceGuLightMode((params[0] == GL_SEPARATE_SPECULAR_COLOR)?
+                           GU_SEPARATE_SPECULAR_COLOR : GU_SINGLE_COLOR);
+            break;
+        case GL_LIGHT_MODEL_TWO_SIDE:
+        {
+            static int logged = 0;
+            if ((params[0] != 0.0f) && !logged)
+            {
+                pspguLog("glLightModel(TWO_SIDE): the GE is single-sided; ignored");
+                logged = 1;
+            }
+        } break;
+        default:
+        {
+            static int logged = 0;
+            if (!logged) { pspguLog("glLightModelfv: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+        } break;
+    }
+}
+
+void glLightModeli(GLenum pname, GLint param)
+{
+    GLfloat p[4] = { (GLfloat)param, 0.0f, 0.0f, 0.0f };
+    glLightModelfv(pname, p);
+}
+
+void glMaterialfv(GLenum face, GLenum pname, const GLfloat *params)
+{
+    (void)face;                                  // the GE has one material for both faces
+
+    if (!pspgu.current || (params == NULL)) return;
+    pspguBeginFrame();
+
+    switch (pname)
+    {
+        case GL_AMBIENT:  pspgu.matAmbient  = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_DIFFUSE:  pspgu.matDiffuse  = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_SPECULAR: pspgu.matSpecular = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_EMISSION: pspgu.matEmissive = guColor(params[0], params[1], params[2], params[3]); break;
+        case GL_AMBIENT_AND_DIFFUSE:
+            pspgu.matAmbient = pspgu.matDiffuse = guColor(params[0], params[1], params[2], params[3]);
+            break;
+        case GL_SHININESS:
+            pspgu.matShininess = params[0];
+            sceGuSpecular(pspgu.matShininess);
+            return;
+        default:
+        {
+            static int logged = 0;
+            if (!logged) { pspguLog("glMaterialfv: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+            return;
+        }
+    }
+
+    emitMaterial();
+}
+
+void glMaterialf(GLenum face, GLenum pname, GLfloat param)
+{
+    GLfloat p[4] = { param, 0.0f, 0.0f, 0.0f };
+    glMaterialfv(face, pname, p);
+}
+
+void glColorMaterial(GLenum face, GLenum mode)
+{
+    static int logged = 0;
+    (void)face; (void)mode;
+    if (!logged) { pspguLog("glColorMaterial: unsupported; glColor* updates the model diffuse"); logged = 1; }
+}
+
+void glFogf(GLenum pname, GLfloat param)
+{
+    if (!pspgu.current) return;
+
+    switch (pname)
+    {
+        case GL_FOG_MODE:
+            if (param != GL_LINEAR)
+            {
+                static int logged = 0;
+                if (!logged) { pspguLog("glFog: only GL_LINEAR is supported (0x%x); fog disabled", (unsigned)param); logged = 1; }
+                pspgu.fogEnabled = 0;
+                pspguBeginFrame();
+                sceGuDisable(GU_FOG);
+            }
+            break;
+        case GL_FOG_START: pspgu.fogStart = param; break;
+        case GL_FOG_END:   pspgu.fogEnd = param; break;
+        default:
+        {
+            static int logged = 0;
+            if (!logged) { pspguLog("glFogf: unsupported pname 0x%x; ignored", (unsigned)pname); logged = 1; }
+        } return;
+    }
+
+    if (pspgu.fogEnabled)
+    {
+        pspguBeginFrame();
+        sceGuFog(pspgu.fogStart, pspgu.fogEnd, pspgu.fogColor);
+    }
+}
+
+void glFogi(GLenum pname, GLint param) { glFogf(pname, (GLfloat)param); }
+
+void glFogfv(GLenum pname, const GLfloat *params)
+{
+    if (params == NULL) return;
+
+    if (pname == GL_FOG_COLOR)
+    {
+        pspgu.fogColor = guColor(params[0], params[1], params[2], params[3]);
+        if (pspgu.fogEnabled)
+        {
+            pspguBeginFrame();
+            sceGuFog(pspgu.fogStart, pspgu.fogEnd, pspgu.fogColor);
+        }
+    }
+    else glFogf(pname, params[0]);
 }

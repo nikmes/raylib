@@ -554,6 +554,14 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 - **Raymath composes row-vector.** `MatrixMultiply(A,B)` applies A then B, so a quantised mesh is
   `S · T(centre) · transform`, not `transform · T · S`; the wrong order scales the translation
   `[measured: sprint 061, cubes shrank toward the centre]`.
+- **Lighting colours need alpha 255.** Material and light colours with alpha 0 make lit fragments fully transparent
+  under the always-on GL blend; the mesh disappears although the lighting is correct. Keep lighting colours opaque
+  and never leave `sceGuColor` at GU's reset value `[measured: sprint 062]`.
+- **Packed normals must be pre-scaled by the quantisation `S`.** The GE transforms normals with the
+  inverse-transpose, so a unit normal on a mesh scaled by `S` comes out divided by `S`; lighting doubled until the
+  packer stored `n*S` `[measured: sprint 062, lit cube 0 diff after]`.
+- **`sceGuFog(start, end, colour)` matches GL_LINEAR directly.** No inverted-register workaround is needed for
+  pspgu; pspGL's own register writes agree at start 3 / end 6 `[measured: sprint 062, 0 diff]`.
 - **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
   `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
   all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.

@@ -122,10 +122,25 @@ static int isDirectLayout(unsigned int fmt, const PspGuLayout *l)
 // packed mesh draws nothing.
 static void applyGlobalColor(unsigned int fmt)
 {
-    if (fmt & GU_COLOR_BITS) return;
+    unsigned int col;
 
-    sceGuColor(((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
-               ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr);
+    if (fmt & GU_COLOR_BITS) return;            // per-vertex colour wins
+
+    col = ((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
+          ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr;
+
+    if (pspgu.lighting)
+    {
+        // GE lighting ignores the vertex colour; GL's current colour becomes the model
+        // diffuse, which is how DrawMesh's material colour reaches a lit mesh.
+        // pspGL overloads the material ambient with glColor when lighting is on; match it
+        // so the A/B compares like state rather than two different conventions.
+        sceGuModelColor(pspgu.matEmissive, col, pspgu.matDiffuse, pspgu.matSpecular);
+        sceGuColor(col);            // fragment alpha/fallback: GU still reads this register
+        return;
+    }
+
+    sceGuColor(col);
 }
 
 static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)

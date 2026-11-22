@@ -390,6 +390,32 @@ static void pspguInitGu(void)
     pspguInitTextures();
     pspguResetMatrices();
     pspgu.cr = pspgu.cg = pspgu.cb = pspgu.ca = 255;   // opaque white, GL's initial colour
+
+    // GL 1.1 defaults for the state lighting/fog rely on
+    pspgu.lighting = 0;
+    pspgu.lightEnable = 0;
+    for (int i = 0; i < 4; i++)
+    {
+        pspgu.lightType[i] = GU_DIRECTIONAL;
+        pspgu.lightPos[i].x = 0.0f; pspgu.lightPos[i].y = 0.0f; pspgu.lightPos[i].z = 1.0f;
+        pspgu.lightAmbient[i] = 0x00000000;
+        pspgu.lightDiffuse[i] = 0x00FFFFFF;
+        pspgu.lightSpecular[i] = 0x00000000;
+        pspgu.lightAtt[i][0] = 1.0f; pspgu.lightAtt[i][1] = 0.0f; pspgu.lightAtt[i][2] = 0.0f;
+        pspgu.lightSpotDir[i].x = 0.0f; pspgu.lightSpotDir[i].y = 0.0f; pspgu.lightSpotDir[i].z = -1.0f;
+        pspgu.lightSpotExp[i] = 0.0f; pspgu.lightSpotCut[i] = 180.0f;
+        pspgu.lightHasSpot[i] = 0;
+    }
+    pspgu.matEmissive = 0x00000000;
+    pspgu.matAmbient = 0x00333333;
+    pspgu.matDiffuse = 0x00CCCCCC;
+    pspgu.matSpecular = 0x00000000;
+    pspgu.matShininess = 0.0f;
+    pspgu.sceneAmbient = 0x00000000;
+    pspgu.texEnvMode = GU_TFX_MODULATE;
+    pspgu.texEnvColor = 0xFFFFFFFF;
+    pspgu.fogEnabled = 0;
+    pspgu.fogStart = 0.0f; pspgu.fogEnd = 1.0f; pspgu.fogColor = 0x00000000;
     pspgu.clearColor = 0xFF000000;      // opaque black, what rlglInit clears to
     pspgu.clearDepth = 1.0f;
     pspgu.vsync = 1;

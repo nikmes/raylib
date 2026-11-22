@@ -17,6 +17,9 @@ FAR ?= 0
 CAMREL ?= 0
 JITTER ?= 0
 INSTANCES ?= 1
+LIGHT ?= none
+FOG ?= none
+TEXENV ?= modulate
 
 ifeq ($(JITTER),1)
     FRAMES := 16
@@ -30,6 +33,29 @@ ifeq ($(JITTER),1)
 endif
 ifeq ($(CAMREL),1)
     CFLAGS += -DCAMREL_ARM
+endif
+ifeq ($(LIGHT),ge)
+    CFLAGS += -DLIGHT_GE
+else ifeq ($(LIGHT),bake)
+    CFLAGS += -DLIGHT_BAKE
+else ifneq ($(LIGHT),none)
+    $(error LIGHT must be ge, bake or none)
+endif
+ifeq ($(FOG),linear)
+    CFLAGS += -DFOG_LINEAR
+else ifneq ($(FOG),none)
+    $(error FOG must be linear or none)
+endif
+ifeq ($(TEXENV),modulate)
+    CFLAGS += -DTEXENV_MODULATE
+else ifeq ($(TEXENV),replace)
+    CFLAGS += -DTEXENV_REPLACE
+else ifeq ($(TEXENV),decal)
+    CFLAGS += -DTEXENV_DECAL
+else ifeq ($(TEXENV),add)
+    CFLAGS += -DTEXENV_ADD
+else
+    $(error TEXENV must be modulate, replace, decal or add)
 endif
 
 ifeq ($(SCENE),flat)

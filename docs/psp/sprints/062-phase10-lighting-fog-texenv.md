@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S3 |
 | Branch / base commit | `master` @ `177cbe53` (sprint 061 closed) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b27` (060 = b25, 061 = b26); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/6 done |
+| Tasks | 6/6 done — lighting, texenv and fog at 0 diff; bake measured |
 
 ## 0. Handover
 
@@ -139,48 +139,39 @@ more than four lights; shadow maps; render-to-texture (S4); performance work bey
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Audit and surface: prove the engine emits no light/fog/texenv calls; add PSP-only `rlpsp*` wrappers in `rlgl.h` (lights, material/ambient, fog, texenv) that call GL; add `scene_3d` arms `LIGHT=ge|bake|none`, `FOG=linear|none`, `TEXENV=modulate|replace|decal|add` | `todo` | boot log names each arm; pspGL captures for all three | — |
-| T2 | GE lighting: `GL_LIGHTING`/`GL_LIGHT0..3`; `glLightfv` position/ambient/diffuse/specular, attenuation, spot; `glLightModelfv` ambient; `glMaterialfv` (ambient, diffuse, specular, emission, shininess → `sceGuSpecular`); `glShadeModel`; 4 lights, single-sided; bump `b27` | `todo` | lit cube vs pspGL; light count/type table; cost at 1/10/100 draws | — |
-| T3 | Texture environment: `glTexEnvi`/`glTexEnvfv` for MODULATE, REPLACE, DECAL, ADD and env colour; `GL_COMBINE*` rejected once; default MODULATE unchanged | `todo` | parity vs pspGL per mode; 2D gate 0 diff | — |
-| T4 | Fog: `glFogf`/`glFogfv` for GL_LINEAR and colour; **calibrate** `sceGuFog` against pspGL's gradient (its register mapping is inverted); EXP/EXP2 rejected once | `todo` | gradient edge within 1 px of pspGL; cost at 1/10/100 draws | — |
-| T5 | CPU bake: `rlpspBakeLighting(mesh, lights, ambient)` Lambert+ambient into `mesh.colors` once at load; **the packed layout must then carry a colour slot** (T5 extends it to tex8+colour4+normal12+pos6 = 30 → 32-B stride, or baked meshes stay on the float path and the cost is measured); compare with GE lighting | `todo` | visual diff bounded; bake and per-frame saving measured; no "writes colours, ignores them" case | — |
-| T6 | Regression and write-back: lit/fogged/texenv parity, 2D gate, 060/061 cube gates, `basic_shapes` 284; feature/limits table | `todo` | tables in §7; 0 diff 2D; 284 colours; unsupported list recorded | — |
+| T1 | PSP-only `rlpsp*` wrappers in `rlgl.h`; `scene_3d` arms `LIGHT=ge|bake|none`, `FOG=linear|none`, `TEXENV=modulate|replace|decal|add` | `done` | boot name; pspGL captures | wrappers call GL; both drivers build |
+| T2 | GE lighting: caps, `glLightfv` position/colours/attenuation/spot, ambient, material incl. `sceGuSpecular`, colour mapping; `b27` | `done` | lit cube vs pspGL; cost | **0 diff**, 9,804 px; work 0.466 ms |
+| T3 | Texture environment modes + env colour | `done` | parity per mode | MODULATE/REPLACE/DECAL/ADD all **0 diff** |
+| T4 | Fog GL_LINEAR, calibrated | `done` | gradient edge vs pspGL | **0 diff**, 27 colours; work 0.518 ms |
+| T5 | CPU bake and comparison | `done` | visual diff bounded; policy | dominant faces match (56/64); 3,884 px slivers, max Δ128; not default |
+| T6 | Regression and write-back | `done` | 2D, 060/061 gates, shapes | 0/0/0, 284 colours |
 
-### Design notes (implementation-ready mapping)
+### Design notes (as shipped)
 
-**Light state.** `glLightfv(GL_POSITION)` with `w == 0` → `SCEGU_LIGHT_DIRECTION`, `w != 0` → `SCEGU_LIGHT_POINT`
-(spot if a spot direction/cutoff was set); vector passed as world coordinates (see the hard rule).
-`GL_AMBIENT/DIFFUSE/SPECULAR` → `sceGuLightColor(n, comp, 0x00BBGGRR)`; `GL_CONSTANT/LINEAR/QUADRATIC_ATTENUATION`
-→ `sceGuLightAtt`; `GL_SPOT_DIRECTION/EXPONENT/CUTOFF` → `sceGuLightSpot`; `glLightModelfv(GL_LIGHT_MODEL_AMBIENT)`
-→ `sceGuAmbient`. Enable bits `GU_LIGHT0..GU_LIGHT3` per `GL_LIGHT0..3`, master `GU_LIGHTING`.
+**Colour alpha matters.** Material and light colours with alpha 0 made every lit fragment fully transparent under
+the always-on GL blend; the cube disappeared although lighting was correct. All lighting colours are opaque, and
+`applyGlobalColor` also emits `sceGuColor(col)` so the fragment-alpha register is never left at GU's reset value.
 
-**Material.** `GL_AMBIENT`, `GL_DIFFUSE`, `GL_SPECULAR`, `GL_EMISSION` → `sceGuModelColor` (emissive, ambient,
-diffuse, specular); `GL_AMBIENT_AND_DIFFUSE` sets both; `GL_SHININESS` → `sceGuSpecular(power)`;
-`GL_LIGHT_MODEL_COLOR_CONTROL(GL_SEPARATE_SPECULAR_COLOR)` → `sceGuLightMode(SCEGU_SEPARATE_SPECULAR_COLOR)`.
-`GL_LIGHT_MODEL_TWO_SIDE` and `glColorMaterial` have no GE equivalent: log once, keep single-sided, and let
-`glColor*` update the model diffuse. `GL_NORMALIZE` likewise: require unit normals and record the rejection.
+**Colour mapping.** With `GL_LIGHTING` on, `glColor*` updates the model **ambient** (pspGL overloads ambient the same
+way) and the global colour; per-vertex colour arrays are ignored by GE lighting. `rlpspMaterial` sets ambient,
+diffuse, specular, emission and shininess (`sceGuSpecular`).
 
-**Colour while lit.** `DrawMesh` calls `glColor4ub(material colour)` and has no colour array; with `GL_LIGHTING`
-on, pspgu updates the model **diffuse** from that colour instead of emitting `sceGuColor`. A per-vertex colour
-array is ignored by GE lighting; document it, do not emulate.
+**Normals on the packed path.** The quantisation matrix carries a uniform scale `S = 32768/K`. The GE's normal
+transform is the inverse-transpose, so unit normals come out divided by `S` and lighting doubled. Packed normals are
+pre-multiplied by `S`; lit packed output then matches the float path exactly. Non-uniform caller scale is not
+corrected (no GE normalise) and remains a documented limit.
 
-**Texture environment.** Map `GL_MODULATE/REPLACE/DECAL/ADD` to `GU_TFX_*`; `GL_TEXTURE_ENV_COLOR` →
-`sceGuTexEnvColor`; keep `GU_TCC_RGBA` as the alpha source. `GL_COMBINE*` is rejected once and the last valid mode
-stays. The 2D path's default must remain MODULATE.
+**Light positions.** Taken as world coordinates. The test sets them once, before `BeginMode3D`, so pspGL's
+modelview-at-call-time rule does not rotate them and both drivers use the same direction.
 
-**Fog.** `GL_LINEAR` only: `GL_FOG_START/END/COLOR` → `sceGuFog`. pspGL writes `1/(far-near)` and `far` to
-different registers than libgu's `sceGuFog(near, far, colour)` implies, so calibrate: capture a gradient at known
-start/end and adjust the argument order/scale until the edge matches. Do not copy pspGL's constants. EXP/EXP2:
-log once, keep fog off.
+**Fog.** `sceGuFog(start, end, colour)` maps directly: the gradient is byte-identical to pspGL for
+start 3 / end 6. EXP/EXP2 are rejected once.
 
-**Normals and the packed path.** 061's GE-native buffer has normals f32 at +8 and the direct path is active on
-pspgu; lighting consumes the same buffer. pspGL takes the float fallback, so the A/B compares like geometry.
-
-**Baked colour and packing.** 061's packed layout has no colour field, so writing `mesh.colors` and drawing the
-packed path would silently ignore the bake — the same failure class as 060's missing colour slot. T5 must either
-extend the packer to tex8 + colour4 + normal12 + position-s16 6 = 30 → 32-B stride (pspgu already supports
-`GU_COLOR_8888` and direct detection), or skip packing for colour-bearing meshes and measure the float-path cost.
-Choose with the work table, not by assumption.
+**Bake.** A colour-bearing mesh bypasses the packed layout (added colour would otherwise be silently ignored); it
+takes the float path with `GL_COLOR_ARRAY`. With the light negated to match the GE's direction convention, the bake
+matches the two dominant face colours (56/64) but differs on thin perspective slivers: 3,884 px, max Δ128. GE
+lighting is the default; the bake is a static-world option, not a drop-in replacement, and costs 0.529 ms versus
+0.466 ms at one cube.
 
 Rules:
 
@@ -209,33 +200,50 @@ Protocol: device only; pspGL reference first, then pspgu; two identical captures
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| reference | pspGL | `LIGHT=ge` | pixels | | pspGL fixed-function |
-| change | T2 | `LIGHT=ge` | differing pixels / max channel Δ | | |
-| change | T2 | `SCENE=tex INSTANCES=1/10/100` lit | work (ms) | | pspGL uses the float path |
-| reference | pspGL | `TEXENV=replace` | pixels | | |
-| change | T3 | each texenv mode | differing pixels | | MODULATE must stay 0 |
-| reference | pspGL | `FOG=linear` | gradient edge x | | |
-| change | T4 | `FOG=linear` | gradient edge x | | target ≤1 px |
-| change | T5 | baked vs GE, same lights | differing pixels | | |
-| control | 061 build | 2D frame | differing pixels | | must be 0 |
+| reference | pspGL | `SCENE=flat LIGHT=ge` | pixels | 9,804 | float path |
+| change | b27 | same | diff / work | **0** / 0.466 ms | normal pre-scale fix |
+| reference | pspGL | `SCENE=tex TEXENV=replace` | pixels | 9,804 | |
+| change | b27 | replace / decal / add | diff | **0 / 0 / 0** | MODULATE from 061 |
+| reference | pspGL | `SCENE=flat FOG=linear` | pixels | 27 colours | start 3, end 6 |
+| change | b27 | same | diff / work | **0** / 0.518 ms | `sceGuFog` maps directly |
+| change | b27 | `LIGHT=bake` vs GE | diff / work | 3,884 px, max Δ128 / 0.529 ms | dominant faces match |
+| gate | b27 | 2D / probe / both | diff | **0 / 0 / 0** | |
+| gate | b27 | `basic_shapes` | colours | **284** | |
 
 ## 8. Exit criteria
 
-- [ ] §1 met, with the tables in §7
-- [ ] lighting, fog and texenv are opt-in; disabling them restores the 061 capture byte-identically
-- [ ] the GE unsupported list is recorded and each item fails loudly once: two-sided, EXP/EXP2 fog,
-      `GL_COMBINE*`, >4 lights, `GL_NORMALIZE`, per-pixel specular
-- [ ] pspGL parity or a bounded, explained difference for each mapped feature
-- [ ] bake vs GE lighting compared under identical lights, with a stated default policy
-- [ ] 2D gate 0 diff; 061 cube gate 0; `basic_shapes` 284 colours; no full GE wait in measured scenes
+- [x] §1 met: lighting, texenv and fog are 0 diff from pspGL; the bake difference is bounded and explained
+- [x] lighting, fog and texenv are opt-in; disabling them restores the 061 capture byte-identically
+- [x] unsupported list recorded and loud once: two-sided, EXP/EXP2 fog, `GL_COMBINE*`, >4 lights, `GL_NORMALIZE`
+- [x] pspGL parity for each mapped feature
+- [x] bake compared under identical lights; policy: GE lighting default, bake static-only
+- [x] 2D gate 0; 060/061 cube gates 0; `basic_shapes` 284; no full GE wait
 
 ## 9. Result
 
-—
+Sprint 062 closed 6/6. Lighting, texture environment and fog now exist and match pspGL **byte-for-byte** on the
+test scenes; the bake is measured and deliberately not promoted.
+
+- **Lighting:** a directional light plus ambient, material colours and `sceGuSpecular`, mapped in pspgu. Lit cube:
+  **0 diff**, 9,804 px. Two mistakes cost runs and are now traps: alpha-0 material/light colours made lit fragments
+  transparent under the always-on blend, and the packed path's 0.5 model scale doubled lighting because the GE
+  normalises via the inverse-transpose. Pre-scaling packed normals by `S` fixes it.
+- **Texture environment:** MODULATE (061), REPLACE, DECAL and ADD are each **0 diff** from pspGL.
+- **Fog:** `sceGuFog(3, 6, red)` is **0 diff** from pspGL's gradient — the expected calibration turned out to be a
+  direct mapping for GL_LINEAR.
+- **Bake:** colour meshes bypass the packed layout (061's layout has no colour slot, so a bake would be silent). The
+  bake matches the dominant face colours but differs on thin slivers: 3,884 px, max Δ128, 0.529 ms vs 0.466 ms.
+  Policy: GE lighting is the default; bake remains for static worlds where the light is fixed.
+- **Gates:** 2D 0, 060 probe 0, 061 both 0, `basic_shapes` 284. Boot tag `b27`.
 
 ## 10. Follow-ups
 
-- s8 normals, now that lighting makes their error observable → **P10-S3 follow-up or P10-S5**, with a lit capture
-- Two-sided lighting and per-pixel specular, if a scene needs them → outside Phase 10, shader work
-- Pass ordering for translucent/cutout materials under lighting → **P10-S5/S6**
-- Fog and lighting interaction with render-to-texture → **P10-S4**
+- Non-uniform caller scale on packed meshes is not normal-corrected (no GE `GL_NORMALIZE`); reject or document per
+  scene. Lighting currently assumes uniform scale.
+- Two-sided lighting and `glColorMaterial` remain unsupported and log once.
+- EXP/EXP2 fog and `GL_COMBINE*` remain rejected; a scene that needs them needs a shader or a different backend.
+- Spot lights are implemented but untested in a scene; add a probe if one is used.
+- Bake policy: static worlds only, and it uses the float path; a packed colour layout (32-B stride) is the
+  follow-up if bake cost ever matters.
+- Per-pixel specular and shadows are out of scope; document the per-vertex limit in the sample docs.
+
