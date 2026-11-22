@@ -22,7 +22,7 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [7 — 2D specialisation](07-2d-specialisation/index.md) | text, tile maps, shapes, particles | **done** — 018–023; all exit criteria; cache strips measured null |
 | [8 — Input](08-input/index.md) | pad mapping, nub calibration, edge detection | in progress — P8-S1 done (5/5); P8-S2 T1–T4 done, T5 prepared; T6 pending; 043–044 written |
 | [9 — Audio](09-audio/index.md) | `sceAudio` output without costing frame time | **done** — route A: 8 sounds + 1 streamed track at 60 fps, 0 dropouts in 18,000 frames, clean close; SAS/ME deferred (P9-S6/S7 dropped) |
-| [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | **closed** — paths built; two timing criteria not met (067) |
+| [10 — 3D and advanced](10-3d-advanced/index.md) | models, RTT, culling, ME options | **reopened** — P10-S7 targets the two not-met criteria and lit regression (067 baseline) |
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started — reviewed; 8 sprints written (052–059); blocked on 7–10 |
 | [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
 | [13 — Samples porting](13-samples-porting/index.md) | the whole upstream example corpus (227 samples, 8 categories) as a gated regression suite | in progress — core/shapes/textures audited (33 ported); audio S12/S13 done (9 ported, 2 deferred); text/models/shaders/others unaudited; P13-S7 T1b gate blocked |

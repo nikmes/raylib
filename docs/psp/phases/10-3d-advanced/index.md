@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **closed** — renderer paths built and measured; two exit criteria not met and recorded (067) |
+| State | **reopened** — P10-S7 targets the two not-met criteria and the lit regression; 067 recorded the baseline |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
 | Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **not met**: 20 fps, one sync/frame (067) |
 
@@ -298,3 +298,4 @@ carried into Phase 11 with that evidence. This is the honest state of the phase,
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | **done** — 256² 0 diff; 300×200 rejected |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | NDC clip + fan, conservative culling, ME dropped | **done** — 236/720 vs 0; 917 culled, 0 diff |
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | **done** — 20 fps; two criteria recorded not met |
+| [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, lit bisect, sweep, re-close | written |
