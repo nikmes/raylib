@@ -122,6 +122,7 @@ nav:
               - P10-S1 — DrawMesh fix and mesh gate: psp/sprints/060-phase10-drawmesh-and-mesh-gate.md
               - P10-S2 — Camera-relative and GE-native models: psp/sprints/061-phase10-camera-relative-and-ge-native-models.md
               - P10-S3 — Lighting, fog and texenv: psp/sprints/062-phase10-lighting-fog-texenv.md
+              - P10-S4 — Render-to-texture: psp/sprints/065-phase10-render-to-texture.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
@@ -147,6 +148,10 @@ nav:
               - P13-S9 — Render targets — core and shapes: psp/sprints/032-phase13-render-targets-core-shapes.md
               - P13-S10 — Render targets — textures: psp/sprints/033-phase13-render-targets-textures.md
               - P13-S11 — Remaining features and close: psp/sprints/034-phase13-remaining-features-and-close.md
+          - 14 — Audio samples:
+              - psp/phases/14-audio-samples/index.md
+              - P14-S1 — Sound and Music batch: psp/sprints/063-phase14-sound-and-music-batch.md
+              - P14-S2 — AudioStream batch and close: psp/sprints/064-phase14-stream-batch-and-close.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

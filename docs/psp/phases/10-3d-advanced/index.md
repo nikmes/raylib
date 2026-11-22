@@ -65,6 +65,7 @@ pspgu's VRAM (sampling a render target, explicit read-after-write), or add a sma
 256×256 8888 target is 256 KiB and a 512×256 target 512 KiB; both fit the ~913 KiB tail but compete with textures
 and the 3D depth buffer. Working implementations do exist and all take the same route, not GL FBOs — see
 [Render-to-texture: what the references actually do](#render-to-texture-what-the-references-actually-do).
+Specified in [P10-S4](../../sprints/065-phase10-render-to-texture.md).
 
 **Scope gaps:**
 
@@ -222,7 +223,9 @@ follow from the sources:
   measured null, so do not expect texture-cache tricks to rescue a poorly sized target.
 - **Budget the target as VRAM, not as a free block.** A 256×256 8888 target is 256 KiB; the SDK's 256×256 5551
   aux buffer is 128 KiB; PGE's sample target is 64 KiB. Targets compete with the texture tail and, for 3D, the
-  depth buffer. Read the boot allocation counters; the texture allocator is a bump allocator with no free list.
+  depth buffer. Read the boot allocation counters; the allocator is a 512-byte span allocator with a free list and
+  coalescing (sprint 015 T3), and `pspguVramStats` reports the largest free span — but a target must be
+  8192-byte aligned and padded to a power of two to be sampled.
 
 ### Do not copy — 3D-specific hazards found
 
@@ -248,6 +251,6 @@ follow from the sources:
 | [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | written |
 | [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | rotation-only view + camera offset, one-time s16 packing, direct interleaved path | written |
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, CPU bake, explicit limits | written |
-| P10-S4 — Render-to-texture | draw-target redirect, explicit read-after-write, VRAM budget | proposed |
+| [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | written |
 | P10-S5 — Culling, tessellation and the ME option | static bounds, window-edge tessellation, ME measured | proposed |
 | P10-S6 — 3D sample target, regression and close | or folded into S5 if the sample meets the target | proposed |
