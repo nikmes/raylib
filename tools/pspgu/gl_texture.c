@@ -172,9 +172,10 @@ static unsigned int packRGBA(int r, int g, int b, int a, unsigned int fmt)
 }
 
 // Sprint 015 T2: choose a format per texture. 8888 is the default (pixel parity); `auto`
-// is the measured build. Only an opaque GL_RGB source becomes 5650; an alpha source
-// becomes 4444 only when every alpha is 0 or 255. Anti-aliased alpha (the font atlas,
-// the half-alpha probe) stays 8888, because 4-bit alpha would be a visible change.
+// is the measured build. Only an opaque GL_RGB source becomes 5650; an RGBA source
+// becomes 4444 only when every alpha is 0 or 255. A GRAY_ALPHA source (the font atlas)
+// always stays 8888: its two bytes are luminance+alpha, not a packed 16-bit colour, and
+// the 4444 path would turn glyphs into solid blocks.
 static unsigned int chooseFormat(GLenum format, GLenum type, const unsigned char *pixels,
                                  int width, int height)
 {
@@ -183,16 +184,14 @@ static unsigned int chooseFormat(GLenum format, GLenum type, const unsigned char
     {
         if ((type == GL_UNSIGNED_BYTE) && (format == GL_RGB)) return GU_PSM_5650;
 
-        if ((type == GL_UNSIGNED_BYTE) &&
-            ((format == GL_RGBA) || (format == GL_LUMINANCE_ALPHA)))
+        if ((type == GL_UNSIGNED_BYTE) && (format == GL_RGBA))
         {
             int bytes = sourceBytesPerPixel(format, type);
-            int alphaIndex = (format == GL_RGBA)? 3 : 1;
             int binary = 1;
 
             for (int i = 0; i < width*height; i++)
             {
-                unsigned char a = pixels[(size_t)i*bytes + alphaIndex];
+                unsigned char a = pixels[(size_t)i*bytes + 3];
                 if ((a != 0) && (a != 255)) { binary = 0; break; }
             }
             if (binary) return GU_PSM_4444;

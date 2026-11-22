@@ -40,6 +40,15 @@ if [ "${STAGE_ASSETS:-0}" = "1" ]; then
        "$HOSTFS/resources/" 2>/dev/null || true
 fi
 
+if [ "${STAGE_AUDIO:-0}" = "1" ]; then
+    mkdir -p "$HOSTFS/resources"
+    cp /home/psp/raylib-psp/examples/audio/resources/*.wav \
+       /home/psp/raylib-psp/examples/audio/resources/*.ogg \
+       /home/psp/raylib-psp/examples/audio/resources/*.mp3 \
+       /home/psp/raylib-psp/examples/audio/resources/*.xm \
+       "$HOSTFS/resources/" 2>/dev/null || true
+fi
+
 capture() {
     local slot=$1
     local raw="$HOSTFS/${NAME}_${slot}.raw"

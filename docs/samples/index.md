@@ -13,6 +13,25 @@ eventually cover all 227 upstream samples across the eight categories.
 | `core_custom_logging` | ![core_custom_logging](images/core_custom_logging.png) |
 | `core_random_values` | ![core_random_values](images/core_random_values.png) |
 | `core_3d_camera_mode` | ![core_3d_camera_mode](images/core_3d_camera_mode.png) |
+| `core_2d_camera_mouse_zoom` | ![core_2d_camera_mouse_zoom](images/core_2d_camera_mouse_zoom.png) |
+| `core_2d_camera_platformer` | ![core_2d_camera_platformer](images/core_2d_camera_platformer.png) |
+| `core_2d_camera` | ![core_2d_camera](images/core_2d_camera.png) |
+| `core_3d_camera_first_person` | ![core_3d_camera_first_person](images/core_3d_camera_first_person.png) |
+| `core_3d_camera_fps` | ![core_3d_camera_fps](images/core_3d_camera_fps.png) |
+| `core_3d_camera_free` | ![core_3d_camera_free](images/core_3d_camera_free.png) |
+| `core_3d_picking` | ![core_3d_picking](images/core_3d_picking.png) |
+| `core_basic_screen_manager` | ![core_basic_screen_manager](images/core_basic_screen_manager.png) |
+| `core_compute_hash` | ![core_compute_hash](images/core_compute_hash.png) |
+| `core_custom_frame_control` | ![core_custom_frame_control](images/core_custom_frame_control.png) |
+| `core_delta_time` | ![core_delta_time](images/core_delta_time.png) |
+| `core_directory_files` | ![core_directory_files](images/core_directory_files.png) |
+| `core_input_actions` | ![core_input_actions](images/core_input_actions.png) |
+| `core_random_sequence` | ![core_random_sequence](images/core_random_sequence.png) |
+| `core_scissor_test` | ![core_scissor_test](images/core_scissor_test.png) |
+| `core_screen_recording` | ![core_screen_recording](images/core_screen_recording.png) |
+| `core_storage_values` | ![core_storage_values](images/core_storage_values.png) |
+| `core_text_file_loading` | ![core_text_file_loading](images/core_text_file_loading.png) |
+| `core_world_screen` | ![core_world_screen](images/core_world_screen.png) |
 
 ## Shapes
 
@@ -23,6 +42,23 @@ eventually cover all 227 upstream samples across the eight categories.
 | `shapes_outlines_thickness` | ![shapes_outlines_thickness](images/shapes_outlines_thickness.png) |
 | `shapes_circle_sector_drawing` | ![shapes_circle_sector_drawing](images/shapes_circle_sector_drawing.png) |
 | `shapes_rectangle_advanced` | ![shapes_rectangle_advanced](images/shapes_rectangle_advanced.png) |
+| `shapes_ball_physics` | ![shapes_ball_physics](images/shapes_ball_physics.png) |
+| `shapes_basic_shapes` | ![shapes_basic_shapes](images/shapes_basic_shapes.png) |
+| `shapes_bouncing_ball` | ![shapes_bouncing_ball](images/shapes_bouncing_ball.png) |
+| `shapes_clock_of_clocks` | ![shapes_clock_of_clocks](images/shapes_clock_of_clocks.png) |
+| `shapes_colors_palette` | ![shapes_colors_palette](images/shapes_colors_palette.png) |
+| `shapes_dashed_line` | ![shapes_dashed_line](images/shapes_dashed_line.png) |
+| `shapes_digital_clock` | ![shapes_digital_clock](images/shapes_digital_clock.png) |
+| `shapes_drag_puzzle` | ![shapes_drag_puzzle](images/shapes_drag_puzzle.png) |
+| `shapes_easings_ball` | ![shapes_easings_ball](images/shapes_easings_ball.png) |
+| `shapes_easings_box` | ![shapes_easings_box](images/shapes_easings_box.png) |
+| `shapes_easings_rectangles` | ![shapes_easings_rectangles](images/shapes_easings_rectangles.png) |
+| `shapes_easings_testbed` | ![shapes_easings_testbed](images/shapes_easings_testbed.png) |
+| `shapes_ellipse_collision` | ![shapes_ellipse_collision](images/shapes_ellipse_collision.png) |
+| `shapes_following_eyes` | ![shapes_following_eyes](images/shapes_following_eyes.png) |
+| `shapes_hilbert_curve` | ![shapes_hilbert_curve](images/shapes_hilbert_curve.png) |
+| `shapes_lines_bezier` | ![shapes_lines_bezier](images/shapes_lines_bezier.png) |
+| `shapes_math_sine_cosine` | ![shapes_math_sine_cosine](images/shapes_math_sine_cosine.png) |
 
 ## Textures
 
@@ -47,10 +83,28 @@ eventually cover all 227 upstream samples across the eight categories.
 | `textures_raw_data` | ![textures_raw_data](images/textures_raw_data.png) |
 | `textures_background_scrolling` | ![textures_background_scrolling](images/textures_background_scrolling.png) |
 | `textures_blend_modes` | ![textures_blend_modes](images/textures_blend_modes.png) |
+| `textures_bunnymark` | ![textures_bunnymark](images/textures_bunnymark.png) |
 
 `textures_image_rotate` shows the 45° case introduced in P13-S7; the 90° and -90° rotations were captured in
 P13-S2. The P13-S2 and P13-S7 texture samples use different pspgu arms where needed; the sprint pages record which
 arm produced each capture.
 
-Not in this gallery: `basic_shapes` (the 284-colour parity gate) and `batch_check` (the deterministic render
-gate). Their captures are archived in `/home/psp/evidence/sprint030/`.
+## Audio
+
+Nine of the eleven `examples/audio` samples. `audio_sound_positioning` waits for Phase 10's 3D path;
+`audio_spectrum_visualizer` waits for the P13-S16 shader policy.
+
+| Sample | Screenshot |
+|---|---|
+| `audio_sound_loading` | ![audio_sound_loading](images/audio_sound_loading.png) |
+| `audio_sound_multi` | ![audio_sound_multi](images/audio_sound_multi.png) |
+| `audio_music_stream` | ![audio_music_stream](images/audio_music_stream.png) |
+| `audio_mixed_processor` | ![audio_mixed_processor](images/audio_mixed_processor.png) |
+| `audio_module_playing` | ![audio_module_playing](images/audio_module_playing.png) |
+| `audio_raw_stream` | ![audio_raw_stream](images/audio_raw_stream.png) |
+| `audio_stream_callback` | ![audio_stream_callback](images/audio_stream_callback.png) |
+| `audio_amp_envelope` | ![audio_amp_envelope](images/audio_amp_envelope.png) |
+| `audio_stream_effects` | ![audio_stream_effects](images/audio_stream_effects.png) |
+
+Not in this gallery: `batch_check` (the deterministic render gate). Its captures are archived in
+`/home/psp/evidence/sprint030/`.

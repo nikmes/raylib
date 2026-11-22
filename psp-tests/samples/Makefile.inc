@@ -12,7 +12,7 @@ OBJS ?= main.o
 
 # -I$(CURDIR)/.. finds shared headers in the category directory (currently
 # shapes/raygui.h). build.mak prepends its own include directories.
-CFLAGS = -Wall -I$(CURDIR)/.. -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11
+CFLAGS = -Wall -I$(CURDIR)/.. -I$(CURDIR)/../.. -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1
 
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 
@@ -23,3 +23,6 @@ PSP_LARGE_MEMORY = 0
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+# Runtime libs must come after build.mak so its SDK stubs are linked first.
+LIBS += -lpspaudio -lpthread -latomic

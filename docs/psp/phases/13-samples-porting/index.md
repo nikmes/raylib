@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — scope is the whole upstream corpus (227 samples, 8 categories); core/shapes/textures audited with 33 ported, audio S12/S13 written; text/models/shaders/others not yet audited; P13-S7 T1b `batch_check` gate blocked |
+| State | **in progress** — scope is the whole upstream corpus (227 samples, 8 categories); Tier A/B core/shapes/textures 68 ported; audio 9; text/models/shaders/others not yet audited; P13-S7 T1b `batch_check` gate blocked |
 | Depends on | nothing for wave 0; later waves consume Phase 6 (texture budget), Phase 7 (oversize assets), Phase 8 (input), Phase 9 (audio), Phase 10 (3D/models) |
 | Exit criterion | every sample in every upstream category — `core`, `shapes`, `textures`, `text`, `models`, `shaders`, `audio`, `others` — is either ported with a build marker and two identical captures, or marked `dropped`/deferred with a reason; the per-category tables match the device runs |
 
@@ -38,6 +38,9 @@ Scope: `examples/core` (49), `shapes` (45), `textures` (33), `text` (17), `model
 
 The four audited categories are tabulated below. The remaining 89 samples are counted as not ported until their
 category is audited; they are not silently folded into a tier.
+
+Per-sample state is kept in one place: the [sample ledger](ledger.md) lists all **227** rows by raylib category
+with `ported`/`pending` status and a `possible`/`blocked`/`drop` verdict. Every porting sprint updates it.
 
 ## What has to be true before starting
 
@@ -78,9 +81,10 @@ ported (Tier B 60, ported 5) without changing the audit's total.
 Audio adds **11 samples** outside these tiers (9 portable, 2 deferred). The four unaudited categories add **89**
 more: `text` 17, `models` 32, `shaders` 36, `others` 4. The whole corpus is **227 samples**.
 
-Progress: **33/227 ported** — 4 bring-up + `core_input_gamepad` (P8-S1) + 13 Tier A + 8 Tier B textures
-(P13-S2) + 7 Tier C `G2` samples (P13-S7). Remaining: **52 Tier B core/shapes**, **42 Tier C**, **9 audio**
-(P13-S12/S13, plus 2 deferred), and **89 unaudited** (`text` 17, `models` 32, `shaders` 36, `others` 4).
+Progress: **77/227 ported** — 4 bring-up + `core_input_gamepad` (P8-S1) + 13 Tier A + 8 Tier B textures
+(P13-S2) + 7 Tier C `G2` samples (P13-S7) + 24 Tier B core/shapes (S3/S5) + 11 Tier B core cameras/UI (S4) +
+**9 audio** (P13-S12/S13). Remaining: **17 Tier B core/shapes**, **42 Tier C**, **2 audio deferred**, and
+**89 unaudited** (`text` 17, `models` 32, `shaders` 36, `others` 4).
 
 ### What the driver supports today
 
@@ -252,19 +256,19 @@ the exit-key path is ever worth testing.
 ## Audio corpus (11)
 
 The scope was extended on 2026-11-22, when Phase 9 closed `G5`. The audio samples are a fifth corpus, not a tier:
-nine port in P13-S12/S13 and two are deferred with a reason and a trigger.
+nine are ported in P13-S12/S13 and two are deferred with a reason and a trigger.
 
 | sample | API path | verdict |
 |---|---|---|
-| `audio_sound_loading` | `LoadSound` WAV + OGG | P13-S12 |
-| `audio_sound_multi` | `LoadSound` + `LoadSoundAlias` | P13-S12 |
-| `audio_music_stream` | `LoadMusicStream` MP3 | P13-S12 |
-| `audio_mixed_processor` | `Music` + `Sound` + `AttachAudioStreamProcessor` | P13-S12 |
-| `audio_module_playing` | `LoadMusicStream` XM | P13-S12 |
-| `audio_raw_stream` | `LoadAudioStream` + `UpdateAudioStream` | P13-S13 |
-| `audio_stream_callback` | `SetAudioStreamCallback` | P13-S13 |
-| `audio_amp_envelope` | envelope + `IsAudioStreamProcessed` | P13-S13 |
-| `audio_stream_effects` | `AttachAudioStreamProcessor` LPF + delay | P13-S13 |
+| `audio_sound_loading` | `LoadSound` WAV + OGG | ported (S12) |
+| `audio_sound_multi` | `LoadSound` + `LoadSoundAlias` | ported (S12) |
+| `audio_music_stream` | `LoadMusicStream` MP3 | ported (S12) |
+| `audio_mixed_processor` | `Music` + `Sound` + `AttachAudioStreamProcessor` | ported (S12) |
+| `audio_module_playing` | `LoadMusicStream` XM | ported (S12) |
+| `audio_raw_stream` | `LoadAudioStream` + `UpdateAudioStream` | ported (S13) |
+| `audio_stream_callback` | `SetAudioStreamCallback` | ported (S13) |
+| `audio_amp_envelope` | envelope + `IsAudioStreamProcessed` | ported (S13) |
+| `audio_stream_effects` | `AttachAudioStreamProcessor` LPF + delay | ported (S13) |
 | `audio_sound_positioning` | `SetSoundVolume` + `SetSoundPan` | deferred — Phase 10 |
 | `audio_spectrum_visualizer` | `LoadWave` + FFT + `BeginShaderMode` | deferred — rewrite or drop |
 
@@ -300,7 +304,7 @@ prove the frame, not the sound.
 | gate | capability | owner phase | unlocks |
 |---|---|---|---|
 | `G0` | harness, 480×272, asset staging | this phase | 13 Tier A + 8 small-asset texture samples |
-| `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 52 Tier B core/shapes, 5 input testbeds |
+| `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 17 remaining Tier B core/shapes (35 ported with the sample-local pad/nub layer), 5 input testbeds |
 | `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 7 texture samples + 45° `image_rotate` — **done in P13-S7** |
 | `G3` | downscale or slice assets beyond 1024 or over budget | Phase 7 (windows already done in sprint 020) | 4 texture samples + pad art + explosion |
 | `G4` | render targets / FBO on the native backend | Phase 10 (with Phase 5) | 16 render-target samples |
@@ -320,7 +324,7 @@ fits the 1024 buffer and still does not fit the 8888 VRAM budget, while a 11468-
 |---|---|---|---|
 | W0 — Tier A | `G0` | 13 | all 13 render; captures archived; harness reusable by copy + Makefile include |
 | W0b — small-asset textures | `G0` | 8 | eight texture paths render (`UpdateTexture`, GIF, NPatch, blend, wrap/filter, rlgl curve, sheet windows); interaction deferred |
-| W1 — input remap | `G1` | 57 | mapping decision recorded; a representative set exercised end to end; remaining B samples swept |
+| W1 — input remap | `G1` | 17 | 35 Tier B samples ported with the sample-local pad/nub layer; 17 remain plus 5 testbeds |
 | W2 — texture budget | `G2`/`G3` | 11 | each asset's padded size, PSM and build flags recorded; visual delta counted where an asset is downscaled |
 | W3 — render targets | `G4` | 16 | render-to-texture path works; the 16 samples render |
 | W4 — remaining features | `G1`, `G3`, `G6`, `G7` | 5 | mouse, asset, clipboard and readback samples either render or are dropped |
@@ -360,12 +364,15 @@ fits the 1024 buffer and still does not fit the 8888 VRAM budget, while a 11468-
 3. Add the PSP module header, `PSP_MODULE_INFO`, `PSP_MAIN_THREAD_ATTR`, and the `PSP_LARGE_MEMORY=0` build flag.
 4. Replace `while (!WindowShouldClose())` with a bounded loop (600 frames by default; longer or input-scripted for
    interactive samples). Log `FRAME` every 60 and end with `DONE` + `sceKernelSleepThread()`.
-5. Use the `psp-tests/basic_shapes/Makefile` link line as the template (`-lraylib -lpng -lz -lglut -lGLU -lGL
-   -lpspgu -lpspvfpu`), and set `PSP_HEAP_SIZE_KB` explicitly when the sample holds full-screen images.
+5. Use the shared `psp-tests/samples/Makefile.inc` (`TARGET = <name>` + `include ../../Makefile.inc`); it keeps
+   the pspgu link line and appends `-lpspaudio -lpthread -latomic` after `build.mak`. Set `PSP_HEAP_SIZE_KB`
+   explicitly when the sample holds full-screen images.
 6. Stage assets with `usbhostfs_pc` rooted at `examples/<category>` and address them as `host0:/resources/...`,
    or copy them beside the sample.
 7. Capture per [§6](../../memory-map.md#6-measurement-protocol): two identical captures, a visible build marker, and
    the frame log stopped before the capture.
+8. Update the [sample ledger](ledger.md) row and the summary counts in the same commit. A sprint that changes a
+   sample's state and leaves the ledger stale is not done.
 
 ## What we already know
 
@@ -427,11 +434,12 @@ fits the 1024 buffer and still does not fit the 8888 VRAM budget, while a 11468-
 - [P13-S2 — Tier A textures and texture paths](../../sprints/025-phase13-texture-paths.md) — **done**;
   gate `G0`; 12 samples; evidence `/home/psp/evidence/sprint025/`; Tier A complete; next is P13-S3
 - [P13-S3 — Input remap and core input slice](../../sprints/026-phase13-input-remap-and-core-slice.md) —
-  placeholder; gate `G1`; 10 samples
+  **done**; 10/10 with the sample-local pad/nub layer; evidence `/home/psp/evidence/p13-possible/` and
+  `/home/psp/evidence/p13-core11/`
 - [P13-S4 — Core cameras and UI](../../sprints/027-phase13-core-cameras-and-ui.md) —
-  placeholder; gate `G1`; 10 samples
+  **done**; 10/10; evidence `/home/psp/evidence/p13-core11/`
 - [P13-S5 — Shapes sweep A](../../sprints/028-phase13-shapes-sweep-a.md) —
-  placeholder; gate `G1`; 17 samples
+  **in progress**; 16/17; `shapes_kaleidoscope` remains; evidence `/home/psp/evidence/p13-possible/`
 - [P13-S6 — Shapes sweep B and testbeds](../../sprints/029-phase13-shapes-sweep-b.md) —
   placeholder; gate `G1`; 16 samples + 5 testbeds
 - [P13-S7 — Texture budget](../../sprints/030-phase13-texture-budget.md) —
@@ -445,10 +453,11 @@ fits the 1024 buffer and still does not fit the 8888 VRAM budget, while a 11468-
   placeholder; gate `G4`; 5 samples
 - [P13-S11 — Remaining features](../../sprints/034-phase13-remaining-features.md) —
   placeholder; gates `G1`/`G3`/`G6`/`G7`; 5 samples + 12 drops
-- [P13-S12 — Audio: Sound and Music batch](../../sprints/063-phase13-audio-sound-and-music.md) — **written**;
-  gate `G5` (closed); 5 samples; next is P13-S13
+- [P13-S12 — Audio: Sound and Music batch](../../sprints/063-phase13-audio-sound-and-music.md) — **done**;
+  gate `G5` (closed); 5 samples; evidence `/home/psp/evidence/sprint063/`; next is P13-S13
 - [P13-S13 — Audio: AudioStream batch](../../sprints/064-phase13-audio-stream.md) —
-  **written**; gate `G5` (closed); 4 samples; the phase stays open for W6–W10
+  **done**; gate `G5` (closed); 4 samples; evidence `/home/psp/evidence/sprint064/`; the phase stays open for
+  W6–W10
 
 Future waves, not written (the global `NNN` is assigned when each sprint opens):
 
@@ -457,6 +466,10 @@ Future waves, not written (the global `NNN` is assigned when each sprint opens):
 - **P13-S16 — Shader policy** — 36 samples; gate `G9`, each rewritten or dropped
 - **P13-S17 — Others** — 4 samples, assessed individually
 - **P13-S18 — All-corpus close** — the 227-sample exit audit
+
+- [P13-S19 — Corpus ledger](../../sprints/075-phase13-corpus-ledger.md) — **continuous**; owns the
+  [sample ledger](ledger.md) and keeps its 227 rows and summary current. It sits outside the wave order and
+  never closes while Phase 13 is open.
 
 ## Related
 

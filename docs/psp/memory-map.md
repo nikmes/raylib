@@ -434,16 +434,17 @@ The whole upstream example corpus is the regression suite: **227 samples in eigh
 45, textures 33, text 17, models 32, shaders 36, audio 11, others 4. A 2026-11-21 audit of the 127
 core/shapes/textures samples found **13 drop-in**, **60 that render but need input remapped**, **49 blocked**
 (16 render targets, 11 texture size/VRAM, 9 input hardware, 8 desktop-only, 2 input+asset, 2 clipboard, 1 texture
-readback), and **5 ported**. Phase 9 closed the audio gate on 2026-11-22, so the 11 `examples/audio` samples
-joined the scope: nine port in P13-S12/S13, two are deferred (`sound_positioning` → Phase 10;
+readback), and **40 ported**. Phase 9 closed the audio gate on 2026-11-22, so the 11 `examples/audio` samples
+joined the scope: **nine are ported** in P13-S12/S13, two are deferred (`sound_positioning` → Phase 10;
 `spectrum_visualizer` → CPU-FFT rewrite or drop). Text, models, shaders and others are not yet audited; models
-wait on Phase 10 (`G8`), shaders need a rewrite/drop policy (`G9`). Progress is **33/227 ported**. A 768-wide
+wait on Phase 10 (`G8`), shaders need a rewrite/drop policy (`G9`). Progress is **77/227 ported**. A 768-wide
 sheet (scarfy) fits through two 512 windows; a GIF is a frame-sized image with stacked data, not a stacked
 texture. The phase is capability-gated and runs alongside phases 6–11; it never blocks them. Sprints 024–034 plus
 063–064: S1 done (9), S2 done (12), P13-S7 samples captured with its T1b `batch_check` gate blocked by a shared
-`libraylib.a` rebuild, audio S12/S13 written. S3–S6/S8–S11 and the future corpus waves S14–S18 remain. Full
-corpus map, tier lists, gates and the porting recipe:
-[Phase 13](phases/13-samples-porting/index.md).
+`libraylib.a` rebuild, audio S12/S13 done, S3/S4 done and S5 in progress (35 Tier B samples). S6/S8–S11 and the
+future corpus waves S14–S18 remain. Full
+corpus map, tier lists, gates, the per-sample [sample ledger](phases/13-samples-porting/ledger.md) and the
+porting recipe: [Phase 13](phases/13-samples-porting/index.md).
 
 ---
 

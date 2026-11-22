@@ -146,6 +146,7 @@ nav:
               - psp/phases/12-release-gate/index.md
           - 13 — Samples porting:
               - psp/phases/13-samples-porting/index.md
+              - Sample ledger: psp/phases/13-samples-porting/ledger.md
               - P13-S1 — Harness and Tier A: psp/sprints/024-phase13-harness-and-tier-a.md
               - P13-S2 — Texture paths: psp/sprints/025-phase13-texture-paths.md
               - P13-S3 — Input remap and core slice: psp/sprints/026-phase13-input-remap-and-core-slice.md
@@ -159,6 +160,7 @@ nav:
               - P13-S11 — Remaining features: psp/sprints/034-phase13-remaining-features.md
               - "P13-S12 — Audio: Sound and Music batch": psp/sprints/063-phase13-audio-sound-and-music.md
               - "P13-S13 — Audio: AudioStream batch": psp/sprints/064-phase13-audio-stream.md
+              - P13-S19 — Corpus ledger: psp/sprints/075-phase13-corpus-ledger.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

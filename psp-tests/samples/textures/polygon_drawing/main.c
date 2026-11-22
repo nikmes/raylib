@@ -126,6 +126,7 @@ int main(void)
 // without crossing perimeter, points must be in anticlockwise order
 void DrawTexturePoly(Texture2D texture, Vector2 center, Vector2 *points, Vector2 *texcoords, int pointCount, Color tint)
 {
+    rlDrawRenderBatchActive();
     glBindTexture(GL_TEXTURE_2D, texture.id);
     glBegin(GL_TRIANGLES);
 
@@ -145,4 +146,5 @@ void DrawTexturePoly(Texture2D texture, Vector2 center, Vector2 *points, Vector2
     glEnd();
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    rlpsp.boundTex = 0xFFFFFFFFu;
 }

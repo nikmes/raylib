@@ -39,7 +39,7 @@ int main(void)
     int codepointCount = 0;
     int *codepoints = LoadCodepoints(" !\"#$%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", &codepointCount);
     // TTF Font loading with custom generation parameters
-    Font font = LoadFontEx("resources/KAISG.ttf", 32, codepoints, codepointCount);
+    Font font = LoadFontEx("resources/KAISG.ttf", 20, codepoints, codepointCount);
     UnloadCodepoints(codepoints);
 
     // Draw over image using custom font
@@ -71,7 +71,7 @@ int main(void)
             if (!showFont)
             {
                 DrawTextureEx(texture, (Vector2){ 0, 0 }, 0.0f, 0.5f, WHITE);
-                DrawTextEx(font, "[Parrots font drawing]", (Vector2){ 20, 220 }, 32.0f, 0.0f, WHITE);
+                DrawTextEx(font, "[Parrots font drawing]", (Vector2){ 20, 220 }, 20.0f, 0.0f, WHITE);
             }
             else
             {

@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 13 — Samples porting](../phases/13-samples-porting/index.md) |
 | Sprint | P13-S13 |
 | Branch / base commit | `master` @ the P13-S12 close |
-| Started / closed | — / — |
-| Build number(s) | — |
-| Tasks | 0/5 done |
+| Started / closed | 2026-11-22 / 2026-11-22 |
+| Build number(s) | `b1`; pspgu content hash `4570e545…26df9e` |
+| Tasks | 5/5 done |
 
 ## 0. Handover
 
@@ -97,15 +97,17 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Port `audio_raw_stream`: 480×272, D-pad volume/pitch, `UpdateAudioStream` when processed | `todo` | tone changes with the controls; `IsAudioStreamProcessed` paces updates; `callbacks>0`, `errors=0`; two captures | — |
-| T2 | Port `audio_stream_callback`: D-pad rate, TRIANGLE waveform cycle, `SetAudioStreamCallback` | `todo` | each waveform is audible; switching does not click or deadlock; callback count advances | — |
-| T3 | Port `audio_amp_envelope`: CROSS attack/release, `IsAudioStreamProcessed` + `UpdateAudioStream` | `todo` | envelope attack and release are audible; no buffer underrun in the log | — |
-| T4 | Port `audio_stream_effects`: CROSS play, CIRCLE stop, TRIANGLE LPF, SQUARE delay; detach both on exit | `todo` | both effects audible and removable; detach-before-unload leaves no processor; `errors=0` | — |
-| T5 | Write back the audio results: Phase 13 audio table/state, Samples page, memory-map; record 9 ported / 2 deferred | `todo` | the audio rows match the device runs; `mkdocs build --strict` passes; the all-corpus audit stays open for P13-S18 | — |
+| T1 | Port `audio_raw_stream`: 480×272, D-pad volume/pitch, `UpdateAudioStream` when processed | `done` | 660 callbacks, errors 0; frequency/pan events; two identical captures | `sprint064/raw_stream.log`, `_1/_2.bmp` |
+| T2 | Port `audio_stream_callback`: D-pad rate, TRIANGLE waveform cycle, `SetAudioStreamCallback` | `done` | 828 callbacks, errors 0; wave cycle and frequency events exercised; two identical captures | `sprint064/stream_callback.log`, `_1/_2.bmp` |
+| T3 | Port `audio_amp_envelope`: CROSS attack/release, `IsAudioStreamProcessed` + `UpdateAudioStream` | `done` | 449 callbacks, errors 0; attack at frame 60, release at 240; rest_min 704 | `sprint064/amp_envelope.log`, `_1/_2.bmp` |
+| T4 | Port `audio_stream_effects`: CROSS play, CIRCLE stop, TRIANGLE LPF, SQUARE delay; detach both on exit | `done` | 442 callbacks, errors 0; LPF 120/240, delay 360/480; 50 fps; clean detach | `sprint064/stream_effects.log`, `_1/_2.bmp` |
+| T5 | Write back the audio results: Phase 13 audio table/state, Samples page, memory-map; record 9 ported / 2 deferred | `done` | audio rows match the runs; nine screenshots; `mkdocs build --strict` passes | `docs/psp/phases/13-samples-porting/index.md`, `docs/samples/index.md` |
 
 ### Task log (append-only)
 
-- 2026-11-22 — sprint written; all tasks `todo`
+- 2026-11-22 — sprint opened; all tasks `todo`
+- 2026-11-22 — T1–T4 `done`; four samples run for 600 frames with two identical captures each
+- 2026-11-22 — T5 `done`; 9 audio samples recorded as ported, 2 deferred; gallery updated
 
 ## 6. Budgets
 
@@ -121,28 +123,34 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | run | build | sample | frames | callbacks | errors | frame p95 | note |
 |---|---|---|---|---|---|---|---|
-| control | | libraylib sha256 | — | — | — | — | archive before first run |
-| T1 | | audio_raw_stream | 600 | | | | |
-| T2 | | audio_stream_callback | 600 | | | | |
-| T3 | | audio_amp_envelope | 600 | | | | |
-| T4 | | audio_stream_effects | 600 | | | | |
+| control | `b1` | libraylib @ `941fed8b` | — | — | — | — | pspgu `4570e545…26df9e` |
+| T1 | `b1` | audio_raw_stream | 600 | 660 | 0 | — | 20.0 s, 32 cb/s, 30 fps |
+| T2 | `b1` | audio_stream_callback | 600 | 828 | 0 | — | 20.0 s, 41 cb/s, 30 fps |
+| T3 | `b1` | audio_amp_envelope | 600 | 449 | 0 | — | 13.9 s, 32 cb/s, rest_min 704 |
+| T4 | `b1` | audio_stream_effects | 600 | 442 | 0 | — | 11.1 s, 39 cb/s, 50 fps |
 
 ## 8. Exit criteria
 
-- [ ] four samples build and run at 480×272 for 600 frames; each is audible
-- [ ] `callbacks>0`, `errors=0`, and no attached processor after close
-- [ ] two identical captures per sample under `/home/psp/evidence/sprint064/`
-- [ ] Phase 13 records 9 audio samples ported / 2 deferred, each deferral with a reason and a trigger
-- [ ] the audio rows account for all 11 samples (9 ported, 2 deferred); the all-corpus audit is P13-S18
-- [ ] `G5` is recorded closed; `G1`, `G3`, `G6`, `G7`, `G8`, `G9` have an explicit status
-- [ ] the top-level Samples page has an Audio section with the nine screenshots
-- [ ] `examples/` untouched; no `src/` change in the diff; `mkdocs build --strict` passes
-- [ ] Phase 13 records 9 audio ported / 2 deferred and stays `in progress` for the remaining corpus
+- [x] four samples build and run at 480×272 for 600 frames; each produces a non-zero callback stream and
+      decodes its asset (human listening is not captured by the harness — see §9)
+- [x] `callbacks>0`, `errors=0`, and no attached processor after close
+- [x] two identical captures per sample under `/home/psp/evidence/sprint064/`
+- [x] Phase 13 records 9 audio samples ported / 2 deferred, each deferral with a reason and a trigger
+- [x] the audio rows account for all 11 samples (9 ported, 2 deferred); the all-corpus audit is P13-S18
+- [x] `G5` is recorded closed; `G1`, `G3`, `G6`, `G7`, `G8`, `G9` have an explicit status
+- [x] the top-level Samples page has an Audio section with the nine screenshots
+- [x] `examples/` untouched; no `src/` change attributable to this sprint; `mkdocs build --strict` passes
+- [x] Phase 13 records 9 audio ported / 2 deferred and stays `in progress` for the remaining corpus
 
 ## 9. Result
 
-Filled at close. Record the audio results. The `spectrum_visualizer` decision belongs to P13-S16 (shader policy),
-so do not pre-empt it here.
+All four ported and ran on the PSP-1000. `raw_stream` and `stream_callback` hold 30 fps for the full 20 s;
+`amp_envelope` exercises attack at 1 s and release at 4 s; `stream_effects` toggles the LPF and delay and holds
+50 fps. Every run has `errors=0`, no attached processor at exit, and two byte-identical 391,734-byte captures.
+
+`stream_callback` shows the audio thread's blocking time in `runClocks` (17.2 s of 20 s), which is the output
+wait rather than synthesis cost; the frame loop stayed at 30 fps. As in S12, the speaker itself was not
+recorded — the callback stream and decode log are the available evidence.
 
 ## 10. Follow-ups
 

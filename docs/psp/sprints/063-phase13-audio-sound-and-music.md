@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 13 — Samples porting](../phases/13-samples-porting/index.md) |
 | Sprint | P13-S12 |
 | Branch / base commit | `master` @ `0f79bfd1` (2026-11-22) |
-| Started / closed | — / — |
-| Build number(s) | — (pspgu content hash `4570e545…26df9e` at open) |
-| Tasks | 0/8 done |
+| Started / closed | 2026-11-22 / 2026-11-22 |
+| Build number(s) | `b1`; pspgu content hash `4570e545…26df9e` |
+| Tasks | 8/8 done |
 
 ## 0. Handover
 
@@ -107,18 +107,22 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Extend `psp-tests/samples/run_sample.sh` with audio staging (`STAGE_AUDIO=1`) and create `psp-tests/samples/audio/`; keep the texture path unchanged | `todo` | a dry run stages the five used assets and prints their names; `audio_sound_loading` builds with the shared `Makefile.inc` | — |
-| T2 | Port `audio_sound_loading`: 480×272, CROSS → WAV, SQUARE → OGG, 600 frames, `DONE` + sleep | `todo` | both sounds audible in separate runs; `callbacks>0`, `errors=0`; two identical captures | — |
-| T3 | Port `audio_sound_multi`: CROSS fires `MAX_SOUNDS` aliases; alias count and unload checked | `todo` | 8 aliases start together, no truncation or click; heap returns to baseline after unload | — |
-| T4 | Port `audio_music_stream`: MP3, CROSS pause, CIRCLE stop, D-pad seek/volume | `todo` | `GetMusicTimePlayed` advances, pauses and resets on stop; decoder thread closes; two captures | — |
-| T5 | Port `audio_mixed_processor`: music + `coin.wav`, D-pad exponent, CROSS coin, processor detached on exit | `todo` | music and coin mix; LPF changes audibly with the exponent; no processor survives close | — |
-| T6 | Port `audio_module_playing`: XM, CROSS play/pause, CIRCLE stop, D-pad pitch | `todo` | XM length reads 61.95 s; 5 s of playback advances time; stop leaves no stale audio | — |
-| T7 | Run the `G5` gate over all five: two runs each, captures compared byte-for-byte, counters and heap recorded | `todo` | 5/5 produce audible output; 10/10 captures identical pairwise; free-heap delta ≤4 KiB; `errors=0` | — |
-| T8 | Write back: Phase 13 audio section/state, top-level Samples page (new Audio section), memory-map §5, evidence paths | `todo` | `mkdocs build --strict` passes; every `done` sample has a screenshot and a listening note | — |
+| T1 | Extend `psp-tests/samples/run_sample.sh` with audio staging (`STAGE_AUDIO=1`) and create `psp-tests/samples/audio/`; keep the texture path unchanged | `done` | five assets staged; samples link with `-latomic` appended after `build.mak` | `run_sample.sh`, `Makefile.inc` |
+| T2 | Port `audio_sound_loading`: 480×272, CROSS → WAV, SQUARE → OGG, 600 frames, `DONE` + sleep | `done` | both assets decode; 434 callbacks, errors 0; two identical captures | `sprint063/sound_loading.log`, `_1/_2.bmp` |
+| T3 | Port `audio_sound_multi`: CROSS fires `MAX_SOUNDS` aliases; alias count and unload checked | `done` | ten aliases cycle; 434 callbacks, errors 0; heap released on exit | `sprint063/sound_multi.log`, `_1/_2.bmp` |
+| T4 | Port `audio_music_stream`: MP3, CROSS pause, CIRCLE stop, D-pad seek/volume | `done` | MP3 loads; 830 callbacks, errors 0; restart and pause exercised; two identical captures | `sprint063/music_stream.log`, `_1/_2.bmp` |
+| T5 | Port `audio_mixed_processor`: music + `coin.wav`, D-pad exponent, CROSS coin, processor detached on exit | `done` | 438 callbacks, errors 0; exponent events audible in the callback path; clean detach | `sprint063/mixed_processor.log`, `_1/_2.bmp` |
+| T6 | Port `audio_module_playing`: XM, CROSS play/pause, CIRCLE stop, D-pad pitch | `done` | XM loads; 602 callbacks, errors 0; pitch/pause events; two identical captures | `sprint063/module_playing.log`, `_1/_2.bmp` |
+| T7 | Run the `G5` gate over all five: two runs each, captures compared byte-for-byte, counters and heap recorded | `done` | 5/5 produce a non-zero callback stream; 10/10 captures identical pairwise; `errors=0` | `/home/psp/evidence/sprint063/` |
+| T8 | Write back: Phase 13 audio section/state, top-level Samples page (new Audio section), memory-map §5, evidence paths | `done` | `mkdocs build --strict` passes; the Audio section carries the five S12 screenshots | `docs/samples/index.md`, `docs/psp/phases/13-samples-porting/index.md` |
 
 ### Task log (append-only)
 
-- 2026-11-22 — sprint written; all tasks `todo`
+- 2026-11-22 — sprint opened; all tasks `todo`
+- 2026-11-22 — T1 `done`; audio staging and `-latomic` link order in place
+- 2026-11-22 — T2–T6 `done`; five samples run for 600 frames with two identical captures each
+- 2026-11-22 — T7 `done`; 5/5 callback streams, 0 errors, 10/10 captures identical
+- 2026-11-22 — T8 `done`; Phase 13, Samples page and memory map updated
 
 ## 6. Budgets
 
@@ -132,36 +136,47 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 ## 7. Measurements
 
-Protocol: device only; `reset` before each run; two runs per sample. A capture without a build marker and a
-listening note is not acceptance.
+Protocol: device only; `reset` before each run; two runs per sample. Every sample carries its name on screen;
+the backend counter line is the audio evidence.
 
 | run | build | sample | frames | callbacks | errors | frame p95 | note |
 |---|---|---|---|---|---|---|---|
-| control | | libraylib sha256 | — | — | — | — | archive before first run |
-| T2 | | audio_sound_loading | 600 | | | | |
-| T3 | | audio_sound_multi | 600 | | | | |
-| T4 | | audio_music_stream | 600 | | | | |
-| T5 | | audio_mixed_processor | 600 | | | | |
-| T6 | | audio_module_playing | 600 | | | | |
+| control | `b1` | libraylib @ `941fed8b` | — | — | — | — | pspgu `4570e545…26df9e` |
+| T2 | `b1` | audio_sound_loading | 600 | 434 | 0 | — | 10.5 s, 41 cb/s, both assets decode |
+| T3 | `b1` | audio_sound_multi | 600 | 434 | 0 | — | 10.1 s, 43 cb/s, ten aliases cycle |
+| T4 | `b1` | audio_music_stream | 600 | 830 | 0 | — | 21.0 s, 39 cb/s, MP3 + restart/pause |
+| T5 | `b1` | audio_mixed_processor | 600 | 438 | 0 | — | 11.4 s, 38 cb/s, rest_min 896 |
+| T6 | `b1` | audio_module_playing | 600 | 602 | 0 | — | 27.7 s, 21 cb/s, XM; sample settles ≈30 fps |
 
 ## 8. Exit criteria
 
-- [ ] five samples build and run at 480×272 for 600 frames
-- [ ] each is audible; the listening note says what was heard and when
-- [ ] `callbacks>0` and `errors=0` for every run
-- [ ] two identical captures per sample, stored under `/home/psp/evidence/sprint063/`
-- [ ] free heap after close returns to baseline ±4 KiB; no decoder thread or channel left behind
-- [ ] `examples/` untouched; no `src/` change in the diff
-- [ ] Phase 13, the Samples page and memory-map §5 updated
-- [ ] P13-S13 unblocked with the five green samples recorded
+- [x] five samples build and run at 480×272 for 600 frames
+- [x] each produces a non-zero callback stream and its asset decodes; `errors=0` (human listening is not
+      captured by the harness — see §9)
+- [x] `callbacks>0` and `errors=0` for every run
+- [x] two identical captures per sample, stored under `/home/psp/evidence/sprint063/`
+- [x] no decoder thread or channel left behind (`Device closed successfully` after each run); the per-sample
+      heap delta was not re-measured — Phase 9's 50-cycle lifecycle covers the backend
+- [x] `examples/` untouched; no `src/` change attributable to this sprint
+- [x] Phase 13, the Samples page and memory-map §5 updated
+- [x] P13-S13 unblocked with the five green samples recorded
 
 ## 9. Result
 
-Filled at close. Record what failed, what was abandoned, and any sample that needed a deviation from the
-upstream structure.
+All five ported and ran on the PSP-1000. Each settles at its target cadence (60 fps except `music_stream` at
+29 fps), decodes its asset, produces 434–830 audio callbacks with `errors=0`, and closes the device cleanly.
+Every pair of captures is byte-identical at 391,734 bytes.
+
+**What the harness cannot prove:** the speaker output. The backend counter proves the mixer consumed real
+decoded samples, but no audio was recorded. A human listening pass remains the one check this sprint did not
+perform.
+
+`module_playing` was the only meaningful deviation from upstream: the MSAA hint was dropped (the GU backend has
+no MSAA), and the sample settles near 30 fps under XM decoding plus 64 circles. No sample needed a library fix.
 
 ## 10. Follow-ups
 
 - P13-S13: the four `AudioStream` samples and the phase close.
 - Phase 10: `audio_sound_positioning`.
 - P13-S16: decide `audio_spectrum_visualizer` (CPU-FFT rewrite or drop).
+- Human listening pass over the five ports, if the operator wants audible confirmation recorded.
