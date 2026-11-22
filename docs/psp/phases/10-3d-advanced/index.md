@@ -44,13 +44,17 @@ Phase 10 can start: Phases 6 and 7 are closed, so the texture/VRAM layer and the
 found two blockers that decide the first sprint, plus three scope gaps.
 
 **Blocker 1 — `DrawMesh`/`glDrawElements` does not produce pixels, and the cause is visible in the code.** The
-carried phase-5 evidence is a draw of 36 indices with `tex2d=0` and no pixels. `glDrawElements` converts vertices
-into a fixed `PspGuVertex` record laid out as `{u,v, color, nx,ny,nz, x,y,z}` (36 B; the comment says 32), but
-`guVertexFormat()` packs only the arrays the client enabled. `DrawMesh` has no texture array and does have
-normals, so the format omits `GU_TEXTURE_32BITF`; GU then reads the colour at offset 0 (the u/v pair), the normal
-where the colour is, and the position at the normal — garbage, and often no pixels. The immediate cube works
-because it uses the batched 24-byte layout, which matches its format. **First task:** pack the converting path per
-format (or use format-specific structs), and prove it with `MESH_SCENE=1` against the predicted cube bbox
+carried phase-5 trace is `drawElements count=36 tex2d=0 fmt=0x1e3` with no pixels (sprint 013 §T1 split). Decoding
+the format: `0x1e3 = GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF` — texture, normals and positions,
+**no colour**. `DrawMesh` enables exactly those three arrays (`src/rmodels.c:1458-1472`), and `guVertexFormat()`
+advertises only what was enabled. (`tex2d=0` is separate: `LoadMaterialDefault` leaves the diffuse texture id at 0
+on GL11 because `rlGetTextureIdDefault()` returns 0, so texturing is never enabled; the format still carries UVs
+because `mesh.texcoords` is non-NULL.) The converting path, however, always writes the fixed record
+`{u,v, color, nx,ny,nz, x,y,z}`: 36 B, measured offsets colour +8, normal +12, position +24. GU's format implies
+32 B with normal at +8 and position at +20, so it reads the material colour as the first normal component and the
+tail of the normals as the position — garbage, and usually no pixels. The immediate cube works because it uses the
+batched 24-byte layout, which matches its format. **First task (sprint 060):** pack only the enabled fields, in GU
+order, with the stride computed from the format; prove it with `MESH_SCENE=1` against the predicted cube bbox
 x 193..287, y 92..189.
 
 **Blocker 2 — render-to-texture has no backend.** `tools/pspgu/` implements no `glGenFramebuffers`,
@@ -239,4 +243,11 @@ follow from the sources:
 
 ## Sprints and features
 
-None yet. Use the [sprint template](../../templates/sprint.md).
+| Sprint | Focus | Status |
+|---|---|---|
+| [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | written |
+| P10-S2 — Camera-relative and GE-native model data | convert once at load, indexed buffers, matrix precision | proposed |
+| P10-S3 — Lighting, fog and texture environment | GE state mapping and its documented limits | proposed |
+| P10-S4 — Render-to-texture | draw-target redirect, explicit read-after-write, VRAM budget | proposed |
+| P10-S5 — Culling, tessellation and the ME option | static bounds, window-edge tessellation, ME measured | proposed |
+| P10-S6 — 3D sample target, regression and close | or folded into S5 if the sample meets the target | proposed |

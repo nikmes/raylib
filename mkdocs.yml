@@ -119,6 +119,7 @@ nav:
               - P9-S7 — Adopt route (conditional): psp/sprints/051-phase9-adopt-route.md
           - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
+              - P10-S1 — DrawMesh fix and mesh gate: psp/sprints/060-phase10-drawmesh-and-mesh-gate.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
