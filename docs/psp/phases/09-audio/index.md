@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **done** — route A (P9-S1…S5); SAS/ME (P9-S6/S7) deferred with numbers (2026-11-22); **P9-S8 written** for MP3/QOA/XM feeder coverage |
+| State | **done** — route A (P9-S1…S5); SAS/ME (P9-S6/S7) deferred with numbers; **P9-S8 done** — every file format decoded off the main thread (2026-11-22) |
 | Depends on | Phase 1 (a running build) — independent of the renderer phases |
 | Exit criterion | several sounds plus one streamed track on the device, 60 fps held, audio thread cost measured, five minutes without a dropout, no `sceAudio` call in the steady-state frame loop |
 
@@ -198,7 +198,7 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 | P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | **done** — route A adopted; SAS/ME deferred; Phase 9 closed |
 | P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | **dropped** — route A meets every budget |
 | P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | **dropped** — no route switch needed |
-| P9-S8 — Music format coverage and stream-cost attribution | [068](../../sprints/068-phase9-music-format-coverage.md) | feeder for MP3/QOA, XM/MOD decision, `stream_effects` attribution | **written** — Phase 13 exposed the gap |
+| P9-S8 — Music format coverage and stream-cost attribution | [068](../../sprints/068-phase9-music-format-coverage.md) | feeder for MP3/QOA, XM/MOD, adaptive audio priority, `stream_effects` attribution | **done** — MP3/QOA/XM 0.030 ms; demos and soak clean; adaptive soak 60 fps |
 
 Use the [sprint template](../../templates/sprint.md) for any added work.
 

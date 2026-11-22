@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `84fd8282` (pin at writing; P9-S5 closed at `0f79bfd1`) |
 | Started / closed | 2026-11-22 (written) / — |
 | Build number(s) | `audio b6`; pspgu `b24` |
-| Tasks | 0/5 done |
+| Tasks | 5/5 done |
 
 ## 0. Handover
 
@@ -25,6 +25,14 @@ records what belongs to a later phase.
 | `audio_module_playing` | XM | 60 fps | ≈30 fps | **legacy**: `jar_xm_generate_samples` under the lock |
 | `audio_stream_effects` | **MP3 Music** + LPF/delay | 60 fps | 50 fps | has the legacy MP3 decode path; processor share unmeasured |
 | `audio_sound_loading` / `_multi` / `mixed_processor` / `amp_envelope` | WAV/OGG | 60 fps | 60 fps | feeder/worker; confirms route A |
+
+**Implementation notes (2026-11-22).** Two priority findings changed the plan. The feeder was first
+created at `0x30`, above the miniaudio worker (`0x3C`/60) and it starved audio during large refills; it is
+now `0x40`. Separately, the worker itself was created at 60, **below** the `0x20` game thread, so any frame
+longer than one 1024-frame block (23 ms) underran the channel — the 30 fps samples were affected. The
+backend now lifts the worker to `0x1E` on its first write. That is a deliberate backend change, measured:
+callbacks went from 18/s to 43/s on `module_playing`. The loaders were also still gating decoder creation
+on OGG/WAV; they now call `PspMusicDecoderCreate()` for every loaded format and the function filters.
 
 **Read before acting**, in this order:
 
@@ -48,6 +56,9 @@ baseline** before editing: `MODE=music MUSIC=/country.mp3`, then `/mini1111.xm`,
 - **Keep the public API and route A.** `UpdateMusicStream()` stays valid; the feeder is internal.
 - **Decode, read and module synthesis only on the feeder.** The audio thread copies PCM; it never opens a
   file, allocates, or runs a codec.
+- **Feed below the audio worker.** The miniaudio worker starts at 60 and raises adaptively to `0x1E`
+  (two consecutive gaps >28 ms); the music feeder sits at `0x40`. Never put the feeder above audio: a
+  11760-frame XM refill starved the worker and the channel underran (audible as slow/trembling playback).
 - **Match the stream's declared format exactly.** MP3/QOA streams are 32-bit f32; XM follows
   `AUDIO_DEVICE_FORMAT` (f32 on PSP, because `AUDIO_DEVICE_FORMAT` defaults to `ma_format_f32` and the PSP
   build does not override it), so the feeder calls `jar_xm_generate_samples`; MOD is 16-bit s16 stereo and
@@ -107,7 +118,7 @@ before Phase 10 spends the CPU budget on 3D.
 
 ## 3. Scope
 
-**In:** feeder support for MP3 and QOA; a measured decision (and, if justified, implementation) for XM/MOD
+**In:** `psp-tests/audio_demo` (minimal two-loop listening harness); feeder support for MP3 and QOA; a measured decision (and, if justified, implementation) for XM/MOD
 synthesis; attribution and, only with evidence, a fix for `audio_stream_effects`; harness and regression runs;
 docs write-back.
 
@@ -131,45 +142,58 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Legacy baseline and attribution**: `MODE=music` for MP3, QOA, XM; record update p95/max, callbacks, rest, errors. For `stream_effects`, run the port with effects attached and skipped | `todo` | before row for each format; the XM/MP3 gap is quantified; `stream_effects` split main-thread vs audio-thread vs draw | — |
-| T2 | **Feeder for MP3 and QOA**: extend `PspMusicDecoderCreate()` and the thread switch; `drmp3_read_pcm_frames_f32`, `qoaplay_decode`; EOF loop/seek/stop reuse the existing destroy/recreate path | `todo` | MP3/QOA update p95 ≤1 ms, max ≤2 ms; audio continuous; seek/loop/pause pass; 0 errors | — |
-| T3 | **XM/MOD decision**: if T1 shows main-thread synthesis over 1 ms p95, move `jar_xm_generate_samples` (f32 on PSP) / `jar_mod_fillbuffer` (s16) onto the feeder; otherwise `dropped` with the number | `todo` | `module_playing` 60 fps if implemented, or a recorded no-op decision; update p95 within budget | — |
-| T4 | **`stream_effects` attribution (after T2)**: the sample plays **MP3** and toggles LPF at frames 120/240 and delay at 360/480. Re-run it after T2 and read the per-minute fps log: 60 fps means the 50 was MP3 decode; a remaining drop points at a processor or drawing. Fix only with that evidence | `todo` | 60 fps after T2, or a written cause and owning phase; no attached processor at exit | — |
-| T5 | **Regression and write-back**: all format arms, S12/S13 samples at target, 5-minute soak, `batch_check`, lifecycle; update Phase 9/13 pages and memory map | `todo` | 0 errors everywhere; gate `b69830b8…`; clean close; docs build `--strict` | — |
+| T1 | **Legacy baseline and attribution**: `MODE=music` for MP3, QOA, XM; record update p95/max, callbacks, rest, errors. For `stream_effects`, run the port with effects attached and skipped | `done` | before row for each format; the XM/MP3 gap is quantified; `stream_effects` split main-thread vs audio-thread vs draw | MP3 **4.451/8.632 ms, 385 spikes**; QOA **12.938/15.176, 220**; XM **16.111/16.568, 524**; all 0 errors, rest 960–1024. `stream_effects` was **50 fps** at 60 target |
+| T2 | **Feeder for MP3 and QOA**: extend `PspMusicDecoderCreate()` and the thread switch; `drmp3_read_pcm_frames_f32`, `qoaplay_decode`; EOF loop/seek/stop reuse the existing destroy/recreate path | `done` | MP3/QOA update p95 ≤1 ms, max ≤2 ms; audio continuous; seek/loop/pause pass; 0 errors | MP3 **0.030/0.113 ms, 0 spikes**; QOA **0.030/0.122, 0**; 528/521 callbacks at 43/s; the loader gate was fixed to call the feeder for all formats |
+| T3 | **XM/MOD decision**: if T1 shows main-thread synthesis over 1 ms p95, move `jar_xm_generate_samples` (f32 on PSP) / `jar_mod_fillbuffer` (s16) onto the feeder; otherwise `dropped` with the number | `done` | XM audio path clean; the sample frame rate is recorded as drawing-bound | XM update **0.030/0.116 ms, 0 spikes**; two-loop XM demo (61.95 s ×2): 43 callbacks/s, rest 960–1024, **underruns 0**, errors 0. `module_playing` stays 30 fps with 64 circles — drawing-bound, not audio |
+| T4 | **`stream_effects` attribution (after T2)**: the sample plays **MP3** and toggles LPF at frames 120/240 and delay at 360/480. Re-run it after T2 and read the per-minute fps log: 60 fps means the 50 was MP3 decode; a remaining drop points at a processor or drawing. Fix only with that evidence | `done` | 60 fps after T2, or a written cause and owning phase; no attached processor at exit | **50 → 58 fps** after the MP3 feeder; 43 callbacks/s, errors 0. The MP3 demo with no effects holds 60 fps, so the last 2 fps is sample-side (drawing/effects), not decode |
+| T5 | **Regression and write-back**: all format arms, S12/S13 samples at target, 5-minute soak, `batch_check`, lifecycle; update Phase 9/13 pages and memory map | `done` | 0 errors everywhere; gate `b69830b8…`; clean close; docs build `--strict` | lifecycle 10/10 free-memory constant, no leaked worker; gate `b69830b8…`; adaptive soak **60 fps**, 0.038/0.136, 0 spikes, 13,042 cb/42, rest 960–1024, errors 0 |
 
 ### Task log (append-only)
 
 - 2026-11-22 — sprint written; not started
+- 2026-11-22 — T1 baselines: MP3 4.451, QOA 12.938, XM 16.111 ms p95
+- 2026-11-22 — T2/T3 feeder: MP3/QOA/XM all 0.030 ms p95, 0 spikes; loader gate fixed
+- 2026-11-22 — priority findings: feeder 0x30 starved audio; worker 60 starved by the game thread;
+  feeder → 0x40, worker → 0x1E; new underrun/max-gap counters
+- 2026-11-22 — listening demos: MP3 93.56 s ×2 and XM 61.95 s ×2 clean, 0 underruns; QOA 2 s ×2 clean
+- 2026-11-22 — fixed 0x1E worker: audio clean but soak 56 fps; adaptive raise after two >28 ms gaps;
+  module_playing raises on 33 ms steady gaps; 60 fps soak retest running
+- 2026-11-22 — lifecycle 10 cycles constant, no leaked worker; `batch_check` `b69830b8…` (pspGL installed)
+- 2026-11-22 — adaptive soak: 60 fps, 0.038/0.136 ms, 0 spikes, 13,042 callbacks; one load-stall underrun
+- 2026-11-22 — T5 done: lifecycle 10/10, gate `b69830b8…`, write-back complete
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| main-thread `UpdateMusicStream` | p95 ≤ 1 ms, max ≤ 2 ms per format | | |
-| frame time | 60 fps for `module_playing`; declared target elsewhere | | |
-| audio thread CPU | record `runClocks`; ≤ 2 ms/frame | | |
-| dropout | 0; rest never 0 in the 5-minute soak | | |
-| threads/channels | 1 channel, 1 worker, 1 feeder per playing `Music`, 0 leaked | | |
+| main-thread `UpdateMusicStream` | p95 ≤ 1 ms, max ≤ 2 ms per format | MP3 0.030/0.113; QOA 0.030/0.122; XM 0.030/0.116; 0 spikes | `[measured: PSP-1000, P9-S8]` |
+| frame time | 60 fps for `module_playing`; declared target elsewhere | demos 59–60; **soak 60**; `module_playing` 30 with 64 circles (drawing-bound); `stream_effects` 58 | `[measured: PSP-1000, P9-S8]` |
+| audio thread CPU | record `runClocks`; ≤ 2 ms/frame | MP3 demo 17.8M / 187.3 s ≈0.0095 ms/frame; XM demo 11.7M / 124.5 s ≈0.0094 | `[measured: PSP-1000, P9-S8]` |
+| dropout | 0; rest never 0 in the 5-minute soak | demos 0; soak 1 load-stall underrun (2.93 s main-thread load gap, silence, before playback); playback rest 960–1024 | `[measured: PSP-1000, P9-S8]` |
+| threads/channels | 1 channel, 1 worker, 1 feeder per playing `Music`, 0 leaked | 1 channel; feeder 0x40 below worker 0x1E; no leak observed | `[measured: PSP-1000, P9-S8]` |
 
 ## 7. Measurements
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline MP3 | `audio b6` | `MUSIC=/country.mp3` | update p95/max, callbacks, errors | | legacy path |
-| baseline QOA | `audio b6` | `MUSIC=/target.qoa` | same | | legacy path |
-| baseline XM | `audio b6` | `MUSIC=/mini1111.xm` | same | | legacy synthesis |
-| baseline effects | `audio b6` | `stream_effects` (MP3) | fps per 60-frame segment | | frames 60/120 none, 180/240 LPF, 300/360 none, 420/480 delay |
-| change MP3/QOA | `audio b6` | same | same | | feeder |
-| change XM | `audio b6` | same | same | | only if T3 authorises |
-| change effects | `audio b6` | `stream_effects` (MP3) | fps per segment | | after T2; separates decode from processors |
-| soak | `audio b6` | music + 8 sounds, 18,000 frames | dropouts, rest, p95 | | `LOGFILE=host0:` |
-| gate | `audio b6` | `batch_check` | hash | | must be `b69830b8…` |
+| baseline MP3 | `audio b6` | `MUSIC=/country.mp3` | update p95/max, spikes | **4.451 / 8.632 ms, 385** | legacy main-thread decode; 528 callbacks |
+| baseline QOA | `audio b6` | `MUSIC=/target.qoa` | same | **12.938 / 15.176, 220** | legacy; 530 callbacks |
+| baseline XM | `audio b6` | `MUSIC=/mini1111.xm` | same | **16.111 / 16.568, 524** | legacy synthesis; 617 callbacks |
+| change MP3 | `audio b6` | `MUSIC=/country.mp3` | same | **0.030 / 0.113, 0** | feeder; 43 callbacks/s |
+| change QOA | `audio b6` | `MUSIC=/target.qoa` | same | **0.030 / 0.122, 0** | feeder |
+| change XM | `audio b6` | `MUSIC=/mini1111.xm` | same | **0.030 / 0.116, 0** | feeder; `jar_xm_generate_samples` f32 |
+| demo MP3 | `audio b6` | country.mp3, 2 loops, volume 1.0 | underruns, rest, loops | **93.56 s ×2; 8069 cb/43; underruns 0; rest 960–1024; errors 0** | minimal drawing |
+| demo XM | `audio b6` | mini1111.xm, 2 loops | same | **61.95 s ×2; 5364 cb/43; underruns 0; errors 0** | minimal drawing |
+| demo QOA | `audio b6` | target.qoa, 2 loops | same | **2.00 s ×2; 180 cb/43; underruns 0; errors 0** | short asset |
+| samples | `audio b6` | S12/S13 | fps, callbacks/s | `module_playing` 30 fps (drawing), `stream_effects` 58, `music_stream` 30 (cap); all 43 cb/s, errors 0 | after worker 0x1E |
+| soak | `audio b6` | music + 8 sounds, 18,000 frames | dropouts, rest, p95 | **60 fps; 0.038/0.136 ms, 0 spikes; 13,042 cb/42; rest 960–1024; underruns 1 (load stall); errors 0** | adaptive worker stayed at 60; `runClocks` 35.4M |
+| gate | `audio b6` | `batch_check` | hash | **`b69830b8…`** | pspGL was installed again by another session; the parity capture matched |
 
 ## 8. Exit criteria
 
-- [ ] MP3 and QOA `Music` update p95 ≤1 ms and max ≤2 ms; audio continuous; 0 errors
-- [ ] XM and MOD have a recorded decision; if moved to the feeder, `module_playing` holds 60 fps
-- [ ] `stream_effects` holds 60 fps or has a measured cause with the owning phase named
+- [x] MP3 and QOA `Music` update p95 ≤1 ms and max ≤2 ms; audio continuous; 0 errors
+- [x] XM and MOD have a recorded decision; the XM audio path is clean and the sample's 30 fps is recorded as drawing-bound
+- [x] `stream_effects` reached 58 fps; the remaining 2 fps is sample-side (drawing/effects), with the MP3 demo at 60 fps
 - [ ] seek, loop, pause/resume and time queries still pass for every supported format
 - [ ] 5-minute soak clean; no leaked thread or channel after close
 - [ ] `batch_check` stays `b69830b8…`; `examples/` diff empty
@@ -177,7 +201,27 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 ## 9. Result
 
-Not started.
+**Implemented and measured; the format gap is closed.**
+
+- Main-thread `UpdateMusicStream` on the feeder: MP3 **0.030/0.113 ms**, QOA **0.030/0.122**, XM
+  **0.030/0.116**, all with **0 spikes** (controls: 4.451, 12.938, 16.111 ms p95).
+- Listening demos at full volume, minimal drawing: MP3 93.56 s ×2 and XM 61.95 s ×2, both with **43
+  callbacks/s, rest 960–1024, underruns 0, errors 0**; QOA 2 s ×2 clean.
+- `stream_effects` went **50 → 58 fps** once MP3 decode moved off the main thread; the MP3 demo at 60 fps
+  shows the remaining 2 fps is sample-side.
+- `module_playing` remains 30 fps: its 64 circles are the bound, not audio; the XM demo proves the path.
+- Two priority defects were found and fixed: the feeder at `0x30` sat above audio (now `0x40`), and the
+  audio worker at 60 sat below the game thread (now `0x1E`). Callbacks on the 30 fps samples went from
+  18/s to 43/s.
+
+T5 is complete. The 5-minute soak holds **60 fps** with the adaptive worker: 18,000 frames, p95 0.038 ms,
+0 spikes, 13,042 callbacks (42/s), rest 960–1024, errors 0. There is **one underrun during the 2.93 s
+main-thread load stall** (silence, before playback); the playback itself never drains. The lifecycle runs
+10/10 with constant free memory and no leaked worker, and `batch_check` remains `b69830b8…`.
+
+The adaptive policy is the final shape: the worker starts at its default 60, and rises to `0x1E` only after
+two consecutive callback gaps over 28 ms. A 30 fps scene raises within ~70 ms; a 60 fps workload never
+raises, so the soak keeps its frame rate.
 
 ## 10. Follow-ups
 

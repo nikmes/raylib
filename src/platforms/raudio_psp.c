@@ -29,6 +29,11 @@ static SceInt64 raudioPspLastWrite = 0;
 static SceUID raudioPspThreadId = -1;
 static int raudioPspRestMin = INT_MAX;
 static int raudioPspRestMax = 0;
+static unsigned int raudioPspUnderruns = 0;
+static int raudioPspHighPriority = 0;
+static int raudioPspSlowGaps = 0;
+static SceInt64 raudioPspPrevWrite = 0;
+static SceInt64 raudioPspMaxGap = 0;
 
 static ma_result OnPspContextInit(ma_context *context, const ma_context_config *config, ma_backend_callbacks *callbacks)
 {
@@ -73,6 +78,17 @@ static ma_result OnPspDeviceStart(ma_device *device)
         }
 
         raudioPspChannel = channel;
+        raudioPspCallbacks = 0;
+        raudioPspErrors = 0;
+        raudioPspFirstWrite = 0;
+        raudioPspLastWrite = 0;
+        raudioPspRestMin = INT_MAX;
+        raudioPspRestMax = 0;
+        raudioPspUnderruns = 0;
+        raudioPspHighPriority = 0;
+        raudioPspSlowGaps = 0;
+        raudioPspPrevWrite = 0;
+        raudioPspMaxGap = 0;
         TRACELOG(LOG_INFO, "AUDIO: PSP channel=%d frames=%d", raudioPspChannel, RAUDIO_PSP_FRAMES);
     }
 
@@ -107,9 +123,14 @@ static ma_result OnPspDeviceWrite(ma_device *device, const void *frames, ma_uint
     if ((frames == NULL) || (frameCount == 0)) return MA_SUCCESS;
     if (raudioPspChannel < 0) return MA_ERROR;
 
+    SceInt64 now = sceKernelGetSystemTimeWide();
+    SceInt64 writeGap = (raudioPspPrevWrite != 0)? (now - raudioPspPrevWrite) : 0;
+    if (writeGap > raudioPspMaxGap) raudioPspMaxGap = writeGap;
+    raudioPspPrevWrite = now;
+
     if (raudioPspCallbacks == 0)
     {
-        raudioPspFirstWrite = sceKernelGetSystemTimeWide();
+        raudioPspFirstWrite = now;
         raudioPspThreadId = sceKernelGetThreadId();
     }
 
@@ -132,6 +153,29 @@ static ma_result OnPspDeviceWrite(ma_device *device, const void *frames, ma_uint
         }
 
         sceKernelDcacheWritebackRange(destination, RAUDIO_PSP_FRAMES*2*sizeof(int16_t));
+
+        if (raudioPspCallbacks > 0)
+        {
+            int preRest = sceAudioGetChannelRestLength(raudioPspChannel);
+            if (preRest == 0) raudioPspUnderruns++;
+
+            // miniaudio creates this worker at PSP priority 60, below the 0x20 game thread.
+            // At 60 fps the block pacing is ~23 ms and the frame gaps are enough. A frame
+            // longer than one block pushes the gap to ~33 ms and starves the worker; raise
+            // it above the frame loop only after two consecutive slow gaps, so a single
+            // load hitch does not raise a 60 fps workload. One-way: once raised it stays, so
+            // 60 fps and slow scenes each keep their correct policy.
+            if (writeGap > 28000) raudioPspSlowGaps++;
+            else raudioPspSlowGaps = 0;
+
+            if (!raudioPspHighPriority && (raudioPspSlowGaps >= 2))
+            {
+                sceKernelChangeThreadPriority(raudioPspThreadId, 0x1E);
+                raudioPspHighPriority = 1;
+                raudioPspSlowGaps = 0;
+                TRACELOG(LOG_INFO, "AUDIO: PSP worker raised to 0x1E (gap=%lld us)", (long long)writeGap);
+            }
+        }
 
         int result = sceAudioOutputPannedBlocking(raudioPspChannel, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, destination);
         if (result < 0)
@@ -206,7 +250,7 @@ void raudio_psp_log_stats(void)
 
     if (raudioPspRestMin == INT_MAX) raudioPspRestMin = 0;
 
-    TRACELOG(LOG_INFO, "AUDIO: PSP callbacks=%u callbacks_per_sec=%u rest_min=%d rest_max=%d errors=%u runClocks=%llu elapsed_us=%lld",
-             raudioPspCallbacks, callbacksPerSec, raudioPspRestMin, raudioPspRestMax, raudioPspErrors,
-             runClocks, (long long)elapsed);
+    TRACELOG(LOG_INFO, "AUDIO: PSP callbacks=%u callbacks_per_sec=%u rest_min=%d rest_max=%d underruns=%u max_gap_us=%lld errors=%u runClocks=%llu elapsed_us=%lld",
+             raudioPspCallbacks, callbacksPerSec, raudioPspRestMin, raudioPspRestMax, raudioPspUnderruns,
+             (long long)raudioPspMaxGap, raudioPspErrors, runClocks, (long long)elapsed);
 }

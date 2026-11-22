@@ -528,6 +528,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 | 2026-11-22 | **Adopt route A for audio; defer SAS/ME (P9-S6/S7 dropped)** | Route A meets every Phase 9 budget on the PSP-1000: 60 fps with 8 sounds + 1 streamed track, main-thread audio 0.028 ms p95, audio worker ≈0.009 ms/frame, 0 dropouts in 18,000 frames, 50 clean init/close cycles, 0 leaked threads. No failing metric to justify an ME prototype |
 | 2026-11-22 | **Decode `Music` on a per-track thread above the mixer** | Main-thread decode was 16.9 ms p95; a 64 KiB-stack thread at priority `0x30` decoding outside `AUDIO.System.lock` drops `UpdateMusicStream` to 0.028 ms with 0 spikes. Priority `0x2E` competed with PSPLink's USB thread and lost console output |
 | 2026-11-22 | **Keep pspgu as the installed `libGL.a`; verify before gate builds** | Another session switched the installed library back to pspGL at 23:03, which broke `scene_2d` linking (`pspguResidencyStats` undefined). `tools/pspgu-build.sh --check` is the first step before any renderer gate |
+| 2026-11-22 | **Decode every `Music` file format on the feeder; audio worker priority is adaptive** | MP3/QOA/XM now join OGG/WAV on the 64 KiB-stack feeder: main-thread `UpdateMusicStream` 0.030 ms p95 (was 4.45/12.94/16.11). The miniaudio worker starts at PSP priority 60 and rises to `0x1E` after two consecutive callback gaps >28 ms, so 30 fps scenes keep audio and 60 fps workloads keep their frame rate (soak 60 fps, 0.038 ms p95) |
 | 2026-11-21 | Track the upstream `core`/`shapes`/`textures` corpus as **Phase 13**, gated by capability | Static audit of 127 samples: 13 drop-in, 61 input-gated, 49 blocked, 4 ported. Each wave names the phase whose capability it consumes; wave 0 needs none. Findings, gates and sprints 024–034 in [Phase 13](phases/13-samples-porting/index.md) |
 
 ---
@@ -606,6 +607,11 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   implementations; a PSP decoder hook added to one is silently absent from the other. Wire both.
 - **Keep the music decoder below the USB thread.** At priority `0x2E` the decoder competed with
   PSPLink's USB thread and console output stopped mid-run. `0x30` fixed it without missing deadlines.
+- **The audio worker must outrank a slow frame loop.** miniaudio's worker at PSP priority 60 sits below the
+  `0x20` game thread; any frame longer than a 1024-frame block (23 ms) starves it. At 30 fps the channel
+  underruns until the worker is raised to `0x1E`. Keep it adaptive (raise after two >28 ms callback gaps);
+  a single load hitch must not raise a 60 fps workload. A multi-second host0 load still underruns once, in
+  silence, before playback.
 - **Long PSPLink runs lose stdout.** The SIO buffer drops output after a few minutes of a busy app; the
   app keeps running. Write evidence to `host0:` (the harness takes `LOGFILE=host0:/file`) instead of
   trusting the console capture.

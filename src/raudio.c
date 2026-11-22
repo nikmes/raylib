@@ -1591,10 +1591,7 @@ Music LoadMusicStream(const char *fileName)
     }
 
 #if defined(PLATFORM_PSP)
-    if (musicLoaded && ((music.ctxType == MUSIC_AUDIO_OGG) || (music.ctxType == MUSIC_AUDIO_WAV)))
-    {
-        PspMusicDecoderCreate(music);
-    }
+    if (musicLoaded) PspMusicDecoderCreate(music);   // the feeder filters supported formats
 #endif
 
     return music;
@@ -1810,10 +1807,7 @@ Music LoadMusicStreamFromMemory(const char *fileType, const unsigned char *data,
     }
 
 #if defined(PLATFORM_PSP)
-    if (musicLoaded && ((music.ctxType == MUSIC_AUDIO_OGG) || (music.ctxType == MUSIC_AUDIO_WAV)))
-    {
-        PspMusicDecoderCreate(music);
-    }
+    if (musicLoaded) PspMusicDecoderCreate(music);   // the feeder filters supported formats
 #endif
 
     return music;
@@ -2851,7 +2845,7 @@ static void UpdateAudioStreamInLockedState(AudioStream stream, const void *data,
 }
 
 #if defined(PLATFORM_PSP)
-// Decode ahead of the mixer without holding AUDIO.System.lock during OGG/WAV decode.
+// Decode/synthesise ahead of the mixer without holding AUDIO.System.lock on the main thread.
 static int PspMusicDecoderThread(SceSize args, void *argp)
 {
     (void)args;
@@ -2898,6 +2892,36 @@ static int PspMusicDecoderThread(SceSize args, void *argp)
             }
         }
 #endif
+#if SUPPORT_FILEFORMAT_MP3
+        else if (music->ctxType == MUSIC_AUDIO_MP3)
+        {
+            frames = (unsigned int)drmp3_read_pcm_frames_f32((drmp3 *)music->ctxData,
+                decoder->pcmFrames, (float *)decoder->pcm);
+        }
+#endif
+#if SUPPORT_FILEFORMAT_QOA
+        else if (music->ctxType == MUSIC_AUDIO_QOA)
+        {
+            // qoaplay_decode() loops to the first frame at EOF and always fills the request
+            frames = qoaplay_decode((qoaplay_desc *)music->ctxData, (float *)decoder->pcm, (int)decoder->pcmFrames);
+        }
+#endif
+#if SUPPORT_FILEFORMAT_XM
+        else if (music->ctxType == MUSIC_MODULE_XM)
+        {
+            if (music->stream.sampleSize == 32) jar_xm_generate_samples((jar_xm_context_t *)music->ctxData, (float *)decoder->pcm, decoder->pcmFrames);
+            else if (music->stream.sampleSize == 16) jar_xm_generate_samples_16bit((jar_xm_context_t *)music->ctxData, (short *)decoder->pcm, decoder->pcmFrames);
+            else jar_xm_generate_samples_8bit((jar_xm_context_t *)music->ctxData, (char *)decoder->pcm, decoder->pcmFrames);
+            frames = decoder->pcmFrames;
+        }
+#endif
+#if SUPPORT_FILEFORMAT_MOD
+        else if (music->ctxType == MUSIC_MODULE_MOD)
+        {
+            jar_mod_fillbuffer((jar_mod_context_t *)music->ctxData, (short *)decoder->pcm, decoder->pcmFrames, 0);
+            frames = decoder->pcmFrames;
+        }
+#endif
 
         if (frames == 0)
         {
@@ -2906,6 +2930,9 @@ static int PspMusicDecoderThread(SceSize args, void *argp)
                 if (music->ctxType == MUSIC_AUDIO_OGG) stb_vorbis_seek_start((stb_vorbis *)music->ctxData);
 #if SUPPORT_FILEFORMAT_WAV
                 else if (music->ctxType == MUSIC_AUDIO_WAV) drwav_seek_to_first_pcm_frame((drwav *)music->ctxData);
+#endif
+#if SUPPORT_FILEFORMAT_MP3
+                else if (music->ctxType == MUSIC_AUDIO_MP3) drmp3_seek_to_start_of_stream((drmp3 *)music->ctxData);
 #endif
                 continue;
             }
@@ -2955,7 +2982,9 @@ static void PspMusicDecoderSync(Music music)
 static void PspMusicDecoderCreate(Music music)
 {
     if (music.stream.buffer == NULL) return;
-    if ((music.ctxType != MUSIC_AUDIO_OGG) && (music.ctxType != MUSIC_AUDIO_WAV)) return;
+    if ((music.ctxType != MUSIC_AUDIO_OGG) && (music.ctxType != MUSIC_AUDIO_WAV) &&
+        (music.ctxType != MUSIC_AUDIO_MP3) && (music.ctxType != MUSIC_AUDIO_QOA) &&
+        (music.ctxType != MUSIC_MODULE_XM) && (music.ctxType != MUSIC_MODULE_MOD)) return;
 
     PspMusicDecoder *decoder = (PspMusicDecoder *)RL_CALLOC(1, sizeof(PspMusicDecoder));
     if (decoder == NULL) return;
@@ -2965,7 +2994,7 @@ static void PspMusicDecoderCreate(Music music)
     size_t pcmBytes = decoder->pcmFrames*music.stream.channels*(music.stream.sampleSize/8);
 
     decoder->pcm = (unsigned char *)RL_CALLOC(1, pcmBytes);
-    decoder->thread = sceKernelCreateThread("music_decoder", PspMusicDecoderThread, 0x30, 0x10000, 0, NULL);
+    decoder->thread = sceKernelCreateThread("music_decoder", PspMusicDecoderThread, 0x40, 0x10000, 0, NULL);
 
     if ((decoder->pcm == NULL) || (decoder->thread < 0))
     {
