@@ -247,7 +247,7 @@ follow from the sources:
 |---|---|---|
 | [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | written |
 | [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | rotation-only view + camera offset, one-time s16 packing, direct interleaved path | written |
-| P10-S3 — Lighting, fog and texture environment | GE state mapping and its documented limits | proposed |
+| [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, CPU bake, explicit limits | written |
 | P10-S4 — Render-to-texture | draw-target redirect, explicit read-after-write, VRAM budget | proposed |
 | P10-S5 — Culling, tessellation and the ME option | static bounds, window-edge tessellation, ME measured | proposed |
 | P10-S6 — 3D sample target, regression and close | or folded into S5 if the sample meets the target | proposed |
