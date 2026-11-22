@@ -196,6 +196,10 @@ ifeq ($(TARGET_PLATFORM),$(filter $(TARGET_PLATFORM),PLATFORM_WEB PLATFORM_WEB_R
     endif
 endif
 
+ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
+    OBJS += platforms/rlpsp_math.o
+endif
+
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
     # Android architecture
     # Starting at 2019 using arm64 is mandatory for published apps,
@@ -574,6 +578,9 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     CUSTOM_CFLAGS += -DPSP_CULL=$(PSP_CULL)
     PSP_TRI_FAST ?= 1
     CUSTOM_CFLAGS += -DPSP_TRI_FAST=$(PSP_TRI_FAST)
+    # P11-S12: internal VFPU/matrix helpers; 0 keeps the scalar fallback and adds no SDK link.
+    PSP_VFPU_HELPERS ?= 0
+    CUSTOM_CFLAGS += -DPSP_VFPU_HELPERS=$(PSP_VFPU_HELPERS)
     # Sprint 041 (P8-S1): the gamepad contract, plus a test-only failure hook.
     PSP_PAD_STRICT ?= 1
     CUSTOM_CFLAGS += -DPSP_PAD_STRICT=$(PSP_PAD_STRICT)

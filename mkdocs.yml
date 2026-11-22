@@ -127,6 +127,7 @@ nav:
               - P10-S5 — Culling and guard-band: psp/sprints/066-phase10-culling-and-guard-band.md
               - P10-S6 — Sample target and close: psp/sprints/067-phase10-sample-target-and-close.md
               - P10-S7 — Clip cost, lit parity and re-close: psp/sprints/069-phase10-clip-cost-and-lit-parity.md
+              - P10-S8 — Camera and matrix CPU cost: psp/sprints/070-phase10-camera-matrix-cost.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
@@ -137,6 +138,10 @@ nav:
               - P11-S6 — Heap, stacks and alignment: psp/sprints/057-phase11-heap-and-stacks.md
               - P11-S7 — Load path and I/O: psp/sprints/058-phase11-load-path-and-io.md
               - P11-S8 — Startup, power, teardown and close: psp/sprints/059-phase11-startup-and-close.md
+              - P11-S9 — Image and texture data conversion: psp/sprints/071-phase11-image-texture-conversion.md
+              - P11-S10 — Mesh upload and packing: psp/sprints/072-phase11-mesh-upload-packing.md
+              - P11-S11 — 2D shape and particle math attribution: psp/sprints/073-phase11-2d-math-attribution.md
+              - P11-S12 — VFPU/matrix helper layer: psp/sprints/074-phase11-vfpu-helper-layer.md
           - 12 — Release gate:
               - psp/phases/12-release-gate/index.md
           - 13 — Samples porting:

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started — reviewed 2026-11-21; eight sprints written (052–059); blocked on phases 7–10 |
+| State | not started — reviewed 2026-11-21; twelve sprints written (052–059, 071–074); blocked on phases 7–10 |
 | Depends on | Phases 1–10; a build already at `-O2`, and one asset-heavy sample as well as bunnymark |
 | Exit criterion | every remaining CPU, memory, I/O and startup cost in a real frame and a real load is measured, and either removed or explicitly budgeted |
 
@@ -324,7 +324,9 @@ model: alloc/free churn fragments it, and its size comments ("32Mb") already dis
 
 ## Sprints and features
 
-The phase is sized as eight sprints. All eight are written; none has run, because phases 7–10 are not closed.
+The phase is sized as twelve sprints. All twelve are written; none has run, because phases 7–10 are not closed.
+P11-S9–S12 follow the VFPU/GUM review: image data, mesh packing, a measurement-only 2D attribution that hands
+any vectorisation to Phase 7, and the license-clean VFPU helper layer those sprints consume.
 P11-S1 can be prepared and executed early as instrumentation, but its baseline must be re-taken after those
 phases land.
 
@@ -338,6 +340,10 @@ phases land.
 | [P11-S6 — 057 — Heap, stacks and alignment](../sprints/057-phase11-heap-and-stacks.md) | heap map and `-256`, pools, alignment, thread stacks, volatile decision, soak | written |
 | [P11-S7 — 058 — Load path and I/O](../sprints/058-phase11-load-path-and-io.md) | `sceIo` vs stdio, `calloc` vs `malloc`, chunk cache, loader thread, manifests | written |
 | [P11-S8 — 059 — Startup, power, teardown and close](../sprints/059-phase11-startup-and-close.md) | boot split, clock A/B, teardown, suspend/resume, final profile, phase close | written |
+| [P11-S9 — 071 — Image and texture data conversion](../sprints/071-phase11-image-texture-conversion.md) | doubles→float in `rtextures`, VFPU packed pixels `vt5551.q`/`vt5650.q`, parity | written |
+| [P11-S10 — 072 — Mesh upload and packing](../sprints/072-phase11-mesh-upload-packing.md) | doubles→float in `rmodels`, VFPU float→s16/UV/normal packing, byte parity | written |
+| [P11-S11 — 073 — 2D shape and particle math attribution](../sprints/073-phase11-2d-math-attribution.md) | maths vs submission vs wait, per-op microbench, Phase 7 handoff | written |
+| [P11-S12 — 074 — VFPU/matrix helper layer](../sprints/074-phase11-vfpu-helper-layer.md) | licence audit, SDK wrappers, clean-room ops, one internal `rlpsp_math.h` | written |
 
 A sprint here belongs to this phase only; if it changes a draw path, VRAM allocation, input mapping or audio
 mixing, it belongs in the phase that owns that surface.
