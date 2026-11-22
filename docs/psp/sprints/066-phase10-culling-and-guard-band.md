@@ -4,9 +4,9 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S5 |
-| Branch / base commit | `master` @ `733b6921` (sprint 065 written) |
+| Branch / base commit | `master` @ `6df56cb8` (sprint 065 closed) |
 | Started / closed | 2026-11-22 (written) / — |
-| Build number(s) | pspgu with the 060/061 format work plus the clip pass (content hash recorded); `libraylib.a` default `PSP_BATCH=1` |
+| Build number(s) | pspgu `b29` (060–065 shipped b25–b28); `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 0/6 done |
 
 ## 0. Handover
@@ -20,20 +20,21 @@ maintainable ME runtime.
 
 **Read before acting**, in this order:
 
-1. `../phases/10-3d-advanced/index.md` §What we already know (the 4096 rule), §Guidelines from the renderer
-   blueprint (guard-band-safe tessellation, pass order), and the S5 row.
-2. `../sprints/060-phase10-drawmesh-and-mesh-gate.md` and `../sprints/061-phase10-camera-relative-and-ge-native-models.md`
-   — the draw paths, the packed layout, the mesh centre/scale already computed at load, and the camera-relative
-   matrices this sprint's culling uses directly.
-3. `tools/pspgu/egl.c:330-360` — GE init, which never enables `GU_CLIP_PLANES`; `gl_state.c:65-100` — the only
-   culling state is `GU_CULL_FACE` (backface); `gl_draw.c:422-690` — the converting and direct paths where a clip
-   pass has to live.
+1. `../phases/10-3d-advanced/index.md` §What we already know (the 4096 rule), §Guidelines (guard-band-safe
+   tessellation, pass order), and the S5 row.
+2. 060/061 §9 — the converting and direct draw paths, the packed layout (`PspGeMesh`: centre/scale but **no bbox
+   yet**) and the camera-relative null. 062/065 are closed; lighting and RTT are not in this sprint.
+3. `tools/pspgu/egl.c` — GE init, which never enables `GU_CLIP_PLANES`; `gl_state.c` — the only culling state is
+   `GU_CULL_FACE` (backface); `gl_draw.c` — `glDrawArrays`/`glDrawElements`, the converting/direct branches and
+   `isDirectLayout`. A clip pass must run before either submission path.
 4. daedalus's working reference: `Source/HLEGraphics/BaseRenderer.cpp:442-463` (cull when all three vertices share
    a clip flag), `:580-590` (the six NDC planes), `:595`/`:684` (`clip_tri_to_frustum`), `:697-707`
    (`set_clip_flags`), `:736-800` (`PrepareTrisClipped`: clip, interpolate, re-tessellate as a fan) and
    `SysPSP/HLEGraphics/RendererPSP.cpp:223` (`sceGuEnable(GU_CLIP_PLANES)`).
-5. `src/rmodels.c:1450-1495` — `DrawMesh` is the only object-level choke point; `src/rlgl.h` has no frustum
-   culling, only `RL_CULL_DISTANCE_*` for the projection.
+5. `src/rmodels.c` — `DrawMesh` is the only object-level choke point; the `PspGeMesh` table (061) holds
+   centre/scale for packed meshes; add a bbox (and a bounds-only record for the float path). `src/rlgl.h` has no
+   frustum culling. `glGetFloatv(GL_PROJECTION_MATRIX|GL_MODELVIEW_MATRIX)` works in pspgu (`gl_query.c`) and
+   pspGL, so culling can read the live matrices without trusting `RLGL.State` (not maintained on GL11).
 6. `../memory-map.md` §10.2 — ME rules (no VFPU, no coherence, watchdog, publication counters); §6 — the
    measurement protocol.
 7. Phase 9's ME sprints: `050-phase9-sas-me-prototype.md` and `051-phase9-adopt-route.md`. If the ME route is not
@@ -45,6 +46,10 @@ x = 4000, 4095, 4096, 4097 and 5000, and capture each. Then do the same across t
 
 **Hard rules.**
 
+- **Clip to the visible screen, not the 4096 window.** The six NDC planes (`|x| ≤ w`, `|y| ≤ w`, `|z| ≤ w`) are the
+  screen rectangle; anything outside is invisible even inside the guard band. Clipping there is simpler than
+  mapping 4096 and removes the drop condition.
+- **Bump `PSPGU_BUILD` to `b29` in T2** (T3 changes raylib, not the driver).
 - **Culling must be conservative.** A false cull is a visible bug; every test scene includes objects straddling
   each frustum plane, and the cull-on capture must be pixel-identical to cull-off for everything that should be
   visible.
@@ -134,9 +139,9 @@ changing the near/far planes.
 
 ## 4. Preconditions
 
-- [ ] 060 T1/T2 and 061 T3/T4 `done`; the cube and 2D gates are green
-- [ ] mesh bounds (centre/scale) are available from the 061 packer, or recomputed once and cached
-- [ ] pspgu content hash recorded; pspGL `2ab7378e` available
+- [x] 060–065 closed; cube, lit, fog and RTT gates green on `b28`
+- [ ] the 061 `PspGeMesh` gains a bbox (it has centre/scale only); float meshes get a bounds-only record
+- [ ] pspgu `b28`/`b29` content hashes recorded; pspGL `2ab7378e` available
 - [ ] Device reset between runs; app logs `DONE` and sleeps; two identical captures per point
 - [ ] `clip_probe` and `scene_3d` arms compile and are proven present
 - [ ] ME (T5 only): Phase 9's runtime with exception handler, watchdog and SPSC queues exists; otherwise record
@@ -146,12 +151,40 @@ changing the near/far planes.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Reproduce the boundaries: `clip_probe` walks one projected vertex from 4000 to 5000; near-plane arm with `GU_CLIP_PLANES` off/on; pspGL A/B | `todo` | exact screen-x where the primitive disappears; whether the near plane clips or drops; table | — |
-| T2 | CPU clip + re-tessellation in the converting path: clip flags, six NDC planes, Sutherland–Hodgman, fan re-tessellation, world-attribute interpolation, winding preserved; only offending triangles; enable `GU_CLIP_PLANES` if T1 requires it; clip budget and counters | `todo` | x=5,000 quad matches analytic edge ≤1 px; fully-inside geometry 0 diff; no seams; counter shows clipped triangles | — |
-| T3 | Object culling in `DrawMesh`: bounds from load, conservative frustum test against the camera-relative MVP, skip and count; no-cull arm | `todo` | 0 pixel difference cull-on vs cull-off; straddling objects stay visible; culled count recorded | — |
-| T4 | Big-scene measurement: 1,000 objects (in/out of frustum, behind camera), cull/clip arms in one session | `todo` | work/STAT table; culled draws and clipped triangles; work falls proportionally (±10 %) | — |
-| T5 | ME option (conditional): shadow-mode object culling over an uncached SPSC queue, decision hash vs CPU, main-CPU time, watchdog; adopt only if it wins | `todo` | 100 % decision match; measured time; otherwise `blocked` with dependency | — |
-| T6 | Regression and write-back: 2D/060/062/065 gates, `basic_shapes` 284, VRAM 0 delta, clip/cull limits table on the Phase 10 page | `todo` | tables; gates 0 diff; limits recorded | — |
+| T1 | Reproduce the drop: `clip_probe` with one vertex projected to screen x = 3000, 4000, 4096, 5000; near-plane arm with `GU_CLIP_PLANES` off/on; pspGL A/B | `todo` | exact x where the visible part disappears; near clip vs drop; table | — |
+| T2 | CPU clip + re-tessellation: transform to clip space, six NDC planes, Sutherland–Hodgman, fan re-tessellation, interpolate world attributes, preserve winding; triangles only; converting **and** direct path (direct falls back to pack+clip for a dirty draw); enable `GU_CLIP_PLANES` if T1 needs it; `b29` | `todo` | x=5000 quad matches analytic clip ≤1 px; inside geometry 0 diff; no seams; clipped count | — |
+| T3 | Object culling in `DrawMesh`: store local bbox per mesh (extend `PspGeMesh`; bounds-only record for float meshes), read P/M via `glGetFloatv`, build frustum planes, transform the 8 AABB corners, skip fully-outside; no-cull arm | `todo` | cull-on vs cull-off 0 pixel difference; straddling objects stay; culled count | — |
+| T4 | Big-scene measurement: `scene_3d OBJECTS=1000` with in/out/behind objects, `CULL=0|1`, `CLIP=0|1` in one session | `todo` | work/STAT table; culled draws/clipped triangles; work falls proportionally (±10 %) | — |
+| T5 | ME option (conditional): shadow-mode culling over an uncached SPSC queue, decision hash vs CPU, watchdog; adopt only if it wins | `todo` | 100 % decision match; measured time; else `blocked by 051 T4` | — |
+| T6 | Regression and write-back: 2D/060/062/065 gates, `basic_shapes` 284, VRAM 0 delta, clip/cull limits | `todo` | gates 0 diff; 284 colours; limits recorded | — |
+
+### Design notes (implementation-ready)
+
+**Guard band vs screen.** The GE drops a primitive when a vertex leaves the 4096 window, but the visible screen is
+only 480×272. Clipping to NDC ±w (the screen rectangle) removes the drop case and is what the rasteriser would have
+shown anyway. Do not clip to 4096.
+
+**Clip pass.** Compute `MVP·vertex` once per vertex (float32), set `X_POS/X_NEG/Y_POS/Y_NEG/Z_POS/Z_NEG` flags, and
+skip untouched triangles. For an offending triangle, clip the polygon against the six planes in clip space
+(Sutherland–Hodgman), keeping the edge parameter from each plane; emit a triangle fan with world position, UV,
+colour and normal interpolated by that parameter. Winding is preserved by emitting in original order. The pass runs
+in `glDrawElements` before the direct/convert decision: a clean draw keeps the direct pointer; a dirty draw falls back
+to the converting path and is clipped. Lines/points crossing the screen are a recorded limit.
+
+**Direct-path fallback.** `isDirectLayout` can still hand the buffer through when no triangle is clipped. If a
+triangle needs clipping, pack the draw's vertices (061 layout) and clip them; this draw pays the conversion, the
+others do not. Count both cases.
+
+**Culling.** `glGetFloatv` returns the composed projection and modelview from both drivers. Extract six frustum
+planes (Gribb–Hartmann), transform the mesh's local AABB's 8 corners by the current model matrix, and skip when all
+corners are outside one plane. A false cull is a failure; test objects straddling every plane. Bounds are stored once
+per mesh keyed by `vboId`; the packed record gains `min/max`.
+
+**Cost.** Clip only offending triangles; cull cost is one matrix-vector test per corner per draw. Both report
+counters. The big scene measures work, not just the frame median.
+
+**ME.** Phase 9's ME runtime is not a dependency of the CPU path. If `051 T4` has not landed, T5 is `blocked`, and the
+sprint result says so; do not fake a shadow run.
 
 Rules:
 
@@ -198,7 +231,7 @@ Protocol: device only; one variable per arm; two identical captures.
 - [ ] the clip/cull budget counters exist and are reported
 - [ ] ME outcome recorded: adopted with numbers, or `blocked` with the Phase 9 dependency
 - [ ] 2D gate 0 diff; 060 cube gate 0; 062/065 gates unchanged; `basic_shapes` 284 colours
-- [ ] limits recorded: clip only on the converting path; direct-path fallback; no occlusion queries; no LOD
+- [ ] limits recorded: triangles only; direct draws fall back to pack+clip when dirty; no occlusion queries; no LOD
 
 ## 9. Result
 
