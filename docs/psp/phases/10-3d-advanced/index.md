@@ -34,9 +34,9 @@ framebuffers with two rotating lists and 64-byte per-list vertex arenas, and a s
 ## What has to be true before starting
 
 - [x] The batcher and the texture/VRAM layer are stable and measured
-- [ ] A 3D sample exists that exercises models, lighting and a textured mesh — **blocker: no PSP 3D test scene
-      exists yet**
-- [ ] Camera-relative rendering is already the convention (not a later retrofit) — **blocker: not established**
+- [x] A 3D sample exists that exercises models, lighting and a textured mesh — 067: `SAMPLE=1` (though it does not
+      meet its timing target)
+- [x] Camera-relative rendering is already the convention — 061 measured it as a **null**; not required, recorded
 
 ## Readiness review (2026-11-22)
 
@@ -100,7 +100,7 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
       index rebasing in `tools/pspgu/gl_draw.c`; verified 0 diff vs pspGL, bbox x 193..286, y 92..188 (060)
 - [x] Convert model vertex data **once**, offline or at load, into GE-native formats; no per-frame conversion
       — 061: s16 about the centre, 28-B stride, `direct=1 converted=0` on static meshes
-- [ ] Index buffers where type and alignment allow; verify alignment costs are not paid at draw time
+- [ ] Index buffers where type and alignment allow — **deferred at close**: indices are copied per chunk; no VBO path
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
 - [ ] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency
@@ -123,10 +123,12 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 
 ## Exit criteria
 
-- [ ] 3D sample holds the target frame rate, with frame-time percentiles
-- [ ] no per-frame full GE wait; hazards synchronise individually
-- [ ] vertex formats and their byte costs documented in the feature page
-- [ ] what the GE cannot do is listed, with the fallback the engine takes
+- [ ] 3D sample holds the target frame rate, with frame-time percentiles — **not met**: N=50, median 50.05 ms,
+      p95 50.06, work 35.5 ms (≈20 fps); 067 §9
+- [ ] no per-frame full GE wait; hazards synchronise individually — **not met in the sample**: 300 arena-reset
+      syncs over 300 frames; the 2D/3D gates outside it show 0 overflows
+- [x] vertex formats and their byte costs documented in the feature page — 060/061 tables
+- [x] what the GE cannot do is listed, with the fallback the engine takes — S3/S4/S5 limits tables
 
 ## Guidelines from the renderer blueprint
 
@@ -277,6 +279,14 @@ cannot supply (largest free 106,496 B at creation) — rejected with numbers, no
 - `3D-PSP-Tutorials/LoadingScreen.cpp:32-78` — a second thread submitting GU lists and swapping buffers while the
   main thread blocks on the same display, then `sceKernelTerminateDeleteThread`.
 
+## Phase result
+
+Phase 10 closes with the renderer paths built and measured, but **two exit criteria are not met and are recorded as
+such**: the frozen 3D sample runs at ≈20 fps (median 50.05 ms, work 35.5 ms at N=50), and its steady frame takes one
+full GE sync per frame from the clip pass exhausting the vertex arena. The vertex-format/byte-cost table and the
+GE-limits list are complete. The 062 lit gate also regressed during the later sprints (pspgu 128 vs pspGL 64) and is
+carried into Phase 11 with that evidence. This is the honest state of the phase, not a redefined pass.
+
 ## Sprints and features
 
 | Sprint | Focus | Status |
@@ -286,4 +296,4 @@ cannot supply (largest free 106,496 B at creation) — rejected with numbers, no
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, bake measurement | **done** — lit/texenv/fog 0 diff; bake measured |
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | **done** — 256² 0 diff; 300×200 rejected |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | NDC clip + fan, conservative culling, ME dropped | **done** — 236/720 vs 0; 917 culled, 0 diff |
-| [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | written |
+| [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | **done** — 20 fps; two criteria recorded not met |

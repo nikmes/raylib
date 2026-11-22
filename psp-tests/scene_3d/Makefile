@@ -18,6 +18,7 @@ CAMREL ?= 0
 JITTER ?= 0
 INSTANCES ?= 1
 CULL ?= 1
+SAMPLE ?= 0
 LIGHT ?= none
 FOG ?= none
 TEXENV ?= modulate
@@ -33,6 +34,12 @@ ifeq ($(JITTER),1)
     CFLAGS += -DJITTER_ARM
 endif
 CFLAGS += -DCULL_ON=$(CULL)
+ifeq ($(SAMPLE),1)
+    CFLAGS += -DSAMPLE_ARM
+endif
+ifeq ($(PANEL),0)
+    CFLAGS += -DNO_PANEL
+endif
 ifeq ($(CAMREL),1)
     CFLAGS += -DCAMREL_ARM
 endif

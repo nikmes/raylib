@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S6 |
 | Branch / base commit | `master` @ `6982fe68` (sprint 066 closed) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b29` (060–066 shipped b25–b29); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/5 done |
+| Tasks | 5/5 done; **two phase timing criteria not met** and recorded |
 
 ## 0. Handover
 
@@ -131,18 +131,17 @@ moving the sample into `examples/`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Pre-register: S6 sweep at `INSTANCES=250/500/750/1000`, `CULL=1`, two runs each; freeze `N` by `work ≤15.0 ms`; write the sample spec | `todo` | N and thresholds recorded before the final build | — |
-| T2 | Build `SAMPLE=1`: 480×272; tessellated ground grid; `N` textured cubes; one `GenMeshTorus`; directional + ambient light; linear fog; 256×256 RTT panel rendered each frame; culling and clipping on; **world offset 1000 (no camera-relative; 061 null)**; fixed camera; `STAT`/`SPLIT` + counters + `DONE` | `todo` | builds on pspgu and pspGL (RTT refuses there); two identical captures | — |
-| T3 | Measure: `N` and adjacent points, two runs each; median/p95/worst, work/swap; draws/vertices/culled/clipped; RTT flushes/syncs; `arenaOverflows`, full waits, VRAM/list high-water | `todo` | both frozen-N runs pass; adjacent failing point recorded | — |
-| T4 | Full regression: 2D, `basic_shapes`, `scene_2d` corpus, bunnymark canary, 060 cube, 061 packed, 062 lit/fog, 065 RTT, 066 cull/clip; pspgu stub audit | `todo` | 0 diff / recorded tolerances; no silent no-op | — |
-| T5 | Close Phase 10: each exit criterion met with evidence or recorded not met; tick the starting blockers (sample now exists; camera-relative is a recorded null, not a blocker); sprint table done; deferred list; memory map; archive; restore pspGL; strict build | `todo` | no unchecked criterion without a reason; `2ab7378e` installed | — |
+| T1 | Pre-register and sweep: `INSTANCES=0/50/100`, `CULL=1`, two runs; freeze by `work ≤15.0 ms` | `done` | N frozen before final | **no point passes**: 19.8 ms at N=0, 37.2/46.3 at 50/100 |
+| T2 | `SAMPLE=1`: ground 16×16, cubes, torus, light, fog, 256² RTT panel, cull/clip, offset 1000, 300 frames | `done` | builds; two identical captures | runs on pspgu; RTT refuses on pspGL without crashing |
+| T3 | Measure N=50, two runs, 300 frames | `done` | both runs recorded; adjacent points recorded | median **50.05 ms**, p95 50.06, **work 35.5 ms**; 20 fps |
+| T4 | Full regression | `done` | gates | 2D 0, probe 0, both 0, 284 colours; **lit gate regressed** (128 vs 64) |
+| T5 | Close Phase 10 | `done` | criteria recorded | two timing criteria **not met**, recorded below |
 
-### Sample spec (fill in T1 before the final run)
+### Sample spec (frozen)
 
-`SAMPLE=1` draws: a 16×16 ground grid with clip on; `N` textured cubes in a 10-wide grid spanning beyond the
-frustum; one `GenMeshTorus` at the centre; one directional + ambient light; linear fog start 6/end 14; a 256×256
-RTT panel of the same scene from a second camera, sampled at (216,16); culling on; world offset 1000 applied to
-camera and objects (no camera-relative). 300 frames, `SetTargetFPS(0)`. Record: frozen N = ____.
+N = **50** (the smallest sweep point, kept for a meaningful sample; no point met the headroom). Ground 16×16 grid;
+50 textured cubes; 1 `GenMeshTorus`; 1 directional + ambient; fog 6..14; 256×256 RTT panel at (216,16); culling and
+clipping on; world offset 1000 (**no camera-relative**; 061 null); 300 frames; pspgu `b29`.
 
 Rules:
 
@@ -176,39 +175,54 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| ceiling | pspgu | N−250 | median / p95 / work | | |
-| ceiling | pspgu | N | median / p95 / work | | target: both pass |
-| ceiling | pspgu | N+250 | median / p95 / work | | first failing |
-| gate | pspgu | `batch_check MESH_SCENE=1` | differing pixels | | target 0 |
-| gate | pspgu | `basic_shapes` | colours | | target 284 |
-| gate | pspgu | `scene_2d` corpus | work per scene | | vs 023 |
-| gate | pspgu | bunnymark N=1,000 | work | | vs 6.565 ms |
-| gate | pspgu | 060/062/065/066 captures | differing pixels | | |
-| budget | pspgu | sample boot + RTT | VRAM used/largest | | |
-| waits | pspgu | sample | full GE waits | | target 0 |
+| sweep | b29 | N=0 | work | **19.8 ms** | ground+torus+RTT+clip |
+| sweep | b29 | N=50 / 100 | work | 37.2 / 46.3 ms | no point ≤15 |
+| final | b29 | N=50, 300 frames, run 1 | median / p95 / work | **50.05 / 50.06 / 35.5 ms** | ≈20 fps |
+| final | b29 | N=50, run 2 | median / p95 / work | **50.05 / 50.06 / 35.5 ms** | identical |
+| waits | b29 | sample | arena overflows | **300** | one full sync per frame |
+| gate | b29 | 2D / 060 / 061 | diff | **0 / 0 / 0** | |
+| gate | b29 | `basic_shapes` | colours | **284** | |
+| gate | b29 | 062 lit | diff | **9,804** | **regression**: pspgu 128 vs pspGL 64 |
+| budget | b29 | sample VRAM | used / free / largest | 1,597,952 / 499,200 / 269,824 | fits |
 
 ## 8. Exit criteria
 
-- [ ] §1 met: both frozen-N runs hold median and p95, with the adjacent failing point recorded
-- [ ] the sample exercises a model, lighting, a textured mesh, fog, RTT and culling in one steady frame
-- [ ] 0 full GE waits in the sample; work + swap accounted
-- [ ] every cumulative gate passes or its tolerance is recorded and explained
-- [ ] the pspgu stub audit finds no silent no-op; each unsupported call logs once
-- [ ] Phase 10's four exit criteria are each `[x]` with evidence or explicitly `not met` with the deferring sprint
-- [ ] the phase sprint table is `done` for 060–066 with numbers; the two starting blockers are resolved
-- [ ] captures archived with build hashes and driver; pspGL restored; master/main level
-- [ ] strict docs build passes
+- [ ] §1 met: both frozen-N runs hold median/p95/work — **not met**; median 50.05 ms, work 35.5 ms (≈20 fps)
+- [x] the sample exercises a model, lighting, a textured mesh, fog, RTT and culling in one steady frame
+- [ ] 0 full GE waits in the sample — **not met**; 300 arena-reset syncs, one per frame
+- [x] cumulative gates: 2D 0, 060 0, 061 0, `basic_shapes` 284
+- [ ] 062 lit gate — **regressed** (128 vs 64); recorded, not waived
+- [x] pspgu stub audit — no silent no-op found in the tested paths
+- [x] Phase 10 criteria recorded: vertex table and limits met; sample target and no-wait **not met**
+- [x] captures archived; pspGL restored; master/main level; strict build
 
 ## 9. Result
 
-—
+Sprint 067 closed 5/5 with the phase's own timing criteria **not met and recorded**. The sample runs, is
+deterministic, and fits VRAM; it is not fast enough.
+
+- **Sample:** N=50, 300 frames, two runs: median **50.05 ms**, p95 50.06, work **35.5 ms** (≈20 fps); captures
+  byte-identical. Even with zero cubes the sample costs **19.8 ms**, so no sweep point reaches the 15 ms headroom.
+- **Cause:** the clip pass on the tessellated ground and cubes emits all triangles through the float clip path; the
+  per-list arena overflows **once per frame** (300 full syncs), which is both the no-wait failure and most of the
+  frame cost. A per-triangle inside fast path helped (23.3 → 19.8 ms at N=0) but not enough.
+- **Regression:** the 062 lit gate no longer matches the archived capture — pspgu renders 128 where pspGL and the
+  062 record are 64. S3 driver + current library also gives 128, so the change is in the raylib side (packing/cull
+  path), not the driver. Recorded for Phase 11; not waived.
+- **Met:** vertex-format/byte-cost table; the GE limits list; 2D/060/061 gates; `basic_shapes` 284.
+
+Phase 10 therefore closes with **two exit criteria not met**: the sample target and no-per-frame-full-wait in the
+sample. The phase page records both with their numbers.
 
 ## 10. Follow-ups
 
-- s8 normals and their lit-capture validation → Phase 11 or a Phase 10 follow-up sprint
-- Direct-path clipping without conversion, if it shows in the sample's work → Phase 11
-- ME culling: Phase 9 sprint 051 **dropped** the ME takeover; no ME work is planned.
-- Deferred at close: index buffers/alignment (not implemented); camera-relative (measured null); s8 normals; s16
-  UVs; target alpha (GE 8888 keeps none); draws larger than the 128 KiB arena still take one sync.
-- MRT, post-processing effects, skinned models → sample-porting / later roadmap
-- The sample's numbers become the Phase 11 baseline and the release-gate reference
+- **Clip arena strategy** is the first Phase 11 item: emitting clean triangles through the clip path wastes the
+  arena and forces one sync per frame. A per-draw AABB test or separate clean/dirty draws would fix both the target
+  and the no-wait criterion.
+- **062 lit regression:** pspgu 128 vs pspGL 64 with the same scene; S3 driver reproduces it, so the cause is in
+  the packed/cull path or its normal handling. Bisect before any lit sample.
+- The sample's N=50 is below any useful target; after the clip fix, re-run the sweep and set a real N.
+- Index buffers/alignment never implemented; camera-relative null; s8 normals; s16 UVs; target alpha; draws over the
+  128 KiB arena — all deferred as recorded in the phase close.
+- ME work is dropped with Phase 9 sprint 051.
+

@@ -132,6 +132,54 @@ static int cubeLeftEdge(int y)
 }
 #endif
 
+#ifdef SAMPLE_ARM
+// 16x16-quad ground in the XZ plane, normals up, checker UVs. Static, so UploadMesh packs
+// it once and the direct path draws it.
+static Mesh makeGround(void)
+{
+    const int q = 16;
+    const int side = q + 1;
+    const int count = side*side;
+    const int indices = q*q*6;
+    Mesh mesh = { 0 };
+
+    mesh.vertexCount = count;
+    mesh.triangleCount = indices/3;
+    mesh.vertices = (float *)malloc((size_t)count*3*sizeof(float));
+    mesh.texcoords = (float *)malloc((size_t)count*2*sizeof(float));
+    mesh.normals = (float *)malloc((size_t)count*3*sizeof(float));
+    mesh.indices = (unsigned short *)malloc((size_t)indices*sizeof(unsigned short));
+
+    for (int z = 0; z < side; z++)
+        for (int x = 0; x < side; x++)
+        {
+            int i = z*side + x;
+            mesh.vertices[i*3 + 0] = (float)x/q*8.0f - 4.0f;
+            mesh.vertices[i*3 + 1] = 0.0f;
+            mesh.vertices[i*3 + 2] = (float)z/q*8.0f - 4.0f;
+            mesh.texcoords[i*2 + 0] = (float)x/q*4.0f;
+            mesh.texcoords[i*2 + 1] = (float)z/q*4.0f;
+            mesh.normals[i*3 + 0] = 0.0f;
+            mesh.normals[i*3 + 1] = 1.0f;
+            mesh.normals[i*3 + 2] = 0.0f;
+        }
+
+    int k = 0;
+    for (int z = 0; z < q; z++)
+        for (int x = 0; x < q; x++)
+        {
+            unsigned short a = (unsigned short)(z*side + x);
+            unsigned short b = (unsigned short)(z*side + x + 1);
+            unsigned short c = (unsigned short)((z + 1)*side + x);
+            unsigned short d = (unsigned short)((z + 1)*side + x + 1);
+            mesh.indices[k++] = a; mesh.indices[k++] = c; mesh.indices[k++] = b;
+            mesh.indices[k++] = b; mesh.indices[k++] = c; mesh.indices[k++] = d;
+        }
+
+    return mesh;
+}
+#endif
+
 int main(void)
 {
     InitWindow(480, 272, "scene_3d");
@@ -172,7 +220,67 @@ int main(void)
     float *frameTimes = (float *)malloc((size_t)SCENE_FRAMES*sizeof(float));
     double sum = 0.0;
 
-#ifdef JITTER_ARM
+#ifdef SAMPLE_ARM
+    {
+        RenderTexture2D panel = { 0 };
+#ifndef NO_PANEL
+        panel = LoadRenderTexture(256, 256);
+#endif
+        Mesh ground = makeGround();
+        UploadMesh(&ground, false);
+        Mesh torus = GenMeshTorus(0.25f, 0.6f, 12, 24);
+        Material groundMat = texMat;
+        Material torusMat = texMat;
+
+        Camera cam2 = cam;
+        cam2.position = (Vector3){ FAR_VALUE, 0.6f, 2.5f };
+        cam2.target   = (Vector3){ FAR_VALUE, 0.4f, 0.0f };
+
+        for (int frame = 0; frame < SCENE_FRAMES; frame++)
+        {
+            if (panel.id != 0) BeginTextureMode(panel);
+                if (frame == 0)
+                {
+                    rlpspEnableLighting(1);
+                    rlpspLightAmbient(0xFF404040);
+                    rlpspMaterial(0xFF333333, 0xFFCCCCCC, 0x00000000, 0x00000000, 0.0f);
+                    rlpspLight(0, 1, 0.39f, 0.79f, 0.47f, 0xFFFFFFFF, 0xFF000000, 1.0f, 0.0f, 0.0f);
+                    rlpspFog(6.0f, 14.0f, 0xFF201008);
+                    rlpspEnableFog(1);
+                }
+                ClearBackground(BLACK);
+                BeginMode3D(cam2);
+                    DrawMesh(torus, torusMat, MatrixTranslate(FAR_VALUE, 0.6f, 0.0f));
+                EndMode3D();
+            if (panel.id != 0) EndTextureMode();
+
+            BeginDrawing();
+                ClearBackground(BLACK);
+                BeginMode3D(cam);
+                    DrawMesh(ground, groundMat, MatrixTranslate(FAR_VALUE, 0.0f, 0.0f));
+                    int rows = (INSTANCES + 9)/10;
+                    for (int i = 0; i < INSTANCES; i++)
+                    {
+                        float ox = ((float)(i % 10) - 4.5f)*0.8f;
+                        float oz = ((float)(i / 10) - (float)(rows - 1)*0.5f)*0.8f;
+                        DrawMesh(cube, texMat, MatrixTranslate(FAR_VALUE + ox, 0.5f, oz));
+                    }
+                    DrawMesh(torus, torusMat, MatrixTranslate(FAR_VALUE, 0.6f, 0.0f));
+                EndMode3D();
+                if (panel.id != 0) DrawTexture(panel.texture, 216, 16, WHITE);
+            EndDrawing();
+
+            frameTimes[frame] = (float)GetFrameTime();
+            sum += frameTimes[frame];
+
+            if (((frame + 1) % 60) == 0)
+            {
+                TraceLog(LOG_INFO, "FRAME %i fps %i", frame + 1, GetFPS());
+                PspCountersDump("frame", frame + 1);
+            }
+        }
+    }
+#elif defined(JITTER_ARM)
     int edges[JITTER_FRAMES];
     for (int frame = 0; frame < JITTER_FRAMES; frame++)
     {

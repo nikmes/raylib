@@ -400,6 +400,25 @@ static void drawClipped(unsigned int prim, unsigned int fmt, int count, int firs
                 fetchClipVertex(&in[v], index);
             }
 
+            // Fast path: a triangle whose vertices are all inside needs no planes.
+            int inside = 1;
+            for (int v = 0; v < 3; v++)
+            {
+                float cp[4];
+                clipTransform(mvp, &in[v], cp);
+                for (int pl = 0; pl < 6; pl++)
+                    if (clipDistance(cp, pl) < 0.0f) { inside = 0; break; }
+                if (!inside) break;
+            }
+
+            if (inside)
+            {
+                for (int v = 0; v < 3; v++)
+                    packClipVertex(buf + (size_t)(outVerts + v)*cl.stride, &cl, &in[v]);
+                outVerts += 3;
+                continue;
+            }
+
             int n = clipPolygon(in, 3, mvp, poly);
             if (n < 3) continue;
 
