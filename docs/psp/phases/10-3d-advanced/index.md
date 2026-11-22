@@ -253,4 +253,4 @@ follow from the sources:
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, CPU bake, explicit limits | written |
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | written |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | measured 4096 boundary, CPU clip + re-tessellation, conservative object culling, conditional ME shadow run | written |
-| P10-S6 — 3D sample target, regression and close | or folded into S5 if the sample meets the target | proposed |
+| [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | written |
