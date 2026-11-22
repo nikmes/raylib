@@ -4,22 +4,22 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S2 |
-| Branch / base commit | `master` @ `f638d4da` (sprint 060 written) |
+| Branch / base commit | `master` @ `acd92374` (sprint 060 closed at `5e5a4d7b`) |
 | Started / closed | 2026-11-22 (written) / — |
-| Build number(s) | pspgu after the 060 change + this sprint's format support (content hash recorded); `libraylib.a` default `PSP_BATCH=1` |
+| Build number(s) | pspgu `b26` (060 shipped `b25`; T3/T4 change driver behaviour, so bump and show it in the boot line); `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 0/5 done |
 
 ## 0. Handover
 
-**Situation.** Sprint 060 makes `DrawMesh` draw and leaves a deterministic 3D gate. This sprint fixes the two
-things every later 3D measurement would otherwise bake in: large world offsets lose precision on the GE, and model
-vertices are converted on the CPU every frame. The output is a camera-relative convention that is pixel-identical at
-the origin, and a one-time GE-native packing step at mesh upload, proven by counters — not by feel.
+**Situation.** Sprint 060 makes `DrawMesh` draw and leaves a deterministic 3D gate. This sprint removes the per-frame
+vertex conversion (a one-time GE-native pack at upload) and measures whether large world offsets actually lose
+precision in our pipeline before adding a camera-relative convention. The conversion result is proven by counters;
+the precision result may be a null, which is recorded rather than worked around.
 
 **Read before acting**, in this order:
 
-1. `../sprints/060-phase10-drawmesh-and-mesh-gate.md` — the packing fix, the chunker, and the `scene_3d` skeleton this
-   sprint extends. **Do not start until 060 T1/T2 are `done` and its gate is green.**
+1. `../sprints/060-phase10-drawmesh-and-mesh-gate.md` §9 — the packing fix, the index/colour format fields, the
+   whole-primitive chunker, and the `scene_3d` skeleton. 060 is **closed**; its gates are the reference.
 2. `../phases/10-3d-advanced/index.md` §Guidelines from the renderer blueprint — float24 matrices, s16/s8
    normalisation, the compact vertex format; §What we already know.
 3. `../memory-map.md` §4 — list arenas, VRAM and the 512 stride; §6 — the measurement protocol; §9 — the traps
@@ -30,29 +30,41 @@ the origin, and a one-time GE-native packing step at mesh upload, proven by coun
    `PSP_BATCH=1`); `:1720` — the non-batch `rlVertex3f`.
 6. `src/rmodels.c:1278-1330` — `UploadMesh` allocates `vboId` on every backend; `:1450-1495` — `DrawMesh`'s GL11
    arm; `:2686-2700` — `GenMesh*` calls `UploadMesh` before returning; `UnloadMesh` — what must be freed.
-7. `tools/pspgu/gl_draw.c` — `guVertexFormat`, `convertVertex`, `isBatchedLayout`; `gl_matrix.c` — the CPU matrix
-   stack that composes view × model before one `sceGuSetMatrix`.
+7. `tools/pspgu/gl_draw.c` — `guVertexFormat`, `vertexLayout`/`packVertex`, `isBatchedLayout`,
+   `drawElements`' range/dedup chunker; `gl_matrix.c` — the CPU matrix stack that composes view × model before one
+   `sceGuSetMatrix`. Note the lesson from 060: `Matrix` fields are declared `m0,m4,m8,m12,…`, so use
+   `MatrixTranslate`/`MatrixScale`/`MatrixMultiply`, never positional literals.
 8. `../sprints/014-phase5-ceiling-vram-readback.md` §T7 — `glReadPixels` reads the current draw buffer and is correct
    on a **stopped** frame; the diagnostic arm below is the only place allowed to take that wait.
 
-**First action.** Build `scene_3d` with a `FAR=3000` arm that renders the same cube at world offset 3000 and logs
-the left edge x of a high-contrast face for 16 frames while the camera orbits by 0.1 units per frame. Record the
-jitter **before** changing any matrix code; that is the control this sprint must beat.
+**First action.** Add `FAR=<units> CAMREL=0|1` to `scene_3d`: camera and cube are both offset by `FAR`, the camera
+orbits 0.1 units per frame for 16 frames, and the app logs the left edge x of a high-contrast face, read with
+`glReadPixels` (diagnostic sync allowed). Record `FAR=0,300,1000,3000` **before** changing matrix code.
+
+**This may be a null.** pspgu composes view × model on the CPU and sends one `GU_MODEL` matrix, so the close
+translation the blueprint describes may never reach the GE as a large value. If the control jitter at 3000 is ≤1 px,
+record the null with the four rows, mark T2 `dropped`, and continue with T3–T5. Do not implement a no-op.
 
 **Hard rules.**
 
 - **The 2D gate and the 060 cube gate are sacred.** `batch_check` 2D 0 differing pixels; the 060 cube parity stays
-  0. Camera-relative must be a no-op when the camera origin is zero — prove it byte-identically, not by inspection.
+  0. If T2 runs, camera-relative must be a no-op when the camera origin is zero — prove it byte-identically.
 - **No per-frame conversion.** The whole point of the GE-native path is that a static mesh is packed once, at
   `UploadMesh`. A counter must show `converted=0` for those draws; if it does not, the fast path did not match.
 - **The quantisation formula is exact.** s16 positions are normalised by the GE as `value/32768`; pack with
-  `s = round((p - centre) * K)`, upload the model matrix `T(centre) * S(32768/K)`, and never re-quantise per frame.
-  An off-by-one in `K` is invisible at first and wrong in every capture.
+  `s = round((p - centre) * K)` where `K = 32767/halfExtent`, upload `transform * T(centre) * S(32768/K)`, and never
+  re-quantise per frame. Build those with `MatrixTranslate`/`MatrixScale`/`MatrixMultiply`. Stride must be a multiple
+  of 4 (26 B of fields pads to 28) or the next vertex's f32 texcoord is unaligned.
+- **Bump the build tag to `b26` in T3.** A `b25` boot line means a stale archive and invalidates every packed-path
+  claim.
 - **The fast path's 24-byte vertex does not change.** No new field, no reordering, no extra work in the batcher.
 - **A diagnostic wait is not a performance arm.** The `FAR` arm may sync and read back per frame; it is excluded
   from every timing table and must be labelled as such. Measured scenes keep the phase 5 "no full GE wait" rule.
-- **Mesh copies share `vboId`.** The packed buffer is keyed by the `vboId` allocation; unloading a copy frees the
-  shared buffer. Document it and do not unload copies.
+- **Mesh copies share `vboId`.** The packed buffer is keyed by the `vboId` allocation (unique per mesh and copied
+  with it by value); `UnloadMesh` frees the record before `RL_FREE(mesh.vboId)`. Document that unloading a copy frees
+  the shared buffer.
+- **Packed meshes are static.** If the arrays are modified after upload the copy is stale; `UpdateMeshBuffer` logs
+  once for a packed mesh, and dynamic/skinned meshes skip packing entirely.
 - **Suspect the instrument.** Prove the arm compiled (`EXTRA_CFLAGS`, a boot line, a deliberate break) and that the
   unpacked and packed builds differ where expected.
 - **Stage only this sprint's paths.** Other sessions edit the tree; `git status` before every commit, never
@@ -84,6 +96,11 @@ run_app() {   # $1 = app dir, $2 = tag, $3 = make vars
 run_app psp-tests/scene_3d p10s2-far-world 'FAR=3000 CAMREL=0'
 run_app psp-tests/scene_3d p10s2-far-camrel 'FAR=3000 CAMREL=1'
 run_app psp-tests/scene_3d p10s2-near 'FAR=0 CAMREL=1'
+
+# Reference captures need the pspGL archive AND a relink: the .prx embeds libGL.
+tools/pspgu-build.sh --restore
+run_app psp-tests/scene_3d p10s2-near-pspgl 'FAR=0 CAMREL=0'
+tools/pspgu-build.sh            # back to pspgu, then relink the next arm
 ```
 
 **Do not touch.** Lighting, fog, render-to-texture, culling and tessellation (S3–S5); the 2D texture/window paths;
@@ -94,9 +111,10 @@ run_app psp-tests/scene_3d p10s2-near 'FAR=0 CAMREL=1'
 ## 1. Objective
 
 Falsifiable: at world offset 3000, the projected left edge of a fixed cube varies by **≤1 px** across 16 frames of a
-0.1-unit camera orbit (against the measured world-space jitter), while at offset 0 the change is **0 differing
-pixels**; and a static `DrawMesh` mesh is packed **once** — `converted=0` vertex conversions per frame — with a
-tex+normal+position stride of at most 28 B, down from the 060 format's 32 B.
+0.1-unit camera orbit — or the world-space control already meets that and the null is recorded with T2 dropped;
+if T2 runs, offset 0 is **0 differing pixels**; and a static `DrawMesh` mesh is packed **once** —
+`converted=0` vertex conversions per frame — with a tex+normal+position layout of 26 B padded to a 28-B stride, down
+from the 060 format's 32 B.
 
 ## 2. Why now
 
@@ -117,8 +135,8 @@ converting path; any change to model file formats or assets.
 
 ## 4. Preconditions
 
-- [ ] Sprint 060 T1/T2 `done`: cube parity 0 and the chunker fix in the build
-- [ ] pspgu content hash recorded; pspGL `2ab7378e` available for A/B
+- [x] Sprint 060 closed: cube parity 0, chunker dedup and `scene_3d` on `b25`
+- [ ] pspgu `b25`/`b26` content hashes recorded; pspGL `2ab7378e` available for A/B
 - [ ] `scene_3d` from 060 builds and captures deterministically on both drivers
 - [ ] `EXTRA_CFLAGS` reaches the compiler in `scene_3d` (prove with a deliberate arm)
 - [ ] `glReadPixels` works on a stopped frame (014 T8); the diagnostic arm syncs explicitly
@@ -128,11 +146,51 @@ converting path; any change to model file formats or assets.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Quantify the float24 trap: add `FAR=0,300,1000,3000 CAMREL=0` to `scene_3d` (world offset applied to camera *and* object; 16-frame 0.1-unit orbit; per-frame left-edge x) | `todo` | jitter (max−min edge x) grows with offset; record all four rows | — |
-| T2 | Camera-relative convention: zero the view translation in `BeginMode3D`, publish the camera origin, subtract it in `rlPspPushVertex`, the non-batch `rlVertex3f` and `DrawMesh`'s transform; clear on `EndMode3D` | `todo` | offset 0: 0 differing pixels vs T1; offset 3000: jitter ≤1 px; 2D captures unchanged | — |
-| T3 | GE-native positions: pack s16 about the mesh centre once in `UploadMesh` (skip `dynamic`/skinned), exact `K` scale in the model matrix; pspgu reads `GL_SHORT` positions as `GU_VERTEX_16BIT` | `todo` | cube parity 0 at both offsets; stride ≤28 B; trace shows the s16 format; conversion counter 0 | — |
-| T4 | Direct interleaved path: pack in GU order (texture, colour, normal, position) with one stride; pspgu recognises same-stride offsets and hands the buffer to `sceGuDrawArray` without a copy; `direct`/`converted` counters | `todo` | `scene_3d` logs `direct=N converted=0`; textured cube parity 0; CPU work drops | — |
-| T5 | Textured-model measurement and write-back: 1/10/100 `DrawMesh` draws of a textured cube; s16 UV experiment adopted only on 0-diff parity; 2D gate, 060 cube gate, `basic_shapes` 284; byte-cost table on the Phase 10 page | `todo` | work table; 2D 0 diff; 284 colours; table matches measured strides | — |
+| T1 | Quantify the float24 trap: `FAR=0,300,1000,3000 CAMREL=0`; camera and cube both offset; 16-frame 0.1-unit orbit; per-frame left-edge x via a diagnostic `glReadPixels`. **If the control jitter is ≤1 px, record the null and mark T2 `dropped`** | `todo` | four jitter rows; decision recorded before T2 | — |
+| T2 | Camera-relative (conditional on T1): zero `matView.m12..m14` in `BeginMode3D`, publish the camera origin, subtract it from `DrawMesh`'s transform fields and from `rlPspPushVertex` / the non-batch `rlVertex3f`; clear on `EndMode3D` | `todo` | offset 0: 0 diff vs the 060 gate; offset 3000: jitter ≤1 px; 2D captures unchanged | — |
+| T3 | GE-native positions: pack s16 about the mesh centre in `UploadMesh` (skip `dynamic`/skinned), exact `K` and matrix order; pspgu converts `GL_SHORT` positions as `GU_VERTEX_16BIT`; bump `PSPGU_BUILD` to `b26` | `todo` | cube parity 0 at both offsets; 26-B fields / 28-B stride; trace shows the s16 format; `converted=0` | — |
+| T4 | Direct interleaved path: one buffer in GU order, same stride/offsets; `DrawMesh` PSP branch binds it; pspgu recognises the layout and hands it to `sceGuDrawArray` without a copy; `direct`/`converted` log | `todo` | `scene_3d` logs `direct=1 converted=0`; textured cube parity 0; CPU work drops | — |
+| T5 | Textured-model measurement and write-back: `INSTANCES=1,10,100` textured cubes; s16 UV experiment adopted only on 0-diff parity; 2D gate, 060 cube gate, `basic_shapes` 284; byte table | `todo` | work table; 2D 0 diff; 284 colours; table matches measured strides | — |
+
+### Design notes for T3/T4 (implementation detail)
+
+**Quantisation.** `halfExtent = max(|v - centre|)` over the mesh bbox; `K = (halfExtent > 0)? 32767.0f/halfExtent : 1.0f`;
+`s = (short)lrintf((v - centre) * K)`. The GE applies `s/32768`, so the model matrix is
+`transform * T(centre) * S(32768/K)`, composed with the matrix constructors. `S(32768/K)` must be a single uniform
+scale on xyz; the position field is signed 16-bit.
+
+**Layout (28-B stride).** texcoord f32 at +0 (8), normal f32 at +8 (12), position s16 at +20 (6), pad +26..27.
+The fields sum to 26; the stride rounds to 28 so the next vertex's f32 starts 4-byte aligned. If s16 UVs are adopted
+in T5: texcoord s16 at +0 (4), normal f32 at +4 (12), position s16 at +16 (6), pad to 24.
+
+**Storage.** `UploadMesh` computes the bbox in one pass, then allocates a
+`PspGeMesh { unsigned char *verts; unsigned int stride; Vector3 centre; float scale; }` in main RAM, keyed by the
+`mesh.vboId` allocation. `UnloadMesh` frees it before `RL_FREE(mesh.vboId)`. Skip when
+`dynamic` or `animVertices`/`animNormals` is non-NULL. Meshes are static after upload; `UpdateMeshBuffer` logs once
+for a packed mesh.
+
+**Format from array types.** `guVertexFormat()` currently derives bits from enabled arrays only. T3 makes it inspect
+types too: `GL_FLOAT` → `GU_TEXTURE/NORMAL/VERTEX_32BITF`, `GL_SHORT` → `GU_VERTEX_16BIT`, `GL_UNSIGNED_BYTE` →
+`GU_COLOR_8888`; any other combination is rejected once. The default stride in `glVertexPointer`/`glTexCoordPointer`
+must use the type's element size, not `sizeof(float)` (a `GL_SHORT` 3-component array defaults to 6, not 12).
+
+**Draw and detection.** `DrawMesh`'s PSP branch looks up the record and sets the client pointers into the one buffer
+with the record's stride; without a record it uses the existing separate-array path. pspgu accepts the direct path
+only when every enabled array shares `stride` and `ptr - base` equals the layout offsets for the derived format;
+otherwise it packs. Index buffers are still copied per chunk — the zero-conversion counter is about vertices.
+
+**Camera-relative order.** If T2 runs, subtract the camera origin from the composed model matrix's `m12..m14` fields
+after `transform * T(centre) * S(scale)` and before `rlMultMatrixf`; the immediate paths subtract from the vertex
+before it enters the 24-B batcher (or `glVertex3f` in a `PSP_BATCH=0` build). The origin is set in `BeginMode3D` and
+cleared in `EndMode3D`, so 2D calls see zero.
+
+**Readback placement.** The T1 diagnostic calls `glReadPixels` on the current frame **before** `EndDrawing`, with an
+explicit sync; reading after the swap reads the next buffer and the wrong frame. It is excluded from every timing
+row.
+
+**Counters.** pspgu logs `drawElements direct=1` for a handed-through buffer and `converted=<n>` when it packs.
+`scene_3d` asserts `direct=1 converted=0` for static meshes. Bump the boot tag to `b26`; a `b25` line invalidates the
+run.
 
 Rules:
 
@@ -149,7 +207,7 @@ Rules:
 | budget | limit | measured | tag |
 |---|---|---|---|
 | frame time | 0 diff at offset 0; no regression in the 060 cube arm | | |
-| vertex stride | tex f32 + normal f32 + position s16 ≤ 28 B | | |
+| vertex layout | tex f32 + normal f32 + position s16 = 26 B fields, 28-B stride | | |
 | per-frame conversion | 0 vertices for static meshes | | |
 | VRAM | 0 delta (packed buffers live in main RAM; no new textures) | | |
 | heap | packed copy ≤ original mesh size; record per mesh | | |
@@ -161,20 +219,20 @@ Protocol: device only; control → change → control again; two identical captu
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
 | control | 060 build | `FAR=0` | pixels vs 060 gate | | must be 0 |
-| control | 060 build | `FAR=3000 CAMREL=0` | edge jitter (px/16 frames) | | diagnostic wait |
+| control | 060 build | `FAR=0/300/1000/3000 CAMREL=0` | edge jitter (px/16 frames) | | diagnostic wait; decide T2 here |
 | change | T2 | `FAR=3000 CAMREL=1` | edge jitter (px/16 frames) | | target ≤1 |
 | change | T3 | cube, both offsets | pixels vs 060 gate | | target 0 |
-| change | T3 | one cube | packed stride (B) | | target ≤28 |
+| change | T3 | one cube | fields/stride (B) | | 26 / 28 |
 | change | T4 | `scene_3d` mesh draws | `direct` / `converted` | | target 1/0 |
 | change | T5 | textured cube 1/10/100 draws | work (ms) / p95 | | no target; baseline |
 
 ## 8. Exit criteria
 
-- [ ] §1 met, with the four jitter rows and the conversion counters in §7
-- [ ] camera-relative is byte-identical to the 060 gate at offset 0, for both 2D and 3D
-- [ ] no per-frame conversion for static meshes; dynamic/skinned meshes documented as remaining on the slow path
+- [ ] §1 met: four jitter rows (or the recorded null and `dropped` T2) and the conversion counters in §7
+- [ ] if T2 ran: camera-relative is byte-identical at offset 0 and jitter ≤1 px at 3000; if dropped: the null is recorded with its four rows
+- [ ] no per-frame vertex conversion for static meshes; dynamic/skinned meshes documented as remaining on the slow path
 - [ ] pspgu accepts `GL_SHORT` positions and a same-stride interleaved layout without copying
-- [ ] vertex-format/byte-cost table updated on the Phase 10 page
+- [ ] vertex table updated with 26/28 (and 22/24 if s16 UV is adopted); boot line `b26`
 - [ ] 2D gate 0 diff; `basic_shapes` 284 colours; no full GE wait in any measured scene
 
 ## 9. Result
@@ -185,5 +243,5 @@ Protocol: device only; control → change → control again; two identical captu
 
 - s8 normals and their lighting error → **P10-S3** (adopt only after a lit capture)
 - Skinned/morph meshes on the GE-native path → after S3, when the skinning policy is chosen
-- s16 texture coordinates if T5's parity fails → record the failure and keep f32
+- s16 texture coordinates: adopt only on 0-diff parity; record the failure and keep f32 otherwise
 - Model culling with camera-relative bounds → **P10-S5**
