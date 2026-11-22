@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b27"
+#define PSPGU_BUILD "b28"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -128,6 +128,8 @@ typedef struct {
     unsigned long long displayWaitMaxUs;
 
     void *drawOffset;                       // current draw buffer, as GU wants it
+    int drawPsm;                            // GU_PSM_* of the current draw buffer
+    int ditherEnabled;                      // GL_DITHER, default on
     void *dispOffset;
     void *depthOffset;                      // NULL when PSP_GU_DEPTH is 0
     void *readOffset;                       // buffer holding the last completed frame
@@ -159,6 +161,9 @@ typedef struct {
 
     // Lighting/fog/texture environment (sprint 062). GU has no queries, so the driver
     // mirrors what GL last set; the draw path needs the lighting flag and model colours.
+    int vpX, vpY, vpW, vpH;                 // current GU viewport, for FBO save/restore
+    int scX, scY, scW, scH;                 // current scissor
+
     int lighting;                           // GL_LIGHTING
     unsigned int lightEnable;               // 1 << n for GL_LIGHT0..3
     int lightType[4];                       // GU_DIRECTIONAL / GU_POINTLIGHT / GU_SPOTLIGHT
@@ -209,6 +214,13 @@ void pspguVramStats(PspGuVramStats *out);
 unsigned int pspguVramFreeBytes(void);      // probes use these two for the churn self-check
 unsigned int pspguVramLargestBytes(void);
 void pspguVramReport(const char *when);     // VRAM line + residency line
+
+// Render-target attachment (sprint 065): promote to an 8192-aligned block, drop the
+// shadow, pin. Returns the GU fields the FBO needs.
+int pspguTextureRenderTarget(unsigned int id, unsigned int *offset, int *w, int *h,
+                             int *stride, int *psm);
+void pspguTextureMarkDirty(unsigned int id);
+int pspguTextureIsRenderTarget(unsigned int id);
 
 // Residency (sprint 016): the probes need the counters and per-texture residency.
 typedef struct {

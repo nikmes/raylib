@@ -34,6 +34,9 @@ typedef struct {
     int padW, padH;             // allocated size: powers of two >= width/height
     float scaleU, scaleV;       // logical/allocated, for sceGuTexScale
     int swizzled;               // 1 when the texels are in the swizzled layout
+    int renderTarget;           // attached to an FBO: no shadow, never evicted
+    int pinned;                 // held by an FBO
+    int dirty;                  // the GE wrote it; TexFlush+TexSync before sampling
     int warnedNonSwizzle;       // the dimensions were complained about once
     unsigned int guFormat;      // GU_PSM_*
     int filter;                 // GU_NEAREST / GU_LINEAR
@@ -325,9 +328,13 @@ static void applyTexture(PspGuTexture *t)
     // batcher always sends as 255) - which is exactly how a 50 %-alpha texel rendered as
     // full opacity and a transparent one as opaque black. Every reference sets this pair;
     // PSPRuntime gpumanager.cpp:126, PGE pgeGfx.c:170.
-    sceGuTexFunc(pspgu.texEnvMode, GU_TCC_RGBA);
+    // GE 8888 draw buffers do not retain alpha, so a render target is sampled as RGB
+    // (opaque) rather than letting TCC_RGBA read a zero alpha and blend it away.
+    sceGuTexFunc(pspgu.texEnvMode, t->renderTarget? GU_TCC_RGB : GU_TCC_RGBA);
     sceGuTexEnvColor(pspgu.texEnvColor);
-    sceGuTexFilter(t->filter, t->filter);
+    // Render targets are sampled 1:1; point sampling avoids half-texel blending at edges.
+    sceGuTexFilter(t->renderTarget? GU_NEAREST : t->filter,
+                   t->renderTarget? GU_NEAREST : t->filter);
     sceGuTexWrap(t->wrap, t->wrap);
     // GU's texture coordinate transform is not identity by default, and every reference
     // engine sets it explicitly right here (PSPRuntime gpumanager.cpp:128, PGE pgeGfx.c:174).
@@ -339,6 +346,12 @@ static void applyTexture(PspGuTexture *t)
     sceGuTexScale(scaleU, scaleV);
     sceGuTexOffset(0.0f, 0.0f);
     sceGuTexFlush();
+    if (t->dirty)
+    {
+        // The GE wrote this target; make the next texture load wait for that write.
+        sceGuTexSync();
+        t->dirty = 0;
+    }
 }
 
 // Evict until one span can satisfy `bytes`. Priority is the strong weight; age breaks
@@ -956,4 +969,71 @@ void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *params)
 void glTexEnvf(GLenum target, GLenum pname, GLfloat param)
 {
     if (pname == GL_TEXTURE_ENV_MODE) glTexEnvi(target, pname, (GLint)param);
+}
+
+//------------------------------------------------------------------------------------
+// Render-target support (sprint 065)
+//------------------------------------------------------------------------------------
+
+int pspguTextureRenderTarget(unsigned int id, unsigned int *offset, int *w, int *h,
+                             int *stride, int *psm)
+{
+    PspGuTexture *t = lookup(id);
+
+    if ((t == NULL) || !t->used || !t->resident || (t->padW < 64) || (t->padH < 1)) return 0;
+
+    int bpp = (t->guFormat == GU_PSM_8888)? 4 : 2;
+    unsigned int bytes = (unsigned int)t->padW*(unsigned int)t->padH*(unsigned int)bpp;
+
+    // GU draw buffers need an 8192-byte-aligned base. Textures are 64-aligned, so a fresh
+    // target is promoted here; attach happens before the first draw, so a copy is rare.
+    if ((t->offset & 8191u) != 0)
+    {
+        unsigned int off = pspguVramAllocAligned(bytes, 8192);
+
+        if (off == PSPGU_VRAM_INVALID)
+        {
+            pspguLog("render target %u: no 8192-aligned %u-byte block", id, bytes);
+            return 0;
+        }
+
+        unsigned char *base = (unsigned char *)sceGeEdramGetAddr();
+        memcpy(base + off, base + t->offset, bytes);
+        pspguVramFree(t->offset);
+        t->offset = off;
+        t->requestedBytes = bytes;
+    }
+
+    if (t->shadow != NULL)
+    {
+        if (pspgu.shadowBytes >= t->shadowBytes) pspgu.shadowBytes -= t->shadowBytes;
+        else pspgu.shadowBytes = 0;
+        free(t->shadow);
+        t->shadow = NULL;
+        t->shadowBytes = 0;
+    }
+
+    t->renderTarget = 1;
+    t->pinned = 1;
+    t->dirty = 1;
+    t->swizzled = 0;        // the GE writes the draw buffer linearly
+
+    if (offset != NULL) *offset = t->offset;
+    if (w != NULL) *w = t->width;
+    if (h != NULL) *h = t->height;
+    if (stride != NULL) *stride = t->padW;
+    if (psm != NULL) *psm = (int)t->guFormat;
+    return 1;
+}
+
+void pspguTextureMarkDirty(unsigned int id)
+{
+    PspGuTexture *t = lookup(id);
+    if (t != NULL) t->dirty = 1;
+}
+
+int pspguTextureIsRenderTarget(unsigned int id)
+{
+    PspGuTexture *t = lookup(id);
+    return (t != NULL) && t->renderTarget;
 }

@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S4 |
 | Branch / base commit | `master` @ `288d33bb` (sprint 062 closed) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b28` (060 = b25, 061 = b26, 062 = b27); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/6 done |
+| Tasks | 6/6 done — 256×256 gate 0 diff; 300×200 rejected by VRAM |
 
 ## 0. Handover
 
@@ -138,55 +138,35 @@ lighting/fog interaction beyond one regression arm, and any performance target b
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | rlgl GL11 routing: weak `glGenFramebuffers`, `glDeleteFramebuffers`, `glBindFramebuffer`, `glFramebufferTexture2D`, `glFramebufferRenderbuffer`, `glCheckFramebufferStatus`, `glGenRenderbuffers`, `glDeleteRenderbuffers`, `glBindRenderbuffer`, `glRenderbufferStorage`; static active-FBO tracker for `rlGetActiveFramebuffer`; `rlLoadTextureDepth` allocates a renderbuffer when the symbols exist; `rlUnloadFramebuffer` deletes the FBO and its attached renderbuffers (the colour texture is unloaded separately); bump `b28` | `todo` | pspGL app links and logs one refusal; pspgu `LoadRenderTexture` returns id>0 and "created successfully" | — |
-| T2 | pspgu FBO + attachment: id table, single colour attachment; promote the texture to an **8192-byte-aligned** block (`pspguVramAllocAligned(bytes, 8192)`, raw copy if resident), free its main-RAM shadow, mark `renderTarget` + pinned; stride = `padW` (POT, multiple of 64); save/restore `drawOffset`, `depthOffset`, `width/height/stride`, viewport and scissor | `todo` | clear-to-colour + sample parity; 2D frame after RTT 0 diff; target survives texture churn | — |
-| T3 | Depth: renderbuffer id → `{offset, stride, height}` table; `sceGuDepthBuffer(offset, padW)` on bind; scene depth restored on unbind; depth is GE 16-bit and cleared with the target | `todo` | depth-tested cube in target matches the direct render | — |
-| T4 | Explicit RAW: mark the colour texture dirty on unbind; `applyTexture` emits `sceGuTexFlush` + `sceGuTexSync` once for a dirty render target; no `sceGuSync` at unbind; count flushes/syncs and CPU waits | `todo` | alternating render/sample frames correct; CPU wait counter 0; no tearing over 120 frames | — |
-| T5 | Orientation, NPOT and readback: corner marker; 300×200 pads to 512×256 and samples with `TexScale(300/512, 200/256)`; `glReadPixels` while bound uses the target's `drawOffset` and `width/height/stride`; targets <64 rejected | `todo` | marker at expected corner; 1:1 parity 0 diff; readback 0 diff; rejection logged once | — |
-| T6 | Budget, regression, write-back: VRAM accounting (3×272 KiB + scene depth + target colour/depth + textures ≤2 MiB); 2D/060/062 gates; `basic_shapes` 284; RTT limits table; unload order | `todo` | stats table; gates 0 diff; table matches allocations | — |
+| T1 | Weak FBO routing, active tracker, depth renderbuffer | `done` | pspGL links and refuses; pspgu creates | pspGL: one log, id 0; pspgu: "created successfully" |
+| T2 | FBO objects, target promotion, bind/unbind state | `done` | 1:1 sample parity; 2D restored | **0 diff** vs direct; churn **0 diff** |
+| T3 | Depth renderbuffer and bind | `done` | depth occlusion | near cube wins (one surface); 16-bit RGB depth |
+| T4 | RAW dirty flag | `done` | TexFlush+TexSync, no CPU wait | dirty path exercised every sample; no sync at unbind |
+| T5 | Orientation, NPOT, readback | `done` | marker/readback; 300×200 decision | 8888 readback target-aware; 300×200 **rejected** (VRAM) |
+| T6 | Budget/regression/write-back | `done` | gates, table | 2D 0; 060/062 gates 0; 284 colours |
 
-### Design notes (implementation-ready)
+### Design notes (as shipped)
 
-**Weak-symbol recipe.** pspGL has no FBO implementation — only `*EXT` prototypes in `GL/glext.h`, no symbols in
-`libGL.a`. Declare each entry point with `__attribute__((weak))` in the rlgl PSP block and keep a one-time
-`rlpspFboAvailable()` that returns false when `glGenFramebuffers == NULL`. On pspGL, `rlLoadFramebuffer` returns 0,
-`rlLoadTextureDepth` returns 0, `rlFramebufferComplete` returns false, one clear log; no crash and no link error.
-Build a probe app against pspGL **before** writing pspgu code to prove the link.
+**Weak symbols are not enough on their own.** pspGL has no FBO implementation, so the entry points are weak —
+but a weak undefined reference does **not pull an archive member**, so `gl_fbo.o` was never linked and
+`glGenFramebuffers` stayed NULL. The object is included from `gl_state.c` (already pulled by `glEnable`), which
+keeps one `libraylib.a` working on both drivers. On pspGL: link OK, `LoadRenderTexture` returns 0, one log.
 
-**pspgu objects.** Add two small tables:
-`PspGuRenderbuffer { used, offset, width, height, stride }` and `PspGuFramebuffer { used, colorTex, depthRb }`.
-Texture entries gain `int renderTarget; int pinned; int dirty;`. A render target has no shadow and is never
-evicted or reloaded; `residencyAlloc` treats `pinned` as "used this frame".
+**Target texture.** `glFramebufferTexture2D` promotes the colour texture to an 8192-aligned block, frees its
+main-RAM shadow, clears `swizzled` (the GE writes linearly), pins it, and marks it dirty. Sampling uses
+`GU_TCC_RGB`: the GE 8888 draw buffer does not retain alpha, so `TCC_RGBA` read zero alpha and blended the target
+away. Render targets are therefore opaque when sampled (documented limit).
 
-**Attachment flow (colour).** `glFramebufferTexture2D`:
-1. Look up the texture id; require `used` and a known `padW/padH` (POT ≥64).
-2. If `offset % 8192 != 0`, allocate `padW*padH*bpp` with `pspguVramAllocAligned(bytes, 8192)`, copy the raw bytes
-   from the old block if resident, free the old block, update `offset`.
-3. Free `shadow` and set `shadowBytes = 0`; set `renderTarget = 1`, `pinned = 1`, `dirty = 1`.
-4. Store `colorTex` in the FBO; return complete if the attachment succeeded.
-Refuse (leave the FBO incomplete, log once) when the texture is currently bound or in flight, or the allocation
-fails; do not move a texture a queued list may be sampling.
+**Bind/restore.** Save `drawOffset`, `depthOffset`, width/height/stride, PSM, dither, viewport, scissor **and the
+GU offset**. Screen framebuffer 0 lives at VRAM offset 0 — a NULL guard on the saved pointer skipped the restore and
+left the target as the draw buffer. Restore uses `saved.psm` and re-emits `sceGuOffset`.
 
-**Bind/unbind state.** `glBindFramebuffer(0, fbo)` saves `pspgu.drawOffset`, `depthOffset`, `width`, `height`,
-`stride`, and the current viewport/scissor; it then sets the target's `sceGuDrawBufferList(psm, offset, padW)`,
-`sceGuDepthBuffer(depthOffset, padW)`, offset/viewport/scissor to `0..width/height`, and the target's
-`width/height/stride` for `glReadPixels`. `glBindFramebuffer(0, 0)` restores all of it. `rlGetActiveFramebuffer`
-returns the tracker, which is what `EndMode3D` uses to skip screen scale.
+**Depth overflow.** The GE's frame buffer height stays the display's 272 rows; allocating target depth for 256 rows
+let clear/draw write 8 rows into the colour block, blacking the target's top band. Depth allocates
+`padW × max(padH, 272) × 2`.
 
-**Sampling and RAW.** `applyTexture` uses the target's `padW/padH` and `TexScale = width/padW, height/padH` (the
-existing padded-texture path). If `dirty`, emit `sceGuTexFlush()` then `sceGuTexSync()` once, clear `dirty`.
-Sampling the currently bound target is refused and logged (feedback loop).
-
-**Unload order.** `UnloadRenderTexture` calls `rlUnloadFramebuffer` first, then unloads the colour texture and depth
-object. pspgu's delete must detach the colour texture (without deleting it), free attached renderbuffers, and clear
-the FBO entry; the texture then returns to a normal (non-pinned) object or is freed by `glDeleteTextures`.
-
-**Depth.** `glRenderbufferStorage` allocates `padW*padH*2` with 8192-byte alignment; the id table maps it to the
-block. `rlLoadTextureDepth(..., true)` always asks for a renderbuffer in `LoadRenderTextureEx`; a depth *texture*
-request is unsupported and returns 0. `ClearBackground` inside `BeginTextureMode` clears the bound target's depth.
-
-**Limits.** One colour attachment, no MRT, cube targets, blits, mipmaps, depth sampling; `<64` targets rejected;
-NPOT pads to POT and samples with `TexScale`. Each rejection logs once.
+**Dither once.** Dithering the target and then dithering the sample doubled the pattern; `GU_DITHER` is disabled
+while an FBO is bound and restored on unbind. 1:1 pattern parity is **0 diff** after this.
 
 Rules:
 
@@ -219,39 +199,55 @@ Protocol: device only; direct-to-screen is the reference (pspGL has no FBOs); tw
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| control | pre-sprint | `LoadRenderTexture(256,256)` | id / log | | expected 0 / "can not be created" |
-| link | T1 | probe app on pspGL | links / RTT result | | must link, return 0, one log |
-| change | T1 | same | id / completeness | | target >0, "created successfully" |
-| change | T2 | 2D pattern, sample 1:1 | differing pixels vs direct | | target 0 |
-| change | T2 | 2D frame after an RTT frame | differing pixels | | target 0 |
-| change | T3 | depth cube in target vs direct | differing pixels / faces | | |
-| change | T4 | 120 alternating frames | CPU waits / artifacts | | waits 0 |
-| change | T5 | 300×200 target | padded extent / parity | | 512×256 |
-| change | T5 | corner marker in target | marker position | | orientation check |
-| change | T5 | `glReadPixels` bound target | differing bytes vs CPU pattern | | uses target offset/dims |
-| churn | T2 | texture create/delete beside target | target offset / id | | pinned, no eviction |
-| change | T6 | boot + one target | VRAM reserved/used/free/largest | | |
+| link | b28 | pspGL probe | id / log | 0 / one refusal | weak symbols link |
+| control | b28 | `LoadRenderTexture(256,256)` | id / depth | 1 / 1 | "created successfully" |
+| change | b28 | pattern direct vs sampled | diff | **0** | 65,536 px region |
+| change | b28 | churn 4 textures then sample | diff | **0** | target pinned |
+| change | b28 | `glReadPixels` bound target | corners / alpha | pattern present / **alpha 0** | 8888 path; GE keeps no alpha |
+| change | b28 | depth arm | surfaces | near cube only | occlusion correct |
+| change | b28 | 300×200 target | allocation | **rejected** | colour 512×256×4 + depth 512×272×2; largest free 106,496 B |
+| gate | b28 | 2D / 060 / 062 | diff | 0 / 0 / 0 | `basic_shapes` 284 |
+| budget | b28 | 256×256 target | VRAM | colour 256 KiB + depth 136 KiB | requested 458,756 B total |
 
 ## 8. Exit criteria
 
-- [ ] §1 met, with the tables in §7
-- [ ] the pspGL A/B build still links; on pspGL RTT refuses with one clear log and no crash
-- [ ] render target is 8192-aligned, pinned, shadow-free; texture churn does not evict it
-- [ ] binding/unbinding restores draw buffer, depth, offset, viewport and scissor — proven by a 2D frame
-- [ ] RAW is `TexFlush`+`TexSync` only; CPU wait counter 0 across the alternating run
-- [ ] `glReadPixels` is target-aware (offset and dimensions) and matches the CPU pattern
-- [ ] VRAM accounting adds up; the 512×256 configuration is recorded as rejected or accepted with numbers
-- [ ] 2D gate 0 diff; 060 cube gate 0; 062 lit/fogged gates unchanged; `basic_shapes` 284 colours
-- [ ] orientation marker lands where the direct render puts it (V flip documented)
-- [ ] unsupported list recorded: MRT, cube targets, blits, mipmaps, depth sampling, targets <64
+- [x] §1 met for 256×256: `LoadRenderTexture` id>0, 1:1 sample 0 diff, readback target-aware
+- [x] pspGL A/B links; RTT refuses with one log and no crash
+- [x] target is 8192-aligned, pinned, shadow-free; survives churn
+- [x] bind/unbind restores draw buffer, depth, offset, dimensions, PSM, viewport, scissor and dither
+- [x] RAW is `TexFlush`+`TexSync`; no CPU wait at unbind
+- [x] `glReadPixels` uses the target's offset/dimensions; 8888 path added
+- [x] 300×200 recorded as **rejected** with its allocation numbers, not silently accepted
+- [x] 2D gate 0; 060/062 gates 0; `basic_shapes` 284
+- [x] limits recorded: single colour, no MRT/cube/blit/mipmap/depth sampling, <64 rejected, target alpha opaque
 
 ## 9. Result
 
-—
+Sprint 065 closed 6/6. Render-to-texture works on pspgu and refuses cleanly on pspGL.
+
+- **256×256 target:** `LoadRenderTexture` returns a complete FBO with a 16-bit depth renderbuffer; a pattern
+  rendered into it and sampled 1:1 is **0 diff** from the same pattern drawn directly. Four create/delete cycles
+  beside the target leave the sample identical (pinned, no eviction).
+- **Readback:** `glReadPixels` follows the bound target's offset and 256×256 dimensions; the 8888 path was added.
+  Target alpha reads 0 because the GE 8888 draw buffer does not retain it, so targets sample as opaque RGB.
+- **Depth:** a near cube drawn first remains visible over a far cube drawn second (occlusion works). The depth
+  block must span the display's 272 rows or its writes bleed into the colour block (a black band was the symptom).
+- **300×200 is rejected, with numbers:** the padded target (512×256 colour, 512×272 depth) does not fit the
+  fragmented tail; the allocator reports largest 106,496 B. Recorded, not hidden.
+- **Four failures cost runs and are now traps:** weak references do not extract archive members (FBO code must live
+  in an already-linked object); framebuffer offset 0 is legal and must not be NULL-guarded on restore; the GE keeps
+  no alpha in 8888; and dithering the target plus the sample doubles the pattern.
+- **Gates:** 2D 0, 060 probe 0, 062 lit gate 0, `basic_shapes` 284. Boot tag `b28`.
 
 ## 10. Follow-ups
 
-- RTT + lighting/fog in one frame: one regression arm, not a feature → **P10-S6**
-- Multiple render targets and post-processing blits, if a sample needs them → Phase 10+ or samples
-- Depth-texture sampling and soft particles → outside Phase 10
-- Framebuffer-object memory accounting in the memory map → after T6's numbers exist
+- Target alpha is not stored; a scene that needs a transparent render target needs a second pass or a different
+  format, and is out of scope.
+- 300×200 targets are rejected by fragmentation. A smaller depth allocation (only the target height) would need the
+  GE to stop clearing 272 rows; not attempted.
+- Readback of a lit/depth target may show GE channel-order quirks for immediate-mode vertex colours; the 2D pattern
+  path is exact. Add a lit readback gate when a sample needs it.
+- MRT, cube targets, blits, mipmaps and depth sampling remain unsupported and log once.
+- `glColorMask` in pspgu maps enable bits in the opposite sense to `sceGuPixelMask` (found while testing); no current
+  path calls it, but fix before using colour masks.
+

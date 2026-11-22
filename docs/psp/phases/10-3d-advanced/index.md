@@ -251,6 +251,12 @@ follow from the sources:
   coalescing (sprint 015 T3), and `pspguVramStats` reports the largest free span — but a target must be
   8192-byte aligned and padded to a power of two to be sampled.
 
+**Measured RTT limits (sprint 065).** One 256×256 8888 target with a 16-bit depth renderbuffer is complete and
+samples byte-identically to the direct render; it costs 256 KiB colour + ~136 KiB depth and survives texture churn.
+The GE's 8888 draw buffer does not retain alpha, so a target samples as opaque RGB; alpha-bearing targets are
+unsupported. A 300×200 target pads to 512×256 and needs 512 KiB colour + 278 KiB depth, which the fragmented tail
+cannot supply (largest free 106,496 B at creation) — rejected with numbers, not silently accepted.
+
 ### Do not copy — 3D-specific hazards found
 
 - `openTRI/triVMath_vfpu.c:2008` — `vcrsp.t c010, c010, c020` writes the cross product into a source register: a
@@ -275,6 +281,6 @@ follow from the sources:
 | [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | **done** — 0 diff vs pspGL; b25 |
 | [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | one-time s16 packing, direct interleaved path; camera-relative measured null | **done** — 0 diff, `direct=1`; T2 dropped |
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, bake measurement | **done** — lit/texenv/fog 0 diff; bake measured |
-| [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | written |
+| [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | **done** — 256² 0 diff; 300×200 rejected |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | measured 4096 boundary, CPU clip + re-tessellation, conservative object culling, conditional ME shadow run | written |
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | written |

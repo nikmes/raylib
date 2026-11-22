@@ -338,12 +338,18 @@ static void pspguInitGu(void)
     sceGuOffset(2048 - PSP_GU_WIDTH/2, 2048 - PSP_GU_HEIGHT/2);
     sceGuViewport(2048, 2048, PSP_GU_WIDTH, PSP_GU_HEIGHT);
     sceGuScissor(0, 0, PSP_GU_WIDTH, PSP_GU_HEIGHT);
+    // Tracked so an FBO bind/restore before the first BeginDrawing still has a valid
+    // screen state to return to (a zero viewport/scissor would clip everything).
+    pspgu.vpX = 2048; pspgu.vpY = 2048; pspgu.vpW = PSP_GU_WIDTH; pspgu.vpH = PSP_GU_HEIGHT;
+    pspgu.scX = 0; pspgu.scY = 0; pspgu.scW = PSP_GU_WIDTH; pspgu.scH = PSP_GU_HEIGHT;
+    pspgu.drawPsm = GU_PSM_5650;
     sceGuEnable(GU_SCISSOR_TEST);
 
     // Dithering: pspGL's captures show the background alternating (240,240,240) and
     // (248,248,248) pixel by pixel, i.e. a 5650 buffer being dithered to hide banding.
     // Ours was flat, which is 50 % of the frame's pixels differing for no visible reason.
     // daedalus' memory map (AI_MEMORY_MAP §12.4, "Fast clear + dither") is the reference.
+    pspgu.ditherEnabled = 1;
     sceGuEnable(GU_DITHER);
 
 #if PSP_GU_DEPTH
@@ -446,6 +452,7 @@ void pspguBeginFrame(void)
     {
         pspgu.drawIndex = pspgu.frames % PSP_GU_FB_COUNT;
         pspgu.drawOffset = pspgu.fbOffset[pspgu.drawIndex];
+        pspgu.drawPsm = GU_PSM_5650;
         pspgu.frameActive = 1;
     }
 

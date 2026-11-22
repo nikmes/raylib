@@ -112,6 +112,25 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
     unsigned char *out = (unsigned char *)pixels;
     unsigned int p = (unsigned int)frame;
 
+    if (pspgu.drawPsm == GU_PSM_8888)
+    {
+        // Render targets are 8888; the screen is 5650. GU stores RGBA bytes in order.
+        for (int row = 0; row < (y1 - y0); row++)
+        {
+            int gl_y = y0 + row;
+            int src_y = pspgu.height - 1 - gl_y;
+            const unsigned char *src = base + p + (size_t)src_y*pspgu.stride*4;
+            for (int col = 0; col < (x1 - x0); col++)
+            {
+                const unsigned char *s = src + (size_t)(x0 + col)*4;
+                unsigned char *o = out + ((size_t)row*(x1 - x0) + col)*bpp;
+                o[0] = s[0]; o[1] = s[1]; o[2] = s[2];
+                if (bpp == 4) o[3] = s[3];
+            }
+        }
+        return;
+    }
+
     for (int row = 0; row < (y1 - y0); row++)
     {
         int gl_y = y0 + row;

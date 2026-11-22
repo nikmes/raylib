@@ -562,6 +562,17 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   packer stored `n*S` `[measured: sprint 062, lit cube 0 diff after]`.
 - **`sceGuFog(start, end, colour)` matches GL_LINEAR directly.** No inverted-register workaround is needed for
   pspgu; pspGL's own register writes agree at start 3 / end 6 `[measured: sprint 062, 0 diff]`.
+- **Weak undefined symbols do not extract archive members.** rlgl's weak FBO references left `gl_fbo.o` out of the
+  link, so `glGenFramebuffers` stayed NULL. Put symbols a weak reference needs into an object that is already pulled
+  (`gl_state.o`), or they will never be linked `[measured: sprint 065]`.
+- **Framebuffer offset 0 is legal.** Screen buffer 0 lives at EDRAM offset 0; a `draw != NULL` guard on FBO restore
+  skips it and leaves the target as the draw buffer `[measured: sprint 065, black screen]`.
+- **GE 8888 draw buffers do not retain alpha.** Render targets read back alpha 0; sample them with `GU_TCC_RGB` or
+  the blend erases them `[measured: sprint 065]`.
+- **Target depth must span the display height.** The GE keeps 272 rows; a 256-row target depth block let clear/draw
+  overwrite 8 rows of the colour block `[measured: sprint 065]`.
+- **Dither once.** Dithering an offscreen target and then the sample doubles the pattern; disable `GU_DITHER` while
+  an FBO is bound `[measured: sprint 065]`.
 - **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
   `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
   all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.

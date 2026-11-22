@@ -107,6 +107,7 @@ void glEnable(GLenum cap)
             emitLight(n);
             sceGuEnable(GU_LIGHT0 + n);
         } break;
+        case GL_DITHER:         pspgu.ditherEnabled = 1; sceGuEnable(GU_DITHER); break;
         case GL_FOG:
             pspgu.fogEnabled = 1;
             sceGuFog(pspgu.fogStart, pspgu.fogEnd, pspgu.fogColor);
@@ -140,6 +141,7 @@ void glDisable(GLenum cap)
             sceGuDisable(GU_LIGHT0 + n);
         } break;
         case GL_FOG:            pspgu.fogEnabled = 0; sceGuDisable(GU_FOG); break;
+        case GL_DITHER:         pspgu.ditherEnabled = 0; sceGuDisable(GU_DITHER); break;
         default: break;
     }
 }
@@ -234,14 +236,18 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height)
     pspguBeginFrame();
     // Offset is (2048 - W/2, 2048 - H/2) from init, so a GL viewport at (x,y) has its
     // centre at offset + (x + w/2, y + h/2) in GU's 4096-wide space.
-    sceGuViewport(2048 - pspgu.width/2 + x + width/2,
-                  2048 - pspgu.height/2 + y + height/2, width, height);
+    pspgu.vpX = 2048 - pspgu.width/2 + x + width/2;
+    pspgu.vpY = 2048 - pspgu.height/2 + y + height/2;
+    pspgu.vpW = width;
+    pspgu.vpH = height;
+    sceGuViewport(pspgu.vpX, pspgu.vpY, pspgu.vpW, pspgu.vpH);
 }
 
 void glScissor(GLint x, GLint y, GLsizei width, GLsizei height)
 {
     if (!pspgu.current) return;
     pspguBeginFrame();
+    pspgu.scX = x; pspgu.scY = y; pspgu.scW = width; pspgu.scH = height;
     sceGuScissor(x, y, width, height);
 }
 
@@ -480,3 +486,7 @@ void glFogfv(GLenum pname, const GLfloat *params)
     }
     else glFogf(pname, params[0]);
 }
+
+// FBOs live in this object so a weak reference from rlgl cannot leave gl_fbo.o
+// unextracted from the archive: weak undefined symbols do not pull archive members.
+#include "gl_fbo.c"

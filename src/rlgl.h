@@ -2149,11 +2149,52 @@ void rlDisableShader(void)
 #endif
 }
 
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+// The FBO entry points are weak: pspGL has no implementation (only *EXT prototypes), and
+// one libraylib.a must link against both drivers. On pspGL every call resolves NULL and RTT
+// refuses instead of breaking the A/B build.
+#ifndef GL_FRAMEBUFFER
+    #define GL_FRAMEBUFFER 0x8D40
+#endif
+#ifndef GL_COLOR_ATTACHMENT0
+    #define GL_COLOR_ATTACHMENT0 0x8CE0
+#endif
+#ifndef GL_DEPTH_ATTACHMENT
+    #define GL_DEPTH_ATTACHMENT 0x8D00
+#endif
+#ifndef GL_RENDERBUFFER
+    #define GL_RENDERBUFFER 0x8D41
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE
+    #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#endif
+#ifndef GL_DEPTH_COMPONENT16
+    #define GL_DEPTH_COMPONENT16 0x81A5
+#endif
+
+extern void glGenFramebuffers(GLsizei n, GLuint *ids) __attribute__((weak));
+extern void glDeleteFramebuffers(GLsizei n, const GLuint *ids) __attribute__((weak));
+extern void glBindFramebuffer(GLenum target, GLuint id) __attribute__((weak));
+extern void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) __attribute__((weak));
+extern void glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint rb) __attribute__((weak));
+extern GLenum glCheckFramebufferStatus(GLenum target) __attribute__((weak));
+extern void glGenRenderbuffers(GLsizei n, GLuint *ids) __attribute__((weak));
+extern void glDeleteRenderbuffers(GLsizei n, const GLuint *ids) __attribute__((weak));
+extern void glBindRenderbuffer(GLenum target, GLuint id) __attribute__((weak));
+extern void glRenderbufferStorage(GLenum target, GLenum format, GLsizei width, GLsizei height) __attribute__((weak));
+
+static int rlpspFboReady(void) { return glGenFramebuffers != NULL; }
+static unsigned int rlpspActiveFbo = 0;
+#endif
+
 // Enable rendering to texture (fbo)
 void rlEnableFramebuffer(unsigned int id)
 {
 #if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
     glBindFramebuffer(GL_FRAMEBUFFER, id);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady()) glBindFramebuffer(GL_FRAMEBUFFER, id);
+    rlpspActiveFbo = id;
 #endif
 }
 
@@ -2163,6 +2204,8 @@ unsigned int rlGetActiveFramebuffer(void)
     GLint fboId = 0;
 #if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fboId);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    return rlpspActiveFbo;
 #endif
     return fboId;
 }
@@ -2172,6 +2215,9 @@ void rlDisableFramebuffer(void)
 {
 #if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady()) glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    rlpspActiveFbo = 0;
 #endif
 }
 
@@ -3881,6 +3927,16 @@ unsigned int rlLoadTextureDepth(int width, int height, bool useRenderBuffer)
 
         TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Depth renderbuffer loaded successfully (%i bits)", id, (RLGL.ExtSupported.maxDepthBits >= 24)? RLGL.ExtSupported.maxDepthBits : 16);
     }
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady() && (glGenRenderbuffers != NULL))
+    {
+        (void)useRenderBuffer;          // the GE depth is always a renderbuffer
+        glGenRenderbuffers(1, &id);
+        glBindRenderbuffer(GL_RENDERBUFFER, id);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Depth renderbuffer loaded (16-bit)", id);
+    }
 #elif defined(GRAPHICS_API_OPENGL_SOFTWARE)
     // NOTE: Renderbuffers are the same type of object as textures in rlsw
     // WARNING: Ensure that the depth format is the one specified at rlsw compilation
@@ -4271,6 +4327,17 @@ unsigned int rlLoadFramebuffer(void)
 #if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
     glGenFramebuffers(1, &fboId);         // Create the framebuffer object
     glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind any framebuffer
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady())
+    {
+        glGenFramebuffers(1, &fboId);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    else
+    {
+        static int logged = 0;
+        if (!logged) { TRACELOG(RL_LOG_WARNING, "FBO: render-to-texture requires pspgu; the installed driver has no FBOs"); logged = 1; }
+    }
 #endif
 
     return fboId;
@@ -4312,6 +4379,22 @@ void rlFramebufferAttach(unsigned int id, unsigned int texId, int attachType, in
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (!rlpspFboReady()) return;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, id);
+
+    if ((attachType == RL_ATTACHMENT_COLOR_CHANNEL0) && (texType == RL_ATTACHMENT_TEXTURE2D))
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texId, mipLevel);
+    else if ((attachType == RL_ATTACHMENT_DEPTH) && (texType == RL_ATTACHMENT_RENDERBUFFER))
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, texId);
+    else
+    {
+        static int logged = 0;
+        if (!logged) { TRACELOG(RL_LOG_WARNING, "FBO: PSP supports one colour texture and one depth renderbuffer only"); logged = 1; }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 #endif
 }
 
@@ -4342,6 +4425,13 @@ bool rlFramebufferComplete(unsigned int id)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     result = (status == GL_FRAMEBUFFER_COMPLETE);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady())
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, id);
+        result = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
 #endif
 
     return result;
@@ -4373,6 +4463,16 @@ void rlUnloadFramebuffer(unsigned int id)
     glDeleteFramebuffers(1, &id);
 
     TRACELOG(RL_LOG_INFO, "FBO: [ID %i] Unloaded framebuffer from VRAM (GPU)", id);
+#elif defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    if (rlpspFboReady())
+    {
+        if (rlpspActiveFbo == id)
+        {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            rlpspActiveFbo = 0;
+        }
+        glDeleteFramebuffers(1, &id);
+    }
 #endif
 }
 
