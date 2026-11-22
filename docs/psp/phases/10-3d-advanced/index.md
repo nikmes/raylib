@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | not started |
+| State | **ready to plan** — dependencies 6 and 7 are done; two blockers found in the readiness review |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
 | Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait |
 
@@ -33,9 +33,60 @@ framebuffers with two rotating lists and 64-byte per-list vertex arenas, and a s
 
 ## What has to be true before starting
 
-- [ ] The batcher and the texture/VRAM layer are stable and measured
-- [ ] A 3D sample exists that exercises models, lighting and a textured mesh
-- [ ] Camera-relative rendering is already the convention (not a later retrofit)
+- [x] The batcher and the texture/VRAM layer are stable and measured
+- [ ] A 3D sample exists that exercises models, lighting and a textured mesh — **blocker: no PSP 3D test scene
+      exists yet**
+- [ ] Camera-relative rendering is already the convention (not a later retrofit) — **blocker: not established**
+
+## Readiness review (2026-11-22)
+
+Phase 10 can start: Phases 6 and 7 are closed, so the texture/VRAM layer and the 2D paths are stable. The review
+found two blockers that decide the first sprint, plus three scope gaps.
+
+**Blocker 1 — `DrawMesh`/`glDrawElements` does not produce pixels, and the cause is visible in the code.** The
+carried phase-5 evidence is a draw of 36 indices with `tex2d=0` and no pixels. `glDrawElements` converts vertices
+into a fixed `PspGuVertex` record laid out as `{u,v, color, nx,ny,nz, x,y,z}` (36 B; the comment says 32), but
+`guVertexFormat()` packs only the arrays the client enabled. `DrawMesh` has no texture array and does have
+normals, so the format omits `GU_TEXTURE_32BITF`; GU then reads the colour at offset 0 (the u/v pair), the normal
+where the colour is, and the position at the normal — garbage, and often no pixels. The immediate cube works
+because it uses the batched 24-byte layout, which matches its format. **First task:** pack the converting path per
+format (or use format-specific structs), and prove it with `MESH_SCENE=1` against the predicted cube bbox
+x 193..287, y 92..189.
+
+**Blocker 2 — render-to-texture has no backend.** `tools/pspgu/` implements no `glGenFramebuffers`,
+`glBindFramebuffer`, `glFramebufferTexture2D` or readback; on GL11 `rlLoadFramebuffer()` returns 0
+(`src/rlgl.h:4163`). `LoadRenderTexture`/`BeginTextureMode` therefore cannot work, and an app that uses them may
+not even link. The phase needs a design decision before implementation: implement the GL FBO entry points over
+pspgu's VRAM (sampling a render target, explicit read-after-write), or add a smaller PSP-specific target API. A
+256×256 8888 target is 256 KiB and a 512×256 target 512 KiB; both fit the ~913 KiB tail but compete with textures
+and the 3D depth buffer.
+
+**Scope gaps:**
+
+- **No 3D corpus.** There is no `psp-tests/scene_3d` or device asset that exercises a textured mesh, lighting and
+  a model; `examples/models` are desktop assets not wired into the PSP harness. The first sprint should build a
+  deterministic cube/model scene and a marker/capture path, as sprint 018 did for 2D.
+- **Camera-relative rendering is not the convention.** The model/view path still uses world-space translations.
+  The blueprint's float24 precision trap (`|T| ≈ 3000`) is real; establish the convention before converting model
+  data, or every model path will need a retrofit.
+- **The exit target is undefined.** "Target frame rate" needs a number and a workload: for example, 60 fps for a
+  textured cube plus N instanced meshes at 480×272, or 30 fps for one skinned model, with p95 frame time.
+
+**Proposed sprint order** (sized like Phase 7, five to six sprints):
+
+1. **P10-S1 — DrawMesh fix and 3D mesh gate**: format-specific packing, `MESH_SCENE` parity, minimal cube/model
+   probe, the 3D corpus skeleton.
+2. **P10-S2 — Camera-relative and GE-native model data**: convert once at load, indexed buffers, matrix precision,
+   measure a textured model.
+3. **P10-S3 — Lighting, fog and texture environment**: map GE state, document what cannot be expressed, bake what
+   must stay in vertex colours.
+4. **P10-S4 — Render-to-texture**: FBO-or-PSP-target decision, VRAM budget, read-after-write synchronization.
+5. **P10-S5 — Culling, triangle tessellation and the ME option**: static bounds, window-edge tessellation, the ME
+   measured only against the CPU path.
+6. **P10-S6 — 3D sample target, regression and close**, or fold into P10-S5 if the sample already meets the target.
+
+Do not start with models or lighting: the converting path must first draw a cube, and RTT needs a backend
+decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is sound and is not re-opened.
 
 ## Tasks
 
