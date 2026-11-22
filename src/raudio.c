@@ -183,6 +183,21 @@ typedef struct tagBITMAPINFOHEADER {
 
 #if defined(PLATFORM_PSP)
     #include "platforms/raudio_psp.c"   // Sprint 045: silent PSP backend (P9-S1)
+
+typedef struct PspMusicDecoder PspMusicDecoder;
+struct PspMusicDecoder {
+    Music music;
+    SceUID thread;
+    volatile int stop;
+    unsigned int pcmFrames;
+    unsigned char *pcm;
+    PspMusicDecoder *next;
+};
+static PspMusicDecoder *pspMusicDecoders = NULL;
+static bool PspMusicDecoderExists(Music music);
+static void PspMusicDecoderSync(Music music);
+static void PspMusicDecoderCreate(Music music);
+static void PspMusicDecoderDestroy(Music music);
 #endif
 
 #if defined(RAUDIO_STANDALONE)
@@ -1575,6 +1590,13 @@ Music LoadMusicStream(const char *fileName)
         TRACELOG(LOG_INFO, "    > Total frames:  %i", music.frameCount);
     }
 
+#if defined(PLATFORM_PSP)
+    if (musicLoaded && ((music.ctxType == MUSIC_AUDIO_OGG) || (music.ctxType == MUSIC_AUDIO_WAV)))
+    {
+        PspMusicDecoderCreate(music);
+    }
+#endif
+
     return music;
 }
 
@@ -1787,6 +1809,13 @@ Music LoadMusicStreamFromMemory(const char *fileType, const unsigned char *data,
         TRACELOG(LOG_INFO, "    > Total frames:  %i", music.frameCount);
     }
 
+#if defined(PLATFORM_PSP)
+    if (musicLoaded && ((music.ctxType == MUSIC_AUDIO_OGG) || (music.ctxType == MUSIC_AUDIO_WAV)))
+    {
+        PspMusicDecoderCreate(music);
+    }
+#endif
+
     return music;
 }
 
@@ -1804,6 +1833,10 @@ bool IsMusicValid(Music music)
 void UnloadMusicStream(Music music)
 {
     if (IsMusicStreamPlaying(music)) StopMusicStream(music);
+
+#if defined(PLATFORM_PSP)
+    PspMusicDecoderDestroy(music);
+#endif
 
     UnloadAudioStream(music.stream);
 
@@ -1857,6 +1890,10 @@ void StopMusicStream(Music music)
 {
     StopAudioStream(music.stream);
 
+#if defined(PLATFORM_PSP)
+    PspMusicDecoderDestroy(music);
+#endif
+
     switch (music.ctxType)
     {
 #if SUPPORT_FILEFORMAT_WAV
@@ -1882,6 +1919,10 @@ void StopMusicStream(Music music)
 #endif
         default: break;
     }
+
+#if defined(PLATFORM_PSP)
+    PspMusicDecoderCreate(music);
+#endif
 }
 
 // Seek music to a certain position (in seconds)
@@ -1889,6 +1930,10 @@ void SeekMusicStream(Music music, float position)
 {
     // Seeking is not supported in module formats
     if ((music.ctxType == MUSIC_MODULE_XM) || (music.ctxType == MUSIC_MODULE_MOD)) return;
+
+#if defined(PLATFORM_PSP)
+    PspMusicDecoderDestroy(music);
+#endif
 
     unsigned int positionInFrames = (unsigned int)(position*music.stream.sampleRate);
 
@@ -1924,12 +1969,23 @@ void SeekMusicStream(Music music, float position)
     music.stream.buffer->isSubBufferProcessed[0] = true;
     music.stream.buffer->isSubBufferProcessed[1] = true;
     ma_mutex_unlock(&AUDIO.System.lock);
+
+#if defined(PLATFORM_PSP)
+    PspMusicDecoderCreate(music);
+#endif
 }
 
 // Update (re-fill) music buffers if data already processed
 void UpdateMusicStream(Music music)
 {
     if (music.stream.buffer == NULL) return;
+#if defined(PLATFORM_PSP)
+    if (PspMusicDecoderExists(music))
+    {
+        PspMusicDecoderSync(music);   // Decoder thread owns the refill
+        return;
+    }
+#endif
     if (!music.stream.buffer->playing) return;
 
     ma_mutex_lock(&AUDIO.System.lock);
@@ -2793,6 +2849,163 @@ static void UpdateAudioStreamInLockedState(AudioStream stream, const void *data,
         else TRACELOG(LOG_WARNING, "STREAM: Buffer not available for updating");
     }
 }
+
+#if defined(PLATFORM_PSP)
+// Decode ahead of the mixer without holding AUDIO.System.lock during OGG/WAV decode.
+static int PspMusicDecoderThread(SceSize args, void *argp)
+{
+    (void)args;
+    PspMusicDecoder *decoder = *(PspMusicDecoder **)argp;
+    Music *music = &decoder->music;
+
+    while (!decoder->stop)
+    {
+        if ((music->stream.buffer == NULL) || !music->stream.buffer->playing)
+        {
+            sceKernelDelayThread(5000);
+            continue;
+        }
+
+        ma_mutex_lock(&AUDIO.System.lock);
+        bool freeSubBuffer = music->stream.buffer->isSubBufferProcessed[0] || music->stream.buffer->isSubBufferProcessed[1];
+        ma_mutex_unlock(&AUDIO.System.lock);
+
+        if (!freeSubBuffer)
+        {
+            sceKernelDelayThread(2000);
+            continue;
+        }
+
+        unsigned int frames = 0;
+
+        if (music->ctxType == MUSIC_AUDIO_OGG)
+        {
+            frames = (unsigned int)stb_vorbis_get_samples_short_interleaved((stb_vorbis *)music->ctxData,
+                music->stream.channels, (short *)decoder->pcm,
+                (int)(decoder->pcmFrames*music->stream.channels));
+        }
+#if SUPPORT_FILEFORMAT_WAV
+        else if (music->ctxType == MUSIC_AUDIO_WAV)
+        {
+            drwav *wav = (drwav *)music->ctxData;
+            if (music->stream.sampleSize == 16)
+            {
+                frames = (unsigned int)drwav_read_pcm_frames_s16(wav, decoder->pcmFrames, (drwav_int16 *)decoder->pcm);
+            }
+            else
+            {
+                frames = (unsigned int)drwav_read_pcm_frames(wav, decoder->pcmFrames, decoder->pcm);
+            }
+        }
+#endif
+
+        if (frames == 0)
+        {
+            if (music->looping)
+            {
+                if (music->ctxType == MUSIC_AUDIO_OGG) stb_vorbis_seek_start((stb_vorbis *)music->ctxData);
+#if SUPPORT_FILEFORMAT_WAV
+                else if (music->ctxType == MUSIC_AUDIO_WAV) drwav_seek_to_first_pcm_frame((drwav *)music->ctxData);
+#endif
+                continue;
+            }
+
+            // Non-looping: once the queued sub-buffers drain, stop like UpdateMusicStream does
+            ma_mutex_lock(&AUDIO.System.lock);
+            bool drained = music->stream.buffer->isSubBufferProcessed[0] && music->stream.buffer->isSubBufferProcessed[1];
+            if (drained)
+            {
+                music->stream.buffer->playing = false;
+                music->stream.buffer->frameCursorPos = 0;
+                music->stream.buffer->framesProcessed = 0;
+            }
+            ma_mutex_unlock(&AUDIO.System.lock);
+
+            sceKernelDelayThread(5000);
+            continue;
+        }
+
+        ma_mutex_lock(&AUDIO.System.lock);
+        UpdateAudioStreamInLockedState(music->stream, decoder->pcm, (int)frames);
+        ma_mutex_unlock(&AUDIO.System.lock);
+    }
+
+    return 0;
+}
+
+static bool PspMusicDecoderExists(Music music)
+{
+    for (PspMusicDecoder *decoder = pspMusicDecoders; decoder != NULL; decoder = decoder->next)
+    {
+        if (decoder->music.stream.buffer == music.stream.buffer) return true;
+    }
+
+    return false;
+}
+
+// Keep the decoder thread's view of user-editable fields (looping) current
+static void PspMusicDecoderSync(Music music)
+{
+    for (PspMusicDecoder *decoder = pspMusicDecoders; decoder != NULL; decoder = decoder->next)
+    {
+        if (decoder->music.stream.buffer == music.stream.buffer) { decoder->music = music; return; }
+    }
+}
+
+static void PspMusicDecoderCreate(Music music)
+{
+    if (music.stream.buffer == NULL) return;
+    if ((music.ctxType != MUSIC_AUDIO_OGG) && (music.ctxType != MUSIC_AUDIO_WAV)) return;
+
+    PspMusicDecoder *decoder = (PspMusicDecoder *)RL_CALLOC(1, sizeof(PspMusicDecoder));
+    if (decoder == NULL) return;
+
+    decoder->music = music;
+    decoder->pcmFrames = music.stream.buffer->sizeInFrames/2;
+    size_t pcmBytes = decoder->pcmFrames*music.stream.channels*(music.stream.sampleSize/8);
+
+    decoder->pcm = (unsigned char *)RL_CALLOC(1, pcmBytes);
+    decoder->thread = sceKernelCreateThread("music_decoder", PspMusicDecoderThread, 0x30, 0x10000, 0, NULL);
+
+    if ((decoder->pcm == NULL) || (decoder->thread < 0))
+    {
+        TRACELOG(LOG_WARNING, "AUDIO: PSP music decoder thread could not start");
+        if (decoder->pcm != NULL) RL_FREE(decoder->pcm);
+        if (decoder->thread >= 0) sceKernelDeleteThread(decoder->thread);
+        RL_FREE(decoder);
+        return;
+    }
+
+    decoder->next = pspMusicDecoders;
+    pspMusicDecoders = decoder;
+    sceKernelStartThread(decoder->thread, sizeof(decoder), &decoder);
+    TRACELOG(LOG_INFO, "AUDIO: PSP music decoder thread started (%u frames x %u ch/%u bit)",
+        decoder->pcmFrames, music.stream.channels, music.stream.sampleSize);
+}
+
+static void PspMusicDecoderDestroy(Music music)
+{
+    PspMusicDecoder **link = &pspMusicDecoders;
+
+    while (*link != NULL)
+    {
+        PspMusicDecoder *decoder = *link;
+
+        if (decoder->music.stream.buffer == music.stream.buffer)
+        {
+            *link = decoder->next;
+            decoder->stop = 1;
+            sceKernelWaitThreadEnd(decoder->thread, NULL);
+            sceKernelDeleteThread(decoder->thread);
+            RL_FREE(decoder->pcm);
+            RL_FREE(decoder);
+            return;
+        }
+
+        link = &decoder->next;
+    }
+}
+#endif
 
 // Some required functions for audio standalone module version
 #if defined(RAUDIO_STANDALONE)
