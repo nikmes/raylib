@@ -4,7 +4,7 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S1 |
-| Branch / base commit | `master` @ `682207df` (all six P10 sprints written; 060 was first drafted at `f04bac38`) |
+| Branch / base commit | `master` @ `682207df`; closed at `5e5a4d7b` |
 | Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b25` — T1/T2 change driver behaviour, so `PSPGU_BUILD` must be bumped from `b24` and the boot line must show it; `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 5/5 done — closed 2026-11-22 |
@@ -151,21 +151,21 @@ render-to-texture (S4); culling and tessellation (S5); any pspGL change; any cha
 
 ## 4. Preconditions
 
-- [ ] `pspsh` answers over USB; `/tmp/s3` is the PSP's `host0:` and has room for four 480×272 captures
-- [ ] `tools/pspgu-build.sh --check` reports pspgu `b24` and its content hash; `tools/pspgl-build.sh --check`
+- [x] `pspsh` answers over USB; `/tmp/s3` is the PSP's `host0:` and has room for four 480×272 captures
+- [x] `tools/pspgu-build.sh --check` reported pspgu `b24` and its content hash; `tools/pspgl-build.sh --check`
       reports pspGL `2ab7378e`
-- [ ] `EXTRA_CFLAGS` demonstrably reaches the compiler in both probe Makefiles (deliberate break or build log)
-- [ ] Failing baseline captured for both arms on pspgu, and the pspGL reference captured for both, twice identical
-- [ ] `libraylib.a` built from the current `src/` with defaults (`PSP_BATCH=1`); the 2D reference capture exists
-- [ ] `PSPGU_BUILD` is `b24` before T1 and the plan is to bump it to `b25` in T1, not at the end
-- [ ] Reset between runs; no app calls `sceKernelExitGame`, both log `DONE` and sleep
+- [x] `EXTRA_CFLAGS` demonstrably reached the compiler in both probe Makefiles (deliberate break or build log)
+- [x] Failing baseline captured for both arms on pspgu, and the pspGL reference captured for both, twice identical
+- [x] `libraylib.a` built from the current `src/` with defaults (`PSP_BATCH=1`); the 2D reference capture exists
+- [x] `PSPGU_BUILD` was `b24` before T1 and the plan is to bump it to `b25` in T1, not at the end
+- [x] Reset between runs; no app calls `sceKernelExitGame`, both log `DONE` and sleep
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Replace the fixed `PspGuVertex` with `vertexLayout()`+`packVertex()` in GU order; allocate/write back `n*stride`; remove `sizeof(PspGuVertex)` from both chunk sizes; reject unsupported array/index types once; **OR `GU_INDEX_16BIT` into indexed draws** and **emit `sceGuColor` when the format has no colour field** (both found by the gate); bump `PSPGU_BUILD` to `b25` | `done` | trace `fmt=0x1e3 stride=32`; boot line `b25`; cube draws | mesh cube 0 diff vs pspGL, 8,684 px |
-| T2 | Chunker: 2,046-index windows (682 whole triangles); dedup when the range does not fit the 96 KiB per-draw budget; 4,096-slot table + slot map; counters; `SCENE=grid` 4,096 vertices / 2,046 indices | `done` | grid 0 diff vs pspGL; one `drawElements`; `dedup n=2046 range=4096 unique=2046`; `arenaOverflows=0` | 2,906 px both drivers, diff 0 |
+| T1 | Replace the fixed `PspGuVertex` with `vertexLayout()`+`packVertex()` in GU order; allocate/write back `n*stride`; remove `sizeof(PspGuVertex)` from both chunk sizes; reject unsupported array/index types once; **OR `GU_INDEX_16BIT` into indexed draws** and **emit `sceGuColor` when the format has no colour field** (both found by the gate); bump `PSPGU_BUILD` to `b25` | `done` | trace `fmt=0x1e3 draw=0x11e3 stride=32`; boot line `b25`; cube draws | mesh cube 0 diff vs pspGL, 8,684 px |
+| T2 | Chunker: 2,046-index windows (682 whole triangles); dedup when the range does not fit the 96 KiB per-draw budget; 4,096-slot table (24 KiB scratch); rebased indices in the arena; bounded dedup log; `SCENE=grid` 4,096 vertices / 2,046 indices | `done` | grid 0 diff vs pspGL; one `drawElements`; `dedup n=2046 range=4096 unique=2046`; `arenaOverflows=0` | 2,906 px both drivers, diff 0 |
 | T3 | Gate `triangle_probe DRAW_MESH=1` and `batch_check MESH_SCENE=1`; fix `batch_check`'s positional `Matrix` literal (translation was landing in `m3`) | `done` | probe 0 diff and analytic bbox; MESH_SCENE full-frame 0 diff; two identical captures | 8,684 px, bbox x 193..286 y 92..188; scene 117,311 px, diff 0 |
 | T4 | Add `psp-tests/scene_3d` with `SCENE=flat|tex|both|grid`, counters, `STAT`/`SPLIT`, `DONE`+sleep; `MatrixTranslate`, not positional literals | `done` | builds on both drivers; two captures identical; 2 `drawElements`/frame in `both` | `SCENE=both` 19,608 px; STAT/SPLIT present |
 | T5 | Regression and write-back: 2D gate, `basic_shapes`, bunnymark A/B against the same-tree `b24`, vertex table, memory-map traps | `done` | 2D 0 diff; 284 colours; b24 7.851 ms vs b25 7.80/7.80 ms; table matches strides | see §7 |
@@ -194,8 +194,8 @@ and +24.
 **Packer.** `packVertex(unsigned char *dst, int fmt, int index)` writes only enabled fields at their layout offsets.
 `glDrawArrays` and `glDrawElements` allocate `n*stride` from the list arena, pack, write back `n*stride`, and emit
 `sceGuDrawArray(prim, fmt, n, ...)`; there is no stride argument — GU derives it from the format bits, so the data
-must be packed at exactly that stride. Cap the per-call count at `min(PSPGU_MAX_CONVERT, arenaBytes/stride)` so one
-huge draw cannot force an arena reset.
+must be packed at exactly that stride. Cap the per-call count at `min(PSPGU_MAX_CONVERT, (arenaBytes-64)/stride)` so one
+array draw cannot force an arena reset; indexed strips/fans are the recorded exception.
 
 Two fields of the format are not vertex attributes: **`GU_INDEX_16BIT` must be OR'ed in for indexed draws** (without
 it the GE reads the index buffer at the wrong width), and a format without `GU_COLOR_BITS` takes its colour from
@@ -206,11 +206,12 @@ Choose per chunk: convert the index range when `range*stride + n*2` fits a 96 Ki
 the 128 KiB arena for the rest of the frame); otherwise dedup. Probe a 4,096-slot table with
 `index % 4096`, linear-probe on collision, assign slots in first-seen order, pack unique vertices, and emit rebased
 indices `slot[i]`. The table is two parallel arrays — `u32 key[4096]` where `key = index + 1` and 0 means empty
-(0xFFFF is a legal vertex index), plus `u16 slot[4096]` — 24 KiB total, and the slot map is 4 KiB. This scratch
-lives in main RAM; the GE never reads it. Only the packed vertices (≤72 KiB worst case) and rebased indices (4 KiB)
-come from the list arena, so the GE-referenced set is 76 KiB and leaves room for the frame's other draws. Report
-`dedupChunks` and `maxRange` in the frame log, and require `arenaOverflows == 0` for the gate runs; a reset is a full
-GE wait and invalidates the "no new wait" claim.
+(0xFFFF is a legal vertex index), plus `u16 slot[4096]` — 24 KiB total. This scratch lives in main RAM; the GE
+never reads it. The per-index remap is written straight into the rebased index array, so only the packed vertices
+(≤72 KiB at stride 36) and rebased indices (≤4 KiB) come from the list arena — 76 KiB worst case, leaving room for
+the frame's other draws. Report
+the first eight dedup chunks (`n`, `range`, `unique`) in the frame log, and require `arenaOverflows == 0` for the
+gate runs; a reset is a full GE wait and invalidates the "no new wait" claim.
 
 **Scene arms.** `SCENE=grid` is a synthetic 64×64-vertex plane with 2,046 indices (one chunk) whose values step by 3,
 so the window spans the whole 0..4,095 range; that forces dedup and pspGL renders it without chunking. A draw whose
@@ -228,6 +229,12 @@ Rules:
 ### Task log (append-only)
 
 - 2026-11-22 — sprint written, all tasks `todo`
+- 2026-11-22 — T1 `doing` → `done`: layout packer, `0x11e3` indexed format, global colour, build `b25`
+- 2026-11-22 — T4 `doing` → `done`: `scene_3d` skeleton with `flat|tex|both|grid`
+- 2026-11-22 — T2 `doing` → `done`: whole-primitive chunking, dedup `n=2046`, `arenaOverflows=0`
+- 2026-11-22 — T3 `doing` → `done`: 0 diff on `triangle_probe` and `MESH_SCENE`; `batch_check` transform fixed
+- 2026-11-22 — T5 `doing` → `done`: 2D 0 diff, 284 colours, b24/b25 bunnymark A/B
+- 2026-11-22 — sprint closed, `5e5a4d7b`
 
 ## 6. Budgets
 
@@ -247,7 +254,7 @@ Protocol: device only; control (pspGL) → change (pspgu) → control again; two
 |---|---|---|---|---|---|
 | control | pspGL `2ab7378e` | `triangle_probe DRAW_MESH=1` | pixels / bbox | 8,684 / x 193..286, y 92..188 | reference |
 | failing | pspgu `b24` | `triangle_probe DRAW_MESH=1` | fmt / stride / pixels | `0x1e3` / 36 / **0** | format advertises 32 |
-| control | pspGL `2ab7378e` | `batch_check MESH_SCENE=1` | full-frame diff | 0 | fixed transform |
+| control | pspGL `2ab7378e` | `batch_check MESH_SCENE=1` | reference capture | — | fixed transform |
 | failing | pspgu `b24` | `batch_check MESH_SCENE=1` | mesh pixels | 0 | mesh absent |
 | fixed | pspgu `b25` | `triangle_probe` + `MESH_SCENE` | diff / pixels | **0 / 8,684**; **0 / 117,311** | bbox matches |
 | control | pspGL `2ab7378e` | `scene_3d SCENE=grid` | pixels | 2,906 | reference |
