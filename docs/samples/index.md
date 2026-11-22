@@ -2,7 +2,8 @@
 
 Screenshots of every sample ported so far, captured on a PSP-1000 at 480×272. Each row keeps the sample name
 beside its screenshot; the capture shown is the first of a byte-identical pair, and the second was required to
-match before it was trusted.
+match before it was trusted. The page grows with [Phase 13](../psp/phases/13-samples-porting/index.md) and will
+eventually cover all 227 upstream samples across the eight categories.
 
 ## Core
 

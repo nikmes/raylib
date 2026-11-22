@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| State | **in progress** — P13-S1/S2 done; Tier A complete; P13-S7 samples captured, T1b `batch_check` gate blocked by a shared `libraylib.a` rebuild; P13-S3–S6/S8–S11 remaining |
-| Depends on | nothing for wave 0; later waves consume Phase 6 (texture budget), Phase 7 (oversize assets), Phase 8 (input), Phase 9 (audio), Phase 10 (render targets) |
-| Exit criterion | every sample in `core`, `shapes` and `textures` is either ported with a build marker and two identical captures, or marked `dropped` with a reason; the tier table matches the device runs |
+| State | **in progress** — scope is the whole upstream corpus (227 samples, 8 categories); core/shapes/textures audited with 33 ported, audio S12/S13 written; text/models/shaders/others not yet audited; P13-S7 T1b `batch_check` gate blocked |
+| Depends on | nothing for wave 0; later waves consume Phase 6 (texture budget), Phase 7 (oversize assets), Phase 8 (input), Phase 9 (audio), Phase 10 (3D/models) |
+| Exit criterion | every sample in every upstream category — `core`, `shapes`, `textures`, `text`, `models`, `shaders`, `audio`, `others` — is either ported with a build marker and two identical captures, or marked `dropped`/deferred with a reason; the per-category tables match the device runs |
 
 ## What this phase is about
 
@@ -17,9 +17,27 @@ This phase is **continuous and capability-gated**, not a chronological successor
 the outputs of the renderer, input and audio phases. It never blocks them, and no other phase should wait for it.
 It is placed after Phase 12 only because it spans every phase before it.
 
-Scope: `examples/core` (49 samples), `examples/shapes` (45), `examples/textures` (33) — **127 samples**. Models,
-shaders, audio and the other categories are out of scope for now; `models/cubicmap` is already ported as part of
-the bring-up corpus.
+This phase is also the permanent home for the **whole** upstream example corpus — all **227** samples in eight
+categories, not only the first three. A category enters the tables only after an audit, and a sample counts as
+ported only when a device run exists; everything else stays explicitly unaudited or deferred.
+
+Scope: `examples/core` (49), `shapes` (45), `textures` (33), `text` (17), `models` (32), `shaders` (36),
+`audio` (11), `others` (4) — **227 samples**. `examples/examples_template.c` is the template, not a sample.
+
+| category | samples | audit | home |
+|---|---|---|---|
+| `core` | 49 | audited 2026-11-21 | P13-S1, S3–S4, S11 |
+| `shapes` | 45 | audited 2026-11-21 | P13-S1, S5–S6 |
+| `textures` | 33 | audited 2026-11-21 | P13-S2, S7–S10 |
+| `audio` | 11 | audited 2026-11-22 | P13-S12–S13 |
+| `text` | 17 | not audited | P13-S14 (`G1`) |
+| `models` | 32 | not audited | P13-S15, after Phase 10 (`G8`) |
+| `shaders` | 36 | not audited | P13-S16, rewrite/drop (`G9`) |
+| `others` | 4 | not audited | P13-S17, per sample |
+| **total** | **227** | 4 of 8 categories | |
+
+The four audited categories are tabulated below. The remaining 89 samples are counted as not ported until their
+category is audited; they are not silently folded into a tier.
 
 ## What has to be true before starting
 
@@ -36,10 +54,13 @@ the bring-up corpus.
 
 Method: every `.c` file under `examples/{core,shapes,textures}` was scanned for raylib calls, then checked against
 what the driver actually implements. Counts are `[derived: source scan, 2026-11-21]`, not `[measured: device]`.
-No sample was built or run for this audit; wave 0 exists to validate the classification.
+No sample was built or run for this audit; wave 0 exists to validate the classification. This audit covers the
+127 core/shapes/textures samples **only**; text, models, shaders and others were added to the phase scope on
+2026-11-22 and are **unaudited**.
 
 **Already ported (4):** `shapes_basic_shapes`, `shapes_collision_area`, `shapes_logo_raylib_anim`,
-`textures_bunnymark`. Plus `models/cubicmap`, outside this scope.
+`textures_bunnymark`. `models/cubicmap` was validated in sprint 002 in the external sample tree, but it is not in
+`psp-tests/samples/`; it counts only after it is re-homed, so models remain 0 ported here.
 
 **Ported since the audit (1):** `core_input_gamepad` at 480×272 in
 `psp-tests/samples/core/input_gamepad/`, with a primitive layout. Device-validated on the PSP-1000: all 12
@@ -48,14 +69,18 @@ ported (Tier B 60, ported 5) without changing the audit's total.
 
 | tier | core | shapes | textures | total |
 |---|---|---|---|---|
-| ported | 0 | 3 | 1 | **4** |
+| ported | 1 | 3 | 1 | **5** |
 | A — drop-in | 4 | 5 | 4 | **13** |
-| B — renders, input needs remap | 20 | 33 | 8 | **61** |
+| B — renders, input needs remap | 19 | 33 | 8 | **60** |
 | C — blocked or not meaningful | 25 | 4 | 20 | **49** |
 | **total** | **49** | **45** | **33** | **127** |
 
-Progress: **32/127 ported** — 4 bring-up + 13 Tier A + 8 Tier B textures (P13-S2) + 7 Tier C `G2` samples
-(P13-S7). Remaining: **53 Tier B core/shapes** and **42 Tier C**.
+Audio adds **11 samples** outside these tiers (9 portable, 2 deferred). The four unaudited categories add **89**
+more: `text` 17, `models` 32, `shaders` 36, `others` 4. The whole corpus is **227 samples**.
+
+Progress: **33/227 ported** — 4 bring-up + `core_input_gamepad` (P8-S1) + 13 Tier A + 8 Tier B textures
+(P13-S2) + 7 Tier C `G2` samples (P13-S7). Remaining: **52 Tier B core/shapes**, **42 Tier C**, **9 audio**
+(P13-S12/S13, plus 2 deferred), and **89 unaudited** (`text` 17, `models` 32, `shaders` 36, `others` 4).
 
 ### What the driver supports today
 
@@ -72,7 +97,12 @@ Read from the code, with the path that decides it:
 - **Screen readback works, texture readback does not.** `glReadPixels` expands the 5650 framebuffer
   (`tools/pspgu/gl_query.c:72`). `LoadImageFromTexture` is deliberately blank on PSP (`src/rlgl.h:4053`).
 - **GIF decodes.** `SUPPORT_FILEFORMAT_GIF` is 1 (`src/config.h:242`), so `LoadImageAnim` works.
-- **Audio is not implemented yet.** `raudio.c` has no PSP backend; samples that need sound wait for Phase 9.
+- **Audio is implemented.** Phase 9 closed route A on 2026-11-22: `Sound`, `Music`, `AudioStream`, callbacks and
+  stream processors all run on the device, and gate `G5` is closed. The nine portable `examples/audio` samples
+  port in P13-S12/S13; two are deferred for 3D or shader reasons.
+- **Text is implemented; models are not.** Phase 7's font, atlas and dynamic-text path is done, so the 17 `text`
+  samples need an audit rather than a new capability. `DrawMesh` still produces no pixels, so the 32 `models`
+  samples wait for `G8` (Phase 10).
 
 ### The texture limits are two numbers, not one
 
@@ -129,7 +159,7 @@ with an explicit `PSP_HEAP_SIZE_KB`.
   Only the standard harness changes are required.
 - **B — renders, input needs a remap.** The frame draws today, but the demo's mouse, keyboard or touch interaction
   does nothing. One platform-level remap can unlock most of these without editing the samples.
-- **C — blocked or not meaningful.** Either a backend feature is missing (render targets, audio, clipboard,
+- **C — blocked or not meaningful.** Either a backend feature is missing (render targets, clipboard,
   texture readback), the asset cannot fit or exceed the 1024 buffer, the input hardware does not exist on a PSP,
   or the sample demonstrates a desktop-only concept.
 
@@ -152,15 +182,15 @@ assets staged under `host0:`.
 - [x] `textures_screen_buffer` — procedural buffer and `UpdateTexture`
 - [x] `textures_srcrec_dstrec` — 768×128 sheet through two windows; no input
 
-## Tier B — renders now, interaction needs a remap (61)
+## Tier B — renders now, interaction needs a remap (60)
 
 The frame is valid; only the interaction is dead. `G1` is the Phase 8 mapping of the nub to
 `CORE.Input.Mouse` and the pad to `CORE.Input.Keyboard`, or per-sample pad handling.
 
-**core (20):** `core_2d_camera`, `core_2d_camera_mouse_zoom`, `core_2d_camera_platformer`,
+**core (19):** `core_2d_camera`, `core_2d_camera_mouse_zoom`, `core_2d_camera_platformer`,
 `core_3d_camera_first_person`, `core_3d_camera_fps`, `core_3d_camera_free`, `core_3d_picking`,
 `core_basic_screen_manager`, `core_compute_hash`, `core_custom_frame_control`, `core_delta_time`,
-`core_directory_files`, `core_input_actions`, `core_input_gamepad`, `core_random_sequence`,
+`core_directory_files`, `core_input_actions`, `core_random_sequence`,
 `core_scissor_test`, `core_screen_recording`, `core_storage_values`, `core_text_file_loading`,
 `core_world_screen`.
 
@@ -200,8 +230,10 @@ These eight were ported in P13-S2; only their interaction waits for `G1`.
   `textures_image_drawing` (non-binary font atlas), `textures_sprite_stacking` (11468-tall sheet),
   `textures_image_generation` (nine 1 MiB textures plus the heap).
 
-**Audio, Phase 9 (2).** `textures_sprite_button`, `textures_sprite_explosion`.
-`textures_sprite_explosion` also carries a 1024×1024 = 4 MiB asset and needs `G3`.
+**Audio gate closed, input remains (2).** Phase 9 shipped audio on 2026-11-22, so audio no longer blocks these.
+`textures_sprite_button` now needs only `G1` (mouse); `textures_sprite_explosion` needs `G1` plus the
+1024×1024 = 4 MiB asset (`G3`). They stay here until their remaining gate opens; `G1` will move `sprite_button`
+to Tier B.
 
 **Clipboard (2).** `core_clipboard_text`, `textures_clipboard_image`.
 
@@ -217,21 +249,64 @@ no PSP equivalent: `core_input_gestures`, `core_input_gestures_testbed`, `core_i
 `core_window_should_close`, `core_automation_events`. `core_window_should_close` can be adapted in one line if
 the exit-key path is ever worth testing.
 
+## Audio corpus (11)
+
+The scope was extended on 2026-11-22, when Phase 9 closed `G5`. The audio samples are a fifth corpus, not a tier:
+nine port in P13-S12/S13 and two are deferred with a reason and a trigger.
+
+| sample | API path | verdict |
+|---|---|---|
+| `audio_sound_loading` | `LoadSound` WAV + OGG | P13-S12 |
+| `audio_sound_multi` | `LoadSound` + `LoadSoundAlias` | P13-S12 |
+| `audio_music_stream` | `LoadMusicStream` MP3 | P13-S12 |
+| `audio_mixed_processor` | `Music` + `Sound` + `AttachAudioStreamProcessor` | P13-S12 |
+| `audio_module_playing` | `LoadMusicStream` XM | P13-S12 |
+| `audio_raw_stream` | `LoadAudioStream` + `UpdateAudioStream` | P13-S13 |
+| `audio_stream_callback` | `SetAudioStreamCallback` | P13-S13 |
+| `audio_amp_envelope` | envelope + `IsAudioStreamProcessed` | P13-S13 |
+| `audio_stream_effects` | `AttachAudioStreamProcessor` LPF + delay | P13-S13 |
+| `audio_sound_positioning` | `SetSoundVolume` + `SetSoundPan` | deferred — Phase 10 |
+| `audio_spectrum_visualizer` | `LoadWave` + FFT + `BeginShaderMode` | deferred — rewrite or drop |
+
+Keyboard input is still dead (`G1` is not done), so the ports call the gamepad API directly; P8-S1 already fills
+it. One row per upstream key:
+
+| upstream key | PSP button |
+|---|---|
+| `KEY_SPACE` (play/pause) | CROSS |
+| `KEY_ENTER` (second sound) | SQUARE |
+| `KEY_P` (stop) | CIRCLE |
+| `KEY_UP` / `KEY_DOWN` | D-pad up/down |
+| `KEY_LEFT` / `KEY_RIGHT` | D-pad left/right |
+| effect toggles (`F`, `D`, …) | TRIANGLE |
+
+**Deferred.** `audio_sound_positioning` is a 3D scene (`BeginMode3D`, `DrawSphere`, `DrawGrid`); its audio path
+already works, so it reopens with Phase 10. `audio_spectrum_visualizer` loads `fft.fs` and draws through
+`BeginShaderMode`; the GU backend has no programmable shaders, so it is a CPU-FFT/2D rewrite or an explicit drop
+at the P13-S16 shader policy. No audio sample needs capture/recording.
+
+Acceptance is stricter than a screenshot: each sample needs the backend's `callbacks=… errors=0` line, a non-zero
+`GetMusicTimePlayed` where it exists, and a listening note naming what was heard. Two identical captures still
+prove the frame, not the sound.
+
 ## Capability gates
 
 | gate | capability | owner phase | unlocks |
 |---|---|---|---|
 | `G0` | harness, 480×272, asset staging | this phase | 13 Tier A + 8 small-asset texture samples |
-| `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 53 Tier B core/shapes, 5 input testbeds |
+| `G1` | nub→`Mouse`, pad→`Keyboard`, gamepad name | Phase 8 | 52 Tier B core/shapes, 5 input testbeds |
 | `G2` | depth-off build and/or `PSP_GU_TEXFMT=auto`, larger heap | Phase 6, Phase 11 | 7 texture samples + 45° `image_rotate` — **done in P13-S7** |
 | `G3` | downscale or slice assets beyond 1024 or over budget | Phase 7 (windows already done in sprint 020) | 4 texture samples + pad art + explosion |
 | `G4` | render targets / FBO on the native backend | Phase 10 (with Phase 5) | 16 render-target samples |
-| `G5` | `sceAudio` output | Phase 9 | 2 audio samples |
+| `G5` | `sceAudio` output | Phase 9 | **closed 2026-11-22** — the 2 texture samples' audio blocker is cleared (`G1`/`G3` remain); 9 audio samples in P13-S12/S13 |
 | `G6` | clipboard | Phase 8 / platform | 2 clipboard samples |
 | `G7` | texture readback (`glGetTexImage` equivalent) | Phase 6 | 1 readback sample |
+| `G8` | 3D mesh and model path (`DrawMesh`, model load, lighting) | Phase 10 | 32 model samples + the 3D Tier B core/shapes |
+| `G9` | shader policy: CPU effect rewrite or explicit drop | none — the GU backend has no programmable shaders | 36 shader samples |
 
-`G2` is closed by P13-S7. `G2` and `G3` are separate on purpose: a 1 MiB padded texture fits the 1024 buffer
-and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neither.
+`G2` is closed by P13-S7 and `G5` by Phase 9. `G8` follows Phase 10; `G9` has no owner on purpose — the policy
+is decided in the shader sprint, sample by sample. `G2` and `G3` are separate on purpose: a 1 MiB padded texture
+fits the 1024 buffer and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neither.
 
 ## Wave plan
 
@@ -239,13 +314,20 @@ and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neith
 |---|---|---|---|
 | W0 — Tier A | `G0` | 13 | all 13 render; captures archived; harness reusable by copy + Makefile include |
 | W0b — small-asset textures | `G0` | 8 | eight texture paths render (`UpdateTexture`, GIF, NPatch, blend, wrap/filter, rlgl curve, sheet windows); interaction deferred |
-| W1 — input remap | `G1` | 58 | mapping decision recorded; a representative set exercised end to end; remaining B samples swept |
+| W1 — input remap | `G1` | 57 | mapping decision recorded; a representative set exercised end to end; remaining B samples swept |
 | W2 — texture budget | `G2`/`G3` | 11 | each asset's padded size, PSM and build flags recorded; visual delta counted where an asset is downscaled |
 | W3 — render targets | `G4` | 16 | render-to-texture path works; the 16 samples render |
-| W4 — remaining features | `G5`–`G7` | 5 | audio, clipboard and readback samples either render or are dropped |
+| W4 — remaining features | `G1`, `G3`, `G6`, `G7` | 5 | mouse, asset, clipboard and readback samples either render or are dropped |
+| W5 — audio | `G5` (closed) | 11 | 9 render and are audible; 2 deferred with a reason and a trigger |
+| W6 — text | `G1` | 17 | audit, then port; font/atlas paths already exist |
+| W7 — models | `G8` | 32 | audit and port after Phase 10's 3D path |
+| W8 — shaders | `G9` | 36 | each is rewritten with a CPU effect or dropped with a reason |
+| W9 — others | per sample | 4 | embedded files, direct GL, interop and rlgl assessed one by one |
+| W10 — all-corpus close | — | — | exit table over 227; every sample ported or dropped |
 | dropped | — | 12 | each carries a one-line reason in this page; 4 touch-only, 8 desktop-only |
 
-4 ported + 13 + 8 + 58 + 11 + 16 + 5 + 12 = 127.
+5 ported + 13 + 8 + 57 + 11 + 16 + 5 + 12 = 127 core/shapes/textures; + 11 audio + 17 text + 32 models +
+36 shaders + 4 others = **227**.
 
 ## Deriving sprints from this page
 
@@ -282,7 +364,7 @@ and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neith
 ## What we already know
 
 - **A single remap unlocks most of Tier B.** The memory map's Phase 8 already asks whether to feed
-  `CORE.Input.Keyboard` from the pad; the audit makes the payoff explicit: 58 samples.
+  `CORE.Input.Keyboard` from the pad; the audit makes the payoff explicit: 57 samples.
 - **The 512-pixel window split exists.** Sprint 020 raised the buffer to 1024 and implemented the per-draw window
   split. A 768-wide sheet (scarfy) now fits and samples correctly through two windows (P13-S2, no seam); >1024
   is rejected. A GIF is a frame-sized image with stacked data, not a stacked texture.
@@ -310,6 +392,14 @@ and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neith
 
 ## Risks and open questions
 
+- **The denominator is 227, not 138.** Quote a fraction with the categories it covers: 33/227 is the whole corpus;
+  a smaller denominator silently excludes the unaudited categories.
+- **Shaders are the largest block with no backend.** 36 samples need a policy — CPU rewrite for a few, explicit
+  drop for the rest — before that wave can be estimated.
+- **Models wait on Phase 10's `DrawMesh` fix.** `models/cubicmap`'s early port lives in the external sample tree,
+  not `psp-tests/samples/`; re-home it before it is counted.
+- **`text` may hide input and asset work.** The 17 samples are mostly font atlases, but they must be audited
+  before a sprint count is promised.
 - Does `G1` remap the nub to a mouse, to gamepad axes, or both? Feeding both is ambiguous; the decision belongs in
   Phase 8 and must be recorded before W1 starts.
 - Does redefining `IsKeyDown` on PSP (pad-as-keyboard) break the gamepad path or change documented semantics?
@@ -347,8 +437,20 @@ and still does not fit the 8888 VRAM budget, while a 11468-tall sheet fits neith
   placeholder; gate `G4`; 11 samples
 - [P13-S10 — Render targets: textures](../../sprints/033-phase13-render-targets-textures.md) —
   placeholder; gate `G4`; 5 samples
-- [P13-S11 — Remaining features and close](../../sprints/034-phase13-remaining-features-and-close.md) —
-  placeholder; gates `G5`–`G7`; 5 samples + 12 drops + phase close
+- [P13-S11 — Remaining features](../../sprints/034-phase13-remaining-features.md) —
+  placeholder; gates `G1`/`G3`/`G6`/`G7`; 5 samples + 12 drops
+- [P13-S12 — Audio: Sound and Music batch](../../sprints/063-phase13-audio-sound-and-music.md) — **written**;
+  gate `G5` (closed); 5 samples; next is P13-S13
+- [P13-S13 — Audio: AudioStream batch](../../sprints/064-phase13-audio-stream.md) —
+  **written**; gate `G5` (closed); 4 samples; the phase stays open for W6–W10
+
+Future waves, not written (the global `NNN` is assigned when each sprint opens):
+
+- **P13-S14 — Text corpus** — 17 samples; gate `G1`
+- **P13-S15 — Models corpus** — 32 samples; gate `G8`, after Phase 10
+- **P13-S16 — Shader policy** — 36 samples; gate `G9`, each rewritten or dropped
+- **P13-S17 — Others** — 4 samples, assessed individually
+- **P13-S18 — All-corpus close** — the 227-sample exit audit
 
 ## Related
 
