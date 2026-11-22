@@ -122,7 +122,7 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T0 | **Close P9-S4 T5 — track change**: add `MODE=trackchange`; play OGG, then load and play WAV while the device runs; stop/unload the first | `done` | both tracks valid and audible; no stale audio after the swap; `GetMusicTimePlayed` resets; no leaked decoder thread | a=1 b=1; A played 1.93 s; A unloaded; B playing (0.12 s of 0.553 s loop); B unloaded; OGG reloaded valid; `TRACKCHANGE DONE` |
+| T0 | **Close P9-S4 T5 — track change**: add `MODE=trackchange`; play OGG, then load and play WAV while the device runs; stop/unload the first | `done` | both tracks valid and audible; no stale audio after the swap; `GetMusicTimePlayed` resets; no leaked decoder thread | a=1 b=1; A played 1.93 s; A unloaded; B playing (0.12 s of 0.553 s loop); B unloaded; OGG reloaded valid; `TRACKCHANGE DONE`. Human listening 2026-11-22: all three segments heard (OGG, WAV, OGG reload); transition clean, **no leftover or stuck audio** |
 | T1 | **Lifecycle**: `MODE=lifecycle` closes the initial device, then runs 10x `InitAudioDevice`/`CloseAudioDevice`; 5x process start/stop with `reset` | `done` | every cycle ready; free bytes return to the same value (allow ≤4 KiB drift); no crash | 5 runs × 10 cycles = 50: every `ready=1`; free **782,336** / maxfree **524,288** before and after every cycle, zero drift |
 | T2 | **Clean close**: `CloseAudioDevice()` joins the worker; `onDeviceUninit()` releases the channel | `done` | `thlist` after `DONE` has no `pthread*` worker (only `user_main` + raylib `update_thread`); channel unit re-reserved next cycle; no audio after close | `thlist` after `DONE`: only `user_main` (WAITING, WaitType 1) + `update_thread`; channels alternate 7/6 and do not leak; `DONE audio=0` in lifecycle |
 | T3 | **5-minute soak**: music + 8 sounds, counters each second | `done` | zero underruns; rest length never 0 at output; frame p95 | 18,000 frames / 305.7 s: update p95 **0.028 ms**, max **0.152 ms**, **0 spikes**; 13,033 callbacks (42/s), rest **960–1024**, errors **0**; log written to `host0:/s5_soak_out.txt` |
@@ -142,6 +142,7 @@ Status vocabulary — use exactly these words, in backticks: `todo` · `doing` �
   mixed-processor attach/detach, stream pause/resume, `LOGFILE=host0:` logging
 - 2026-11-22 — T0/T1/T2/T5 pass on device; soak 18,000 frames clean; seven renderer gates identical
 - 2026-11-22 — T7: route A sufficient, SAS/ME dropped; T8 write-back done; sprint closed
+- 2026-11-22 — T0 listening confirmation: all three segments audible, OGG→WAV transition clean
 
 ## 6. Budgets
 
