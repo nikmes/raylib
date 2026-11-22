@@ -4,7 +4,7 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S7 |
-| Branch / base commit | `master` @ `7f4ad437` (Phase 10 recorded closed; two criteria not met) |
+| Branch / base commit | `master` @ `d1b5b6d8` (P10-S7 written; Phase 10 recorded closed at `7f4ad437`) |
 | Started / closed | 2026-11-22 (written) / — |
 | Build number(s) | pspgu `b30` (T1 changes the clip path); `libraylib.a` default `PSP_BATCH=1` |
 | Tasks | 0/4 done |
@@ -106,7 +106,7 @@ close write-back.
 ## 4. Preconditions
 
 - [ ] 067 closed at `7f4ad437`; its §7 table and the phase page's two not-met criteria are the baseline
-- [ ] pspgu `b29` installed; pspGL `2ab7378e` available; `b30` planned
+- [ ] pspgu `b29` installed (pspGL is currently restored); pspGL `2ab7378e` available; `b30` planned
 - [ ] archived lit references `p10s3-lit7.raw` and `p10s3-lit-pspgl2.raw` exist
 - [ ] `scene_3d` builds with `SAMPLE=1`, `INSTANCES`, `CULL`, `LIGHT=ge`; `clip_probe` builds with `MESH3D=1`
 - [ ] Device reset between runs; `DONE` + sleep; two identical captures
@@ -115,10 +115,10 @@ close write-back.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Clip rework: emit only dirty triangles through the clip/float path; clean runs keep the direct or converting path, in primitive order. Chunk dirty output so the arena is never exhausted; bump `b30` | `todo` | `arenaOverflows == 0`; clip probes 236/720 vs 0; fully-inside 0 diff; no seams | — |
-| T2 | Lit regression bisect and fix: packing on/off, cull on/off, packed normal value, colour/model mapping; 062 gate | `todo` | lit cube **0 diff** vs archived pspGL (64); cause identified | — |
-| T3 | Sweep and final sample: `INSTANCES=0/250/500/750/1000`, `CULL=1`, two runs each; freeze N by work; run 300 frames twice at N | `todo` | frozen N; both runs median/p95/work pass; `arenaOverflows=0`; adjacent failing point recorded | — |
-| T4 | Re-close Phase 10: full gates, update the phase exit criteria met/not met, sprint table, memory map, archive, restore pspGL | `todo` | criteria have numbers; strict build; `2ab7378e` installed | — |
+| T1 | Clip rework: classify triangles once into dirty flags, then emit **runs** — clean runs from the original buffer (direct pointer + rebased indices, or one conversion), dirty runs clipped/fanned to the arena, in primitive order. Split dirty runs at triangle boundaries when over budget; counters `cleanRuns`/`dirtyRuns`/`clipVerts`; bump `b30` | `todo` | `arenaOverflows == 0`; clip probes 236/720 vs 0; fully-inside 0 diff; no seams at clean/dirty boundaries | — |
+| T2 | Lit regression bisect and fix: packing on/off, cull on/off, packed normal value, colour/model mapping; **validate pspGL's 64 against an analytic Lambert value before treating it as truth**; 062 gate | `todo` | lit cube 0 diff vs a validated pspGL, or a documented correction with analytic evidence; cause identified | — |
+| T3 | Sweep and final sample: `INSTANCES=0/250/500/750/1000`, `CULL=1`, two runs each at 120 frames; freeze N by work; then 300 frames twice at N | `todo` | frozen N; both final runs median/p95/work pass; `arenaOverflows=0`; adjacent failing point recorded | — |
+| T4 | Re-close Phase 10: full gates, update the phase exit criteria met/not met, sprint table, memory map, archive, restore pspGL. **067 stays the historical record; 069 supersedes its timing result in the phase page**, not by editing 067's evidence | `todo` | criteria have numbers; strict build; `2ab7378e` installed | — |
 
 ### Design notes
 
@@ -129,11 +129,20 @@ one conversion) with a rebased index range; a dirty run is clipped and fanned in
 order so blending and depth order are unchanged. Budget the dirty buffer per run; a dirty run larger than the arena
 is split at triangle boundaries. Track `cleanRuns`/`dirtyRuns` and assert zero resets.
 
-**Lit bisect.** The packed buffer stores normals pre-multiplied by `S = 32768/K`; the GE normal transform is the
-inverse-transpose. With the S3 driver plus the current library the result is 128 (2× the pspGL 64), so inspect the
-raylib side first: is the packed record actually used (`direct=1`), is the normal offset/stride right, and does
-`applyGlobalColor`/`rlpspMaterial` set the same model colours as at S3? Test float path, packed path, cull off, and a
-logged `n*S` value. Fix the convention that changed; do not rescale to hide it.
+**Run algorithm.** For a triangle chunk (≤2,046 indices), the classification pass stores a `dirty` bit per triangle.
+Emit maximal consecutive runs. A clean run uses the original vertices: direct layout passes `(base + lo*stride,
+indices - lo)`; the converting path packs only that run's min..max range. A dirty run is clipped and fanned into a
+float-format arena buffer. Because runs are emitted in index order, depth/blend order is preserved. A clean and a
+dirty triangle sharing an edge meet on the same plane; the clipped endpoint lies on the clean edge, so no crack is
+introduced — verify with the clip probes and the sample capture.
+
+**Lit bisect — validate the oracle first.** The packed buffer stores normals pre-multiplied by `S = 32768/K`; the GE
+normal transform is the inverse-transpose. pspgu now renders 128 where pspGL/062 render 64, and the **S3 driver with
+the current library also renders 128**, so the change is on the raylib side. Before forcing 0 diff against pspGL,
+compute the analytic shade for one visible face (scene ambient 0x40 × material ambient + light diffuse × material
+diffuse × max(0, n·L)) and check which driver is correct. If pspGL is the buggy one, record the analytic value and
+correct the 062 gate with evidence; do not match a broken reference silently. Then test float vs packed, cull off,
+and a logged `n*S` value to locate the convention that changed.
 
 **Sample.** The sample content is frozen from 067 (ground 16×16, N cubes, torus, light, fog, RTT panel, offset
 1000, cull/clip on). Only N is re-frozen by the new sweep. `SPLIT work` is the acceptance signal; `STAT` reports
@@ -167,7 +176,7 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 ## 8. Exit criteria
 
 - [ ] T1: `arenaOverflows == 0`; clip probes unchanged (236/720); inside geometry 0 diff
-- [ ] T2: 062 lit gate 0 diff vs pspGL; cause recorded
+- [ ] T2: 062 lit gate 0 diff vs a validated pspGL (or a documented analytic correction); cause recorded
 - [ ] T3: frozen N written before the final run; both runs meet median/p95/work; adjacent failure recorded
 - [ ] no full GE wait in the sample; 2D/060/061/065/066 gates 0; `basic_shapes` 284
 - [ ] Phase 10 criteria re-tested and each marked met or not met with numbers
