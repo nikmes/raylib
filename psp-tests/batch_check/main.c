@@ -20,6 +20,7 @@
 #include <stdio.h>
 
 #include "raylib.h"
+#include "raymath.h"
 #include "psp_counters.h"
 
 PSP_MODULE_INFO("batch_check", 0, 1, 1);
@@ -128,8 +129,9 @@ int main(int argc, char **argv)
 
                     Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
                     Material mat = LoadMaterialDefault();
-                    Matrix id = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 1.0f, 0.0f, 1.2f, 0.0f, 0.0f, 1.0f };
+                    // Matrix fields are declared m0,m4,m8,m12,...; use the constructor,
+                    // not a positional literal, or the translation lands in m3.
+                    Matrix id = MatrixTranslate(1.2f, 0.0f, 0.0f);
                     DrawMesh(cube, mat, id);
                 EndMode3D();
             }

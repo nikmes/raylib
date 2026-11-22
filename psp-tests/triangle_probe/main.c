@@ -75,7 +75,13 @@ int main(int argc, char **argv)
         EndDrawing();
     }
 
-    TraceLog(LOG_INFO, "DONE frames 2  predicted=(201,174) (279,174) (240,96)  bbox 201..279 96..174");
+#if defined(DRAW_MESH)
+    TraceLog(LOG_INFO, "DONE frames 2  arm=mesh  predicted bbox 193..287 92..189");
+#elif defined(DRAW_CUBE)
+    TraceLog(LOG_INFO, "DONE frames 2  arm=cube  predicted bbox 81..191 92..189");
+#else
+    TraceLog(LOG_INFO, "DONE frames 2  arm=triangle  predicted (158,218) (322,218) (240,54)");
+#endif
     sceKernelSleepThread();
 
     return 0;

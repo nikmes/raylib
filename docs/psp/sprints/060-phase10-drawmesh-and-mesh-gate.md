@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S1 |
 | Branch / base commit | `master` @ `682207df` (all six P10 sprints written; 060 was first drafted at `f04bac38`) |
-| Started / closed | 2026-11-22 (written) / — |
+| Started / closed | 2026-11-22 (written) / 2026-11-22 |
 | Build number(s) | pspgu `b25` — T1/T2 change driver behaviour, so `PSPGU_BUILD` must be bumped from `b24` and the boot line must show it; `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/5 done |
+| Tasks | 5/5 done — closed 2026-11-22 |
 
 ## 0. Handover
 
@@ -164,11 +164,11 @@ render-to-texture (S4); culling and tessellation (S5); any pspGL change; any cha
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Replace the fixed `PspGuVertex` (36 B measured; colour +8, normal +12, position +24) with one `vertexLayout(fmt, &stride, &offTex, &offCol, &offNrm, &offVtx)` plus `packVertex()`: fields in GU order, stride = sum of enabled fields; allocate and `pspguWriteback()` `n*stride`; remove `sizeof(PspGuVertex)` from both chunk sizes; log once on unsupported array types (`GL_FLOAT`/`GL_UNSIGNED_BYTE` only) and non-`GL_UNSIGNED_SHORT` indices; bump `PSPGU_BUILD` to `b25` | `todo` | trace fmt/stride matches the layout table; boot line `b25`; cube draws | — |
-| T2 | Fix the `glDrawElements` chunker: 2,048-index windows; when the chunk's index range does not fit the per-draw arena budget, dedup instead of the `n=1` fallback; 4,096-slot open-addressed table (`u32 key = index+1`, `u16 slot`; 24 KiB) + 2,048-entry slot map (4 KiB) as call-local scratch; counters `dedupChunks`, `maxRange`; add `SCENE=grid` to `scene_3d` (4,096 vertices, each 2,048-index window spanning ≥3,000 vertices) | `todo` | grid is pixel-identical to pspGL; one `drawElements` call; cube unchanged; `dedupChunks > 0` | — |
-| T3 | Gate the fix: `triangle_probe DRAW_MESH=1` (identity cube, expected x 193..287, y 92..189) and `batch_check MESH_SCENE=1` (mesh at x=+1.2, expected x 289..399; immediate red cube x 81..191); two captures per arm per driver | `todo` | triangle_probe 0 differing pixels vs pspGL and bbox ±1 px; MESH_SCENE diff no worse than the 013 1-px edge; mesh present | — |
-| T4 | Add `psp-tests/scene_3d`: fixed camera (0,1,4)→origin, flat cube and 64×64 checker cube via `DrawMesh`, `FRAMES=120`, `SetTargetFPS(0)`, `STAT`/`SPLIT`, counters, `DONE` + `sceKernelSleepThread()`; Makefile clones `scene_2d`'s counter rule (`psp_counters.o: ../bunnymark/psp_counters.c`) and `batch_check`'s app rules, with `-lpspgu` in `LIBS`; flags `SCENE=flat|tex|both|grid`, default `both`; reserve the later sprint arms but implement only these | `todo` | builds on pspgu and pspGL; two captures identical; `SCENE=both` logs 2 `drawElements` | — |
-| T5 | Regression and write-back: 2D `batch_check` without `MESH_SCENE` against `/tmp/s3/par_pspgl.raw` (0 diff, 613 colours); `basic_shapes` default build (284 colours); `bunnymark` `BUNNY_COUNT=1000 FRAMES=200 TARGET_FPS=0 WRAP=1` (work 6.565 ms pspgu ±0.2 ms, two runs); vertex-format/byte-cost table on the Phase 10 page (32-bit converting formats only; S2 extends it); confirm the corrected blocker 1 text is what ships | `todo` | gates pass; table matches measured strides; boot line carries `b25` | — |
+| T1 | Replace the fixed `PspGuVertex` with `vertexLayout()`+`packVertex()` in GU order; allocate/write back `n*stride`; remove `sizeof(PspGuVertex)` from both chunk sizes; reject unsupported array/index types once; **OR `GU_INDEX_16BIT` into indexed draws** and **emit `sceGuColor` when the format has no colour field** (both found by the gate); bump `PSPGU_BUILD` to `b25` | `done` | trace `fmt=0x1e3 stride=32`; boot line `b25`; cube draws | mesh cube 0 diff vs pspGL, 8,684 px |
+| T2 | Chunker: 2,046-index windows (682 whole triangles); dedup when the range does not fit the 96 KiB per-draw budget; 4,096-slot table + slot map; counters; `SCENE=grid` 4,096 vertices / 2,046 indices | `done` | grid 0 diff vs pspGL; one `drawElements`; `dedup n=2046 range=4096 unique=2046`; `arenaOverflows=0` | 2,906 px both drivers, diff 0 |
+| T3 | Gate `triangle_probe DRAW_MESH=1` and `batch_check MESH_SCENE=1`; fix `batch_check`'s positional `Matrix` literal (translation was landing in `m3`) | `done` | probe 0 diff and analytic bbox; MESH_SCENE full-frame 0 diff; two identical captures | 8,684 px, bbox x 193..286 y 92..188; scene 117,311 px, diff 0 |
+| T4 | Add `psp-tests/scene_3d` with `SCENE=flat|tex|both|grid`, counters, `STAT`/`SPLIT`, `DONE`+sleep; `MatrixTranslate`, not positional literals | `done` | builds on both drivers; two captures identical; 2 `drawElements`/frame in `both` | `SCENE=both` 19,608 px; STAT/SPLIT present |
+| T5 | Regression and write-back: 2D gate, `basic_shapes`, bunnymark A/B against the same-tree `b24`, vertex table, memory-map traps | `done` | 2D 0 diff; 284 colours; b24 7.851 ms vs b25 7.80/7.80 ms; table matches strides | see §7 |
 
 ### Design notes for T1/T2 (implementation detail)
 
@@ -197,8 +197,13 @@ and +24.
 must be packed at exactly that stride. Cap the per-call count at `min(PSPGU_MAX_CONVERT, arenaBytes/stride)` so one
 huge draw cannot force an arena reset.
 
-**Chunker.** Choose per chunk: convert the index range when `range*stride + n*2` fits a 96 KiB per-draw budget
-(leaving 32 KiB of the 128 KiB arena for the rest of the frame); otherwise dedup. Probe a 4,096-slot table with
+Two fields of the format are not vertex attributes: **`GU_INDEX_16BIT` must be OR'ed in for indexed draws** (without
+it the GE reads the index buffer at the wrong width), and a format without `GU_COLOR_BITS` takes its colour from
+`sceGuColor`, which must be emitted from the current `glColor*` before the draw.
+
+**Chunker.** Split only between whole primitives: 2,046 indices for triangles (682 triangles), 2,048 for lines.
+Choose per chunk: convert the index range when `range*stride + n*2` fits a 96 KiB per-draw budget (leaving 32 KiB of
+the 128 KiB arena for the rest of the frame); otherwise dedup. Probe a 4,096-slot table with
 `index % 4096`, linear-probe on collision, assign slots in first-seen order, pack unique vertices, and emit rebased
 indices `slot[i]`. The table is two parallel arrays — `u32 key[4096]` where `key = index + 1` and 0 means empty
 (0xFFFF is a legal vertex index), plus `u16 slot[4096]` — 24 KiB total, and the slot map is 4 KiB. This scratch
@@ -207,9 +212,9 @@ come from the list arena, so the GE-referenced set is 76 KiB and leaves room for
 `dedupChunks` and `maxRange` in the frame log, and require `arenaOverflows == 0` for the gate runs; a reset is a full
 GE wait and invalidates the "no new wait" claim.
 
-**Scene arms.** `SCENE=grid` is a synthetic 64×64-vertex plane whose index buffer makes each 2,048-index window
-reference at least 3,000 distinct vertices (for example triangles `(i, i+2048, i+4095)`, clamped); that is what
-forces the dedup path and what pspGL renders without chunking. The checker texture is generated at runtime
+**Scene arms.** `SCENE=grid` is a synthetic 64×64-vertex plane with 2,046 indices (one chunk) whose values step by 3,
+so the window spans the whole 0..4,095 range; that forces dedup and pspGL renders it without chunking. A draw whose
+total converted bytes exceed the arena is a known limit, recorded in §10. The checker texture is generated at runtime
 (`GenImageChecked` + `LoadTextureFromImage`), so no asset or licence is introduced; `SCENE=both` draws one flat and
 one textured cube and must log exactly 2 `drawElements` calls.
 
@@ -240,37 +245,55 @@ Protocol: device only; control (pspGL) → change (pspgu) → control again; two
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| control | pspGL `2ab7378e` | `triangle_probe DRAW_MESH=1` | bbox / pixels | | expected x 193..287, y 92..189 |
-| failing | pspgu `b24` | `triangle_probe DRAW_MESH=1` | fmt / allocated stride / pixels | `0x1e3` / 36 / 0 | format advertises 32 |
-| control | pspGL `2ab7378e` | `batch_check MESH_SCENE=1` | mesh bbox / diff | | mesh x 289..399 |
-| failing | pspgu `b24` | `batch_check MESH_SCENE=1` | fmt / stride / mesh pixels | | mesh absent |
-| control | pspGL `2ab7378e` | `scene_3d SCENE=grid` | pixels | | 4,096-vertex reference |
-| fixed | pspgu `b25` | `triangle_probe` + `MESH_SCENE` | bbox / diff | | gates below |
-| fixed | pspgu `b25` | `SCENE=grid` | pixels / `dedupChunks` | | parity vs pspGL |
-| fixed | pspgu `b25` | one cube | converting µs | | fast path unchanged |
-| waits | pspgu `b25` | gate + grid | `arenaOverflows` / full waits | | target 0 |
+| control | pspGL `2ab7378e` | `triangle_probe DRAW_MESH=1` | pixels / bbox | 8,684 / x 193..286, y 92..188 | reference |
+| failing | pspgu `b24` | `triangle_probe DRAW_MESH=1` | fmt / stride / pixels | `0x1e3` / 36 / **0** | format advertises 32 |
+| control | pspGL `2ab7378e` | `batch_check MESH_SCENE=1` | full-frame diff | 0 | fixed transform |
+| failing | pspgu `b24` | `batch_check MESH_SCENE=1` | mesh pixels | 0 | mesh absent |
+| fixed | pspgu `b25` | `triangle_probe` + `MESH_SCENE` | diff / pixels | **0 / 8,684**; **0 / 117,311** | bbox matches |
+| control | pspGL `2ab7378e` | `scene_3d SCENE=grid` | pixels | 2,906 | reference |
+| fixed | pspgu `b25` | `SCENE=grid` | diff / dedup | **0**; n=2046 range=4096 unique=2046 | `arenaOverflows=0` |
+| fixed | pspgu `b25` | `SCENE=both` | captures / draws | identical; 2 `drawElements`/frame | 120 frames |
+| gate | pspgu `b25` | `batch_check` 2D | diff | **0** | 613 colours |
+| gate | pspgu `b25` | `basic_shapes` | colours | **284** | |
+| canary | pspgu `b24` vs `b25` | bunnymark N=1,000 | work (ms) | **7.851 vs 7.80/7.80** | absolute baseline moved with the tree; change is neutral |
 
 ## 8. Exit criteria
 
-- [ ] §1 met: every emitted format's stride equals its decoded size; `triangle_probe` is 0 diff from pspGL and
-      ±1 px of the analytic bbox; `MESH_SCENE` shows the mesh cube at x 289..399 with no new diff
-- [ ] 2D gate: `batch_check` 2D 0 differing pixels and 613 colours; `basic_shapes` 284 colours
-- [ ] a mesh with an index range above the chunk ceiling draws all its triangles, pixel-identical to pspGL, in one
-      `drawElements` call
-- [ ] `scene_3d` builds on both drivers and captures deterministically, 120 frames, `STAT`/`SPLIT` present
-- [ ] boot line reports `b25`; no new GE wait (`arenaOverflows == 0`), no fast-path change, no unintended VRAM growth
-- [ ] unsupported array/index types log once and skip, instead of reinterpreting bytes or silently returning
-- [ ] vertex-format/byte-cost table and the corrected blocker written into the Phase 10 page
+- [x] §1 met: every emitted format's stride equals its decoded size; `triangle_probe` and `MESH_SCENE` are 0 diff
+- [x] 2D gate 0 differing pixels; `basic_shapes` 284 colours
+- [x] an index range above the chunk ceiling draws every triangle, pixel-identical to pspGL, one `drawElements`
+- [x] `scene_3d` builds on both drivers, captures deterministically, `STAT`/`SPLIT` present
+- [x] boot line `b25`; `arenaOverflows == 0`; no fast-path change; VRAM delta 0 (flat) / checker 16 KiB (tex)
+- [x] unsupported array/index types log once and skip
+- [x] vertex-format table and corrected blocker on the Phase 10 page; traps in the memory map
 
 ## 9. Result
 
-—
+Sprint 060 closed 5/5. The cube draws, and the gate is exact: **0 differing pixels** against pspGL for
+`triangle_probe` (8,684 px), `batch_check MESH_SCENE` (117,311 px, full frame) and `SCENE=grid` (2,906 px). The
+2D gate is 0 diff and `basic_shapes` is 284 colours.
+
+The packing fix was necessary but not sufficient; the gate found two more format fields and one test bug:
+
+- **`GU_INDEX_16BIT` is part of the vertex format.** Without it the GE read the index buffer at the wrong width and
+  drew a partial cube. With it, the packed vertices, indices and attribute offsets all proved correct.
+- **A format without a colour field uses `sceGuColor`.** `DrawMesh` sends no colour array; the global register still
+  held GU's reset value, so a correctly packed mesh drew nothing until the current GL colour was emitted.
+- **`Matrix` fields are declared `m0,m4,m8,m12,…`.** A positional literal puts the translation in `m3`;
+  `batch_check`'s mesh transform had that bug and was fixed to `MatrixTranslate`. The scene uses the constructor.
+- **Chunk boundaries must be whole primitives.** 2,048 is not divisible by 3; the first grid attempt dropped the
+  tail and split a triangle across draws. 2,046 fixes it.
+
+Bunnymark moved from the phase-5 6.565 ms to 7.85 ms **before this change** (same-tree `b24` control); `b25` is
+7.80 ms, within noise. The absolute number drifted with other work in the tree, so the canary is the A/B, not the old
+constant. A draw whose converted vertices exceed the 128 KiB arena still takes one arena-reset sync; the gate's
+single-chunk grid does not, and the limit is recorded for S2/S6.
 
 ## 10. Follow-ups
 
-- Textured and lit model parity, camera-relative rendering, matrix precision →
-  [P10-S2 — 061](061-phase10-camera-relative-and-ge-native-models.md)
-- Lighting, fog and texture environment mapping → [P10-S3 — 062](062-phase10-lighting-fog-texenv.md)
-- Render-to-texture backend → [P10-S4 — 065](065-phase10-render-to-texture.md)
-- Culling, guard-band clipping, ME option → [P10-S5 — 066](066-phase10-culling-and-guard-band.md)
-- Frozen sample and phase close → [P10-S6 — 067](067-phase10-sample-target-and-close.md)
+- Draws whose total converted bytes exceed the 128 KiB arena still take one full sync per reset. Model chunking or a
+  spill strategy → **P10-S2**, measured with real models.
+- Strips and fans are not split across chunks (splitting needs vertex duplication). Revisit if a sample uses them.
+- Audit other probe apps and examples for positional `Matrix` literals; `batch_check` was fixed, others may carry it.
+- GE-native s16 positions, direct interleaved buffers → **P10-S2**; lighting formats → **P10-S3**.
+- Textured/lit model parity → **P10-S2/S3**; RTT → **P10-S4**; culling → **P10-S5**; sample close → **P10-S6**.

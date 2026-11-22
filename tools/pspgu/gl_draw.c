@@ -31,13 +31,92 @@ typedef struct {
 
 static PspGuArray arrVertex, arrTexCoord, arrColor, arrNormal;
 
-// One converted vertex, in GU order: texcoord, colour, normal, position
+// The GU format decides both the fields present and their byte offsets. This is the
+// single place the layout lives: texcoord, colour, normal, position, no padding.
 typedef struct {
-    float u, v;
-    unsigned int color;                 // 0xAABBGGRR
-    float nx, ny, nz;
-    float x, y, z;
-} PspGuVertex;                          // 32 bytes
+    unsigned int stride;
+    unsigned int offTex, offCol, offNrm, offVtx;
+} PspGuLayout;
+
+// The converting path understands float texcoords/normals/positions and u8 colours.
+// Anything else is rejected once and the draw is skipped: reinterpreting bytes as floats
+// is how a silent wrong image is produced.
+static int arraysSupported(void)
+{
+    static int logged = 0;
+    int ok = (arrVertex.type == GL_FLOAT);
+
+    if (pspgu.clientBits & PSPGU_CS_TEXCOORD) ok = ok && (arrTexCoord.type == GL_FLOAT);
+    if (pspgu.clientBits & PSPGU_CS_NORMAL)   ok = ok && (arrNormal.type == GL_FLOAT);
+    if (pspgu.clientBits & PSPGU_CS_COLOR)    ok = ok && (arrColor.type == GL_UNSIGNED_BYTE) && (arrColor.size == 4);
+
+    if (!ok && !logged)
+    {
+        pspguLog("unsupported array types: vertex=0x%x tex=0x%x normal=0x%x colour=0x%x size=%d; draw skipped",
+                 arrVertex.type, arrTexCoord.type, arrNormal.type, arrColor.type, arrColor.size);
+        logged = 1;
+    }
+
+    return ok;
+}
+
+// Field offsets and stride implied by the format bits. guVertexFormat() only emits
+// GU_TEXTURE_32BITF, GU_COLOR_8888, GU_NORMAL_32BITF and GU_VERTEX_32BITF, so the widths
+// are fixed here. The order is GU's, not the application's.
+static void vertexLayout(unsigned int fmt, PspGuLayout *l)
+{
+    unsigned int off = 0;
+
+    l->offTex = off; if (fmt & GU_TEXTURE_BITS) off += 8;
+    l->offCol = off; if (fmt & GU_COLOR_BITS)   off += 4;
+    l->offNrm = off; if (fmt & GU_NORMAL_BITS)  off += 12;
+    l->offVtx = off; off += 12;
+    l->stride = off;
+}
+
+// One application vertex -> one GU vertex, only the fields the format advertises
+// A format without a colour field takes its colour from the GE's global colour register.
+// GL11 says that is the last glColor*, which DrawMesh sets from the material. Without this
+// the register keeps whatever GU was initialised with (transparent black), so a correctly
+// packed mesh draws nothing.
+static void applyGlobalColor(unsigned int fmt)
+{
+    if (fmt & GU_COLOR_BITS) return;
+
+    sceGuColor(((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
+               ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr);
+}
+
+static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)
+{
+    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
+    {
+        const float *uv = (const float *)(arrTexCoord.ptr + (arrTexCoord.stride? index*arrTexCoord.stride : index*8));
+        float *o = (float *)(dst + l->offTex);
+        o[0] = uv[0]; o[1] = uv[1];
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_COLOR)
+    {
+        const unsigned char *c = arrColor.ptr + (arrColor.stride? index*arrColor.stride : index*4);
+        unsigned int *o = (unsigned int *)(dst + l->offCol);
+        *o = ((unsigned int)c[3] << 24) | ((unsigned int)c[2] << 16) |
+             ((unsigned int)c[1] << 8) | (unsigned int)c[0];
+    }
+
+    if (pspgu.clientBits & PSPGU_CS_NORMAL)
+    {
+        const float *n = (const float *)(arrNormal.ptr + (arrNormal.stride? index*arrNormal.stride : index*12));
+        float *o = (float *)(dst + l->offNrm);
+        o[0] = n[0]; o[1] = n[1]; o[2] = n[2];
+    }
+
+    {
+        const float *p = (const float *)(arrVertex.ptr + (arrVertex.stride? index*arrVertex.stride : 0));
+        float *o = (float *)(dst + l->offVtx);
+        o[0] = p[0]; o[1] = p[1]; o[2] = (arrVertex.size >= 3)? p[2] : 0.0f;
+    }
+}
 
 // Vertices live in the current list's arena, never in a shared scratch buffer: with two
 // lists in flight a single scratch buffer would be rewritten by frame N while frame N-1
@@ -448,51 +527,6 @@ static int isBatchedLayout(void)
     return 1;
 }
 
-// One application vertex -> one GU vertex, in the slow path
-static void convertVertex(PspGuVertex *out, int index)
-{
-    const unsigned char *base = arrVertex.ptr;   // every array shares the vertex index
-
-    memset(out, 0, sizeof(*out));
-
-    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
-    {
-        const float *uv = (const float *)(arrTexCoord.ptr + (arrTexCoord.stride? index*arrTexCoord.stride : index*8));
-        out->u = uv[0];
-        out->v = uv[1];
-    }
-
-    if (pspgu.clientBits & PSPGU_CS_COLOR)
-    {
-        const unsigned char *c = arrColor.ptr + (arrColor.stride? index*arrColor.stride : index*4);
-        out->color = ((unsigned int)c[3] << 24) | ((unsigned int)c[2] << 16) |
-                     ((unsigned int)c[1] << 8) | (unsigned int)c[0];
-    }
-    else
-    {
-        // No colour array: GL11 takes the colour from the last glColor*, which is how
-        // DrawMesh draws (material colour, arrays, no colour array). Hardcoding white here
-        // rendered meshes white where pspGL renders the material.
-        out->color = ((unsigned int)pspgu.ca << 24) | ((unsigned int)pspgu.cb << 16) |
-                     ((unsigned int)pspgu.cg << 8) | (unsigned int)pspgu.cr;
-    }
-
-    if (pspgu.clientBits & PSPGU_CS_NORMAL)
-    {
-        const float *n = (const float *)(arrNormal.ptr + (arrNormal.stride? index*arrNormal.stride : index*12));
-        out->nx = n[0]; out->ny = n[1]; out->nz = n[2];
-    }
-
-    if (pspgu.clientBits & PSPGU_CS_VERTEX)
-    {
-        const float *p = (const float *)(base + (arrVertex.stride? index*arrVertex.stride : 0));
-        // GL positions arrive as the array the app set, which may be 2 or 3 components
-        out->x = p[0];
-        out->y = p[1];
-        out->z = (arrVertex.size >= 3)? p[2] : 0.0f;
-    }
-}
-
 void glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *ptr)
 {
     arrVertex.ptr = ptr; arrVertex.size = size; arrVertex.type = type;
@@ -521,20 +555,24 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
     unsigned int prim = guPrimitive(mode);
     unsigned int fmt;
+    PspGuLayout layout;
 
     if (!pspgu.current || (count <= 0) || (prim == 0)) return;
 
     pspguUploadMatrices();
 
     fmt = guVertexFormat();
+    vertexLayout(fmt, &layout);
+
+    if (!arraysSupported()) return;
 
     {
         static int traced = 0;
         if (traced < 6)
         {
             const float *p = (const float *)arrVertex.ptr;
-            pspguLog("draw mode=%d count=%d fmt=0x%x fast=%d pos0=(%.1f,%.1f) col0=%08x",
-                     (int)mode, (int)count, fmt, isBatchedLayout(), p[0], p[1],
+            pspguLog("draw mode=%d count=%d fmt=0x%x stride=%u fast=%d pos0=(%.1f,%.1f) col0=%08x",
+                     (int)mode, (int)count, fmt, layout.stride, isBatchedLayout(), p[0], p[1],
                      (arrColor.ptr)? *(const unsigned int *)(arrColor.ptr) : 0);
             traced++;
         }
@@ -573,9 +611,10 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
     else
     {
         int done = 0;
-        int chunk = (int)(pspgu.arenaBytes / sizeof(PspGuVertex));
+        int chunk = (int)((pspgu.arenaBytes > 64)? ((pspgu.arenaBytes - 64) / layout.stride) : 0);
 
         if (chunk > PSPGU_MAX_CONVERT) chunk = PSPGU_MAX_CONVERT;
+        if (chunk <= 0) return;
 
         while (done < count)
         {
@@ -584,16 +623,18 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 
             pspguBeginFrame();
 
-            PspGuVertex *out = (PspGuVertex *)pspguArenaAlloc((unsigned int)n*sizeof(PspGuVertex));
+            unsigned int bytes = (unsigned int)n*layout.stride;
+            unsigned char *out = (unsigned char *)pspguArenaAlloc(bytes);
             while (out == NULL)
             {
                 if (!pspguArenaReset()) return;
-                out = (PspGuVertex *)pspguArenaAlloc((unsigned int)n*sizeof(PspGuVertex));
+                out = (unsigned char *)pspguArenaAlloc(bytes);
             }
 
-            for (int i = 0; i < n; i++) convertVertex(&out[i], first + done + i);
+            for (int i = 0; i < n; i++) packVertex(out + (unsigned int)i*layout.stride, &layout, first + done + i);
 
-            pspguWriteback(out, (unsigned int)n*sizeof(PspGuVertex));
+            pspguWriteback(out, bytes);
+            applyGlobalColor(fmt);
             sceGuDrawArray(prim, fmt, n, NULL, out);
 
             done += n;
@@ -601,36 +642,80 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
     }
 }
 
+// Dedup scratch for index ranges that do not fit the arena. Not read by the GE, so it
+// lives in main RAM; keys are index+1 because 0xFFFF is a legal vertex index.
+#define PSPGU_DEDUP_SLOTS 4096
+static unsigned int dedupKey[PSPGU_DEDUP_SLOTS];
+static unsigned short dedupSlot[PSPGU_DEDUP_SLOTS];
+
+static void *arenaAllocHard(unsigned int bytes)
+{
+    void *p = pspguArenaAlloc(bytes);
+
+    if (p == NULL)
+    {
+        if (!pspguArenaReset()) return NULL;
+        p = pspguArenaAlloc(bytes);
+    }
+
+    return p;
+}
+
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
 {
     unsigned int prim = guPrimitive(mode);
     unsigned int fmt;
+    unsigned int drawFmt;
+    PspGuLayout layout;
     const unsigned short *idx = (const unsigned short *)indices;
 
     if (!pspgu.current || (count <= 0) || (prim == 0)) return;
-    if (type != GL_UNSIGNED_SHORT) return;      // meshes always come indexed by uint16
+
+    if (type != GL_UNSIGNED_SHORT)
+    {
+        static int logged = 0;
+        if (!logged)
+        {
+            pspguLog("drawElements: unsupported index type 0x%x; draw skipped", (unsigned)type);
+            logged = 1;
+        }
+        return;
+    }
 
     pspguUploadMatrices();
     fmt = guVertexFormat();
+    vertexLayout(fmt, &layout);
+
+    // The index width is part of the GE vertex format. Without it the GE reads the index
+    // buffer at the wrong stride and draws a fraction of the triangles.
+    drawFmt = fmt | GU_INDEX_16BIT;
+
+    if (!arraysSupported()) return;
 
     {
         static int traced = 0;
         if (traced < 4)
         {
-            pspguLog("drawElements count=%d tex2d=%d bound=%u fmt=0x%x", (int)count,
-                     pspgu.texEnabled, pspgu.boundTexture, fmt);
+            pspguLog("drawElements count=%d tex2d=%d bound=%u fmt=0x%x draw=0x%x stride=%u", (int)count,
+                     pspgu.texEnabled, pspgu.boundTexture, fmt, drawFmt, layout.stride);
             traced++;
         }
     }
 
-    // Convert the vertices a chunk refers to, rebased so GU indexes from 0. The chunk's
-    // index range is not necessarily contiguous or sorted, so take min and max.
+    // Convert only the vertices a chunk refers to, rebased so GU indexes from 0. Two
+    // strategies per chunk: convert the whole min..max range when it fits the per-draw
+    // budget, otherwise hash the referenced vertices and convert each once. The old code
+    // dropped to one index per draw when the range exceeded the chunk, which drew nothing
+    // for triangles and cost a draw call per index.
     {
         int done = 0;
-
-        // 2,048 indices with a 2,048-vertex range is 64 KiB of vertices plus 4 KiB of
-        // indices, which always fits one arena even after the 16-byte alignment.
+        // A draw may only split between whole primitives: 2,046 indices is 682 triangles.
         int chunk = 2048;
+        if (prim == GU_TRIANGLES) chunk -= chunk % 3;
+        else if ((prim == GU_LINES) || (prim == GU_POINTS)) chunk -= chunk % 2;
+        else chunk = count;                     // strips/fans: cannot split without care
+        unsigned int budget = (pspgu.arenaBytes > 32768)? (pspgu.arenaBytes - 32768) : pspgu.arenaBytes;
+        static int dedupLogged = 0;
 
         while (done < count)
         {
@@ -646,27 +731,76 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
             }
 
             int range = (int)hi - (int)lo + 1;
-            if (range > chunk) { n = 1; range = 1; }   // pathological fan; step one at a time
-            if (n <= 0) return;
+            int dedup = 0;
+            unsigned char *verts = NULL;
+            unsigned short *rebased = NULL;
 
             pspguBeginFrame();
 
-            PspGuVertex *verts = (PspGuVertex *)pspguArenaAlloc((unsigned int)range*sizeof(PspGuVertex));
-            unsigned short *rebased = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
-
-            while ((verts == NULL) || (rebased == NULL))
+            if (((unsigned int)range*layout.stride + (unsigned int)n*2 + 64) <= budget)
             {
-                if (!pspguArenaReset()) return;
-                verts = (PspGuVertex *)pspguArenaAlloc((unsigned int)range*sizeof(PspGuVertex));
+                verts = (unsigned char *)pspguArenaAlloc((unsigned int)range*layout.stride);
                 rebased = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
+                if ((verts == NULL) || (rebased == NULL)) dedup = 1;
             }
+            else dedup = 1;
 
-            for (int i = 0; i < range; i++) convertVertex(&verts[i], lo + i);
-            for (int i = 0; i < n; i++) rebased[i] = idx[done + i] - lo;
+            if (!dedup)
+            {
+                for (int i = 0; i < range; i++) packVertex(verts + (unsigned int)i*layout.stride, &layout, lo + i);
+                for (int i = 0; i < n; i++) rebased[i] = idx[done + i] - lo;
 
-            pspguWriteback(verts, (unsigned int)range*sizeof(PspGuVertex));
-            pspguWriteback(rebased, (unsigned int)n*sizeof(unsigned short));
-            sceGuDrawArray(prim, fmt, n, rebased, verts);
+                pspguWriteback(verts, (unsigned int)range*layout.stride);
+                pspguWriteback(rebased, (unsigned int)n*sizeof(unsigned short));
+                applyGlobalColor(fmt);
+                sceGuDrawArray(prim, drawFmt, n, rebased, verts);
+            }
+            else
+            {
+                int unique = 0;
+
+                if (verts == NULL) verts = (unsigned char *)pspguArenaAlloc((unsigned int)n*layout.stride);
+                if (rebased == NULL) rebased = (unsigned short *)pspguArenaAlloc((unsigned int)n*sizeof(unsigned short));
+                if ((verts == NULL) || (rebased == NULL))
+                {
+                    verts = (unsigned char *)arenaAllocHard((unsigned int)n*layout.stride);
+                    rebased = (unsigned short *)arenaAllocHard((unsigned int)n*sizeof(unsigned short));
+                    if ((verts == NULL) || (rebased == NULL)) return;
+                }
+
+                memset(dedupKey, 0, sizeof(dedupKey));
+
+                for (int i = 0; i < n; i++)
+                {
+                    unsigned int v = idx[done + i];
+                    unsigned int h = v & (PSPGU_DEDUP_SLOTS - 1);
+
+                    while ((dedupKey[h] != 0) && (dedupKey[h] != (v + 1)))
+                        h = (h + 1) & (PSPGU_DEDUP_SLOTS - 1);
+
+                    if (dedupKey[h] == 0)
+                    {
+                        dedupKey[h] = v + 1;
+                        dedupSlot[h] = (unsigned short)unique;
+                        packVertex(verts + (unsigned int)unique*layout.stride, &layout, (int)v);
+                        unique++;
+                    }
+
+                    rebased[i] = dedupSlot[h];
+                }
+
+                pspguWriteback(verts, (unsigned int)unique*layout.stride);
+                pspguWriteback(rebased, (unsigned int)n*sizeof(unsigned short));
+                applyGlobalColor(fmt);
+                sceGuDrawArray(prim, drawFmt, n, rebased, verts);
+
+                if (dedupLogged < 8)
+                {
+                    pspguLog("drawElements dedup n=%d range=%d unique=%d stride=%u",
+                             n, range, unique, layout.stride);
+                    dedupLogged++;
+                }
+            }
 
             done += n;
         }

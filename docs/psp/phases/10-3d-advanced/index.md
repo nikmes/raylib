@@ -96,8 +96,8 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 
 ## Tasks
 
-- [ ] **Carried from phase 5, first:** make `glDrawElements`/`DrawMesh` produce pixels — the converting path and
-      index rebasing in `tools/pspgu/gl_draw.c`; verify against the predicted cube bbox x 193..287, y 92..189
+- [x] **Carried from phase 5, first:** make `glDrawElements`/`DrawMesh` produce pixels — the converting path and
+      index rebasing in `tools/pspgu/gl_draw.c`; verified 0 diff vs pspGL, bbox x 193..286, y 92..188 (060)
 - [ ] Convert model vertex data **once**, offline or at load, into GE-native formats; no per-frame conversion
 - [ ] Index buffers where type and alignment allow; verify alignment costs are not paid at draw time
 - [ ] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
@@ -137,6 +137,23 @@ tree, **not** Sony documentation). Cross-checked against our own measurements; w
   same trap the memory map already records, with the fix spelled out.
 - Vertex colour is `0xAABBGGRR` — red in the low byte; bake it that way.
 - Skin weights must sum **exactly** to 128 (u8) or 32768 (u16); the GE does not normalise them.
+
+**Vertex formats and byte costs (measured, sprint 060).** The converting path packs only the fields the format
+advertises, in GU order: texture, colour, normal, position. `DrawMesh` sends texcoords, normals and positions but no
+colour array, so its format is `0x1e3` at 32 B — not 36 B. Two format fields are not attributes: `GU_INDEX_16BIT`
+must be set for indexed draws, and a format without a colour field takes its colour from `sceGuColor`. These are the
+32-bit formats; P10-S2 replaces them with GE-native ones where the measurement allows.
+
+| enabled arrays | fmt | stride |
+|---|---|---|
+| tex, normal, vertex (`DrawMesh` default) | `0x1e3` | 32 B |
+| tex, colour, normal, vertex | `0x1ff` | 36 B |
+| normal, vertex | `0x1e0` | 24 B |
+| tex, colour, vertex | `0x19f` | 24 B |
+| tex, vertex | `0x183` | 20 B |
+| colour, vertex | `0x19c` | 16 B |
+| vertex only | `0x180` | 12 B |
+
 
 **Depth, clipping, passes:**
 
@@ -248,7 +265,7 @@ follow from the sources:
 
 | Sprint | Focus | Status |
 |---|---|---|
-| [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | written |
+| [P10-S1 — DrawMesh conversion fix and the 3D mesh gate](../../sprints/060-phase10-drawmesh-and-mesh-gate.md) | pack per format, chunker fix, cube gate, `scene_3d` skeleton | **done** — 0 diff vs pspGL; b25 |
 | [P10-S2 — Camera-relative and GE-native model data](../../sprints/061-phase10-camera-relative-and-ge-native-models.md) | rotation-only view + camera offset, one-time s16 packing, direct interleaved path | written |
 | [P10-S3 — Lighting, fog and the texture environment](../../sprints/062-phase10-lighting-fog-texenv.md) | PSP-only light/fog surface, GE state mapping, texenv modes, CPU bake, explicit limits | written |
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | written |

@@ -542,6 +542,12 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   code and overflow walks off the end of the list. Size the list from a real bound and assert.
 - **TEXCOORD is unsigned 16-bit.** Zero-centring UVs puts half the vertices across the wrap seam.
 - **Vertex colour is `0xAABBGGRR`**, not RGBA.
+- **Index width is part of the vertex format.** An indexed draw without `GU_INDEX_16BIT` makes the GE read the index
+  buffer at the wrong width and render partial geometry; the vertices and offsets can all be correct
+  `[measured: sprint 060, DrawMesh cube]`.
+- **A format without a colour field uses `sceGuColor`.** Emit the current `glColor*` before the draw; the register
+  keeps GU's reset value (transparent black) otherwise, and a correctly packed mesh draws nothing
+  `[measured: sprint 060]`.
 - **A batched `GL_QUADS` run is one triangle fan in pspGL.** `pspgl_varray.c` maps `GL_QUADS` to
   `GE_TRIANGLE_FAN`, so a 4,000-vertex quad run fans from vertex 0 and the screen fills with spikes that
   all originate at the first sprite. `glBegin(GL_QUADS)` hides this because it emits one fan per quad.
