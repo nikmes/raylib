@@ -268,6 +268,12 @@ nine port in P13-S12/S13 and two are deferred with a reason and a trigger.
 | `audio_sound_positioning` | `SetSoundVolume` + `SetSoundPan` | deferred — Phase 10 |
 | `audio_spectrum_visualizer` | `LoadWave` + FFT + `BeginShaderMode` | deferred — rewrite or drop |
 
+**Open costs carried into Phase 9.** The MP3 port (`audio_music_stream`) and the XM port (`audio_module_playing`)
+still use the legacy main-thread decode path; `audio_stream_effects` runs at 50 fps against its 60 fps target.
+[P9-S8](../../sprints/068-phase9-music-format-coverage.md) owns the feeder extension (MP3/QOA/XM) and the
+attribution of the 50 fps row. The 30 fps entries in S12/S13 are upstream `SetTargetFPS(30)` caps, not
+regressions.
+
 Keyboard input is still dead (`G1` is not done), so the ports call the gamepad API directly; P8-S1 already fills
 it. One row per upstream key:
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **done** — route A (P9-S1…S5); SAS/ME (P9-S6/S7) deferred with numbers (2026-11-22) |
+| State | **done** — route A (P9-S1…S5); SAS/ME (P9-S6/S7) deferred with numbers (2026-11-22); **P9-S8 written** for MP3/QOA/XM feeder coverage |
 | Depends on | Phase 1 (a running build) — independent of the renderer phases |
 | Exit criterion | several sounds plus one streamed track on the device, 60 fps held, audio thread cost measured, five minutes without a dropout, no `sceAudio` call in the steady-state frame loop |
 
@@ -198,6 +198,7 @@ Route A is delivered by P9-S1…S5. P9-S6 measures `sceSas`/ME against it; P9-S7
 | P9-S5 — Close, budgets and route decision | [049](../../sprints/049-phase9-close-and-decision.md) | lifecycle, full API matrix, budgets, B/C go/no-go | **done** — route A adopted; SAS/ME deferred; Phase 9 closed |
 | P9-S6 — `sceSas`/ME prototype | [050](../../sprints/050-phase9-sas-me-prototype.md) | SAS buffer/voice/CPU measurement, route-C gate | **dropped** — route A meets every budget |
 | P9-S7 — Adopt the chosen route | [051](../../sprints/051-phase9-adopt-route.md) | conditional production adoption, route switch, fallback | **dropped** — no route switch needed |
+| P9-S8 — Music format coverage and stream-cost attribution | [068](../../sprints/068-phase9-music-format-coverage.md) | feeder for MP3/QOA, XM/MOD decision, `stream_effects` attribution | **written** — Phase 13 exposed the gap |
 
 Use the [sprint template](../../templates/sprint.md) for any added work.
 
@@ -208,6 +209,11 @@ route A has no failing budget; see [sprint 049 §9](../../sprints/049-phase9-clo
 Reopen P9-S6 only when a named metric fails — a CPU-bound 3D scene where decode/mix is a measurable share
 of frame time, more simultaneous `Sound`s than the f32 mixer holds at 60 fps, or an ME/AVC workload — not
 because the phase page lists a route.
+
+**P9-S8 (follow-up).** The feeder covers OGG/WAV only. Phase 13's audio ports showed MP3 (`music_stream`) and
+XM (`module_playing`) still decode on the main thread and `stream_effects` at 50 fps against a 60 fps target.
+[P9-S8](../../sprints/068-phase9-music-format-coverage.md) closes the format gap and attributes the two
+below-target samples; it does not reopen the SAS/ME decision.
 
 **Gate-hash correction (P9-S4a).** The canonical `batch_check` gate is `b69830b8…` — the pspgu `b24`
 capture archived byte-identical from sprint 015 through sprint 041 and equal to the `par_pspgl` parity

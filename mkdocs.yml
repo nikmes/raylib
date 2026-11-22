@@ -117,6 +117,7 @@ nav:
               - P9-S5 — Close and decision: psp/sprints/049-phase9-close-and-decision.md
               - P9-S6 — SAS/ME prototype: psp/sprints/050-phase9-sas-me-prototype.md
               - P9-S7 — Adopt route (conditional): psp/sprints/051-phase9-adopt-route.md
+              - P9-S8 — Format coverage and cost attribution: psp/sprints/068-phase9-music-format-coverage.md
           - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
               - P10-S1 — DrawMesh fix and mesh gate: psp/sprints/060-phase10-drawmesh-and-mesh-gate.md
