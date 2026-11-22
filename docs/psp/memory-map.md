@@ -110,6 +110,8 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | Audio memory measured | free **782,336** / max free **524,288** constant across 50 init/close cycles; worker stack 128 KiB, decoder stack 64 KiB, decoder PCM 4 KiB per track | `[measured: PSP-1000, P9-S5]` |
 | Audio CPU measured | audio worker `runClocks` 35,686,545 over 305.7 s ≈ **0.009 ms/frame**; main-thread `UpdateMusicStream` p95 0.028 ms | `[measured: PSP-1000, P9-S5]` |
 | Input hardware | one nub (2 axes, raw 0–255), D-pad, 4 face buttons, 2 shoulder buttons, SELECT/START/HOME/HOLD/NOTE. **No analog triggers, no rumble** | `[public: pspctrl.h]` |
+| Nub on this unit | centre raw **(133, 112)**; half-ranges right 122 / left 133 / down 143 / up 112; radial deadzone **0.18**; the neutral has two resting states ~19 counts apart, so `dz` covers 0.154 normalised | `[measured: PSP-1000, sprint 043]` |
+| Idle-cancel on this unit | firmware default **−1/−1**; adopted **`0x38/0x38`**; a 360 s nub-only run stayed awake (max frame gap 17.9 ms, no dim) | `[measured: PSP-1000, sprint 043]` |
 
 **What the toolchain actually gives us** — GU primitives, vertex formats, GUM, VFPU contexts, VRAM limits — is
 verified against the headers in §14 rather than assumed from documentation.
@@ -372,8 +374,11 @@ maps buttons to `GAMEPAD_BUTTON_*` with a 0.2 deadzone — start from that, then
 - Sampling: `sceCtrlSetSamplingCycle()` / mode, and whether to read once per frame or on a fixed rate.
 - `SetGamepadVibration()` must stay a documented no-op — the PSP has no rumble.
 Sprints 041–044 (P8-S1–P8-S4): 041 done (5/5) — input mapping, contract arms, held-button failure snapshot and
-T5 regression device-validated; 042 T1 done (peek adopted; read/readn block ~13.7 ms with vsync off), T2 latch
-built (device tap pending); 043–044 written.
+T5 regression device-validated; 042 done (6/6) — peek+latch+freeze+100 Hz+stats, the latch recovers a sub-frame
+tap and HOLD freeze suppresses the stale press, and 100 Hz halves timestamp lag at no block cost; 043 done (5/5
+resolved, T4 dropped) — per-direction radial calibration, idle `0.00`, magnitude clamp 1.000, and a 6-minute
+nub-only idle run; 044 done (5/5) — every extra bit decided, keyboard/mouse emulation behind off-by-default
+switches and proven on device, DS3 rejected on this bench. **Phase 8 closed.**
 Exit: a sample that draws every button's live state plus raw and normalised axis values; each control
 pressed and confirmed; measured nub range recorded on this console; `GetGamepadButtonPressed` returns the
 pressed button for exactly the frame whose poll saw it.
@@ -518,6 +523,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 
 | date | decision | evidence |
 |---|---|---|
+| 2026-11-22 | **Adopt pad→keyboard/mouse behind off-by-default switches (P8-S4)** | `PSP_PAD_AS_KEYBOARD=1` maps D-pad/nub past 0.5 to `KEY_LEFT/RIGHT/UP/DOWN` and fills `previousKeyState` + `keyPressedQueue`; `PSP_PAD_AS_MOUSE=1` moves `Mouse.currentPosition` at 600 px/s. Device: `input_keys` moved its ball unmodified; one press/queue per tap; mouse tracked without rest drift. Shipped default `0` keeps `IsKeyDown` meaning "no keyboard". Also: second pad rejected (PSP-1000); `GetGamepadName` stays `"PSP Controller"`; both no-op messages at `LOG_DEBUG` |
 | 2026-11-20 | **Adopt `TheMrIron2/pspgl` @ `ae9a668` with `PSPGL_DLIST_SIZE_WORDS=8192`** | A/B: 90.29 → 81.24 ms for the commits (−10.0 %), then 81.24 → 61.63 ms for the list size (−24.1 %); total −31.8 %. Superset ABI (287 + 6 symbols), BSD-3. Reproducible via `tools/pspgl-build.sh` (content hash `2ab7378e…`, stable across rebuilds except two `__DATE__` objects). Costs 512 KiB of main RAM |
 | 2026-11-20 | Instrumentation counts at the GL boundary via `-Wl,--wrap` in the test harness, **not** inside `rlgl.h` | keeps rlgl byte-identical to upstream ahead of the planned native rGL backend, and counts what crosses into pspGL rather than what raylib intended; the same harness re-points at `sceGuDrawArray` in phase 5 |
 | 2026-11-20 | Merged `psp-6.2` into `master` (6.5-dev) at the user's request | 0 textual conflicts; merged tree compiles (0 errors, 0 warnings), links `basic_shapes.prx` (1,415,522 B) and **runs on the device**: 600 frames, 30 fps, 284 colours, no exception |
@@ -799,8 +805,10 @@ grep -n "sceAudio" /home/psp/pspdev/psp/sdk/include/pspaudio.h
    upgraded library is good enough for 2D.
 4. Which PSM for the framebuffer: 5551 (cheaper, half the bandwidth) unless dithering or specific
    blending forces 8888 — decide in phase 5 by screenshot comparison, not preference.
-5. Pad only, or pad plus keyboard emulation? Feeding `CORE.Input.Keyboard` makes upstream examples run
-   unmodified but redefines `IsKeyDown` on this platform. Decide in phase 8, document it either way.
+5. **Resolved (2026-11-22, sprint 044)** — pad **plus** optional keyboard/mouse emulation. `PSP_PAD_AS_KEYBOARD=1`
+   maps the D-pad/nub to the arrow keys (with `previousKeyState` and the press queue filled); `PSP_PAD_AS_MOUSE=1`
+   moves the cursor. Both are **off by default**, so a game keeps the old meaning unless the switch is built in.
+   Proven on device: `input_keys` moved its ball unmodified; `IsKeyPressed`/`GetKeyPressed` fired once per tap.
 6. Audio route: miniaudio custom backend (keeps `raudio.c` closer to upstream) or a PSP device layer
    written straight into `raudio.c` (less abstraction, more fork). Phase 9 starts by measuring which
    costs less to maintain against 6.x.

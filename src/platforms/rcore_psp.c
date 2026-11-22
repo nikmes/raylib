@@ -383,7 +383,10 @@ Image GetClipboardImage(void)
 // Set internal gamepad mappings
 int SetGamepadMappings(const char *mappings)
 {
-    TRACELOG(LOG_WARNING, "SetGamepadMappings() not implemented on target platform");
+    // No mapping database on this platform; a portable game may call this once at
+    // start-up, so keep it quiet unless debug logging is enabled.
+    (void)mappings;
+    TRACELOG(LOG_DEBUG, "SetGamepadMappings() is a no-op on this platform");
     return 0;
 }
 
@@ -408,19 +411,78 @@ void SetMouseCursor(int cursor)
     #define PSP_PAD_FAIL 0
 #endif
 #ifndef PSP_PAD_POLL
-    #define PSP_PAD_POLL 0
+    #define PSP_PAD_POLL 1
 #endif
 #ifndef PSP_PAD_LATCH
-    #define PSP_PAD_LATCH 0
+    #define PSP_PAD_LATCH 1
 #endif
 #ifndef PSP_PAD_FREEZE
-    #define PSP_PAD_FREEZE 0
+    #define PSP_PAD_FREEZE 1
 #endif
 #ifndef PSP_PAD_CYCLE
-    #define PSP_PAD_CYCLE 0
+    #define PSP_PAD_CYCLE 10000
 #endif
 #ifndef PSP_PAD_TRACE
     #define PSP_PAD_TRACE 0
+#endif
+#ifndef PSP_PAD_FORCE_FREEZE
+    #define PSP_PAD_FORCE_FREEZE 0
+#endif
+#ifndef PSP_PAD_STATS_INTERVAL
+    #define PSP_PAD_STATS_INTERVAL 300
+#endif
+
+// Sprint 043 (P8-S3): nub calibration and idle-cancel arms.
+#ifndef PSP_PAD_CALIB
+    #define PSP_PAD_CALIB 1
+#endif
+#ifndef PSP_PAD_IDLE
+    #define PSP_PAD_IDLE 1
+#endif
+// Measured on PSP-1000, sprint 043 §7: median of four clean runs. Run 4 was
+// rejected (idle_dx=82). The neutral has two resting states ~19 counts apart,
+// so dz covers the worst idle magnitude (0.154) plus the 0.02 margin.
+#ifndef PSP_NUB_CX
+    #define PSP_NUB_CX 133
+#endif
+#ifndef PSP_NUB_CY
+    #define PSP_NUB_CY 112
+#endif
+#ifndef PSP_NUB_RXP
+    #define PSP_NUB_RXP 122
+#endif
+#ifndef PSP_NUB_RXN
+    #define PSP_NUB_RXN 133
+#endif
+#ifndef PSP_NUB_RYP
+    #define PSP_NUB_RYP 143
+#endif
+#ifndef PSP_NUB_RYN
+    #define PSP_NUB_RYN 112
+#endif
+#ifndef PSP_NUB_DZ
+    #define PSP_NUB_DZ 0.18f
+#endif
+// Idle-cancel pair, raw movement counts. T3 adopts 0x38: below Sony's 0x40 and
+// half the smallest measured half-range (112/2).
+#ifndef PSP_PAD_IDLE_RESET
+    #define PSP_PAD_IDLE_RESET 0x38
+#endif
+#ifndef PSP_PAD_IDLE_BACK
+    #define PSP_PAD_IDLE_BACK 0x38
+#endif
+// Sprint 044 (P8-S4): optional pad->keyboard/mouse compatibility, off by default.
+#ifndef PSP_PAD_AS_KEYBOARD
+    #define PSP_PAD_AS_KEYBOARD 0
+#endif
+#ifndef PSP_PAD_AS_MOUSE
+    #define PSP_PAD_AS_MOUSE 0
+#endif
+#ifndef PSP_PAD_KEY_THRESHOLD
+    #define PSP_PAD_KEY_THRESHOLD 0.5f
+#endif
+#ifndef PSP_PAD_MOUSE_SPEED
+    #define PSP_PAD_MOUSE_SPEED 600.0f
 #endif
 
 static const struct {
@@ -443,6 +505,31 @@ static const struct {
 
 #define PSP_BUTTON_MAP_COUNT ((int)(sizeof(pspButtonMap)/sizeof(pspButtonMap[0])))
 
+typedef struct {
+    unsigned int polls;
+    unsigned int ret0;
+    unsigned int retneg;
+    unsigned int retgt1;
+    int blockus_max;
+    unsigned int lagus_max;
+    unsigned int latch_only;
+    unsigned int spurious;
+    unsigned int frozen_total;
+} PspStats;
+
+static PspStats pspStats = { 0 };
+
+static void PspLogStats(void)
+{
+    if ((pspStats.polls == 1) ||
+        ((PSP_PAD_STATS_INTERVAL > 0) && ((pspStats.polls % PSP_PAD_STATS_INTERVAL) == 0)))
+    {
+        TRACELOG(LOG_INFO, "PAD stats polls=%u ret0=%u retneg=%u retgt1=%u blockus_max=%d lagms_max=%.2f latchOnly=%u spurious=%u frozen=%u",
+            pspStats.polls, pspStats.ret0, pspStats.retneg, pspStats.retgt1, pspStats.blockus_max,
+            (double)pspStats.lagus_max/1000.0, pspStats.latch_only, pspStats.spurious, pspStats.frozen_total);
+    }
+}
+
 // Register all input events
 void PollInputEvents(void)
 {
@@ -459,7 +546,16 @@ void PollInputEvents(void)
     // Reset key repeats
     for (int i = 0; i < MAX_KEYBOARD_KEYS; i++) CORE.Input.Keyboard.keyRepeatInFrame[i] = 0;
 
-    // Save previous gamepad button states
+    static int pspSuppressedPrev = 0;
+#if PSP_PAD_FREEZE
+    static int pspResync = 0;
+    static unsigned int pspFrozenFrames = 0;
+#endif
+
+    pspStats.polls++;
+
+#if !PSP_PAD_FREEZE
+    // Control arm keeps the old save-before-read order.
     for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
     {
         CORE.Input.Gamepad.previousButtonState[0][i] = CORE.Input.Gamepad.currentButtonState[0][i];
@@ -467,6 +563,7 @@ void PollInputEvents(void)
 
     // Reset last gamepad button/axis registered state
     CORE.Input.Gamepad.lastButtonPressed = 0; // GAMEPAD_BUTTON_UNKNOWN
+#endif
 
     // Register previous touch states
     for (int i = 0; i < MAX_TOUCH_POINTS; i++) CORE.Input.Touch.previousTouchState[i] = CORE.Input.Touch.currentTouchState[i];
@@ -476,20 +573,17 @@ void PollInputEvents(void)
     // so, if mouse is not moved it returns a (0, 0) position... this behaviour should be reviewed!
     //for (int i = 0; i < MAX_TOUCH_POINTS; i++) CORE.Input.Touch.position[i] = (Vector2){ 0, 0 };
 
-    // Register previous keys states
-    // NOTE: Android supports up to 260 keys
-    //for (int i = 0; i < 260; i++)
-    //{
-    //    CORE.Input.Keyboard.previousKeyState[i] = CORE.Input.Keyboard.currentKeyState[i];
-    //    CORE.Input.Keyboard.keyRepeatInFrame[i] = 0;
-    //}
+    // Register previous key states. The imported file left this commented out; the
+    // optional pad->keyboard path needs it so IsKeyPressed fires once per press.
+    for (int i = 0; i < MAX_KEYBOARD_KEYS; i++)
+    {
+        CORE.Input.Keyboard.previousKeyState[i] = CORE.Input.Keyboard.currentKeyState[i];
+    }
 
     // Poll input events for PSP (sprint 042, P8-S2)
     SceCtrlData pad = { 0 };
     int ret = 1;
-#if PSP_PAD_TRACE
     SceInt64 pollStart = sceKernelGetSystemTimeWide();
-#endif
 
 #if PSP_PAD_POLL == 0
     #if PSP_PAD_FAIL
@@ -523,10 +617,18 @@ void PollInputEvents(void)
     }
 #endif
 
-#if PSP_PAD_TRACE
     SceInt64 pollEnd = sceKernelGetSystemTimeWide();
     int blockus = (int)(pollEnd - pollStart);
-#endif
+    if (blockus > pspStats.blockus_max) pspStats.blockus_max = blockus;
+    if ((pad.TimeStamp > 0) && (pollEnd >= (SceInt64)pad.TimeStamp))
+    {
+        unsigned int lagus = (unsigned int)(pollEnd - pad.TimeStamp);
+        if (lagus > pspStats.lagus_max) pspStats.lagus_max = lagus;
+    }
+    if (ret < 0) pspStats.retneg++;
+    else if (ret == 0) pspStats.ret0++;
+    else if (ret > 1) pspStats.retgt1++;
+    PspLogStats();
 
     // Peek is not documented to return a sample count; the first probe confirms it.
 #if PSP_PAD_POLL == 1
@@ -565,6 +667,39 @@ void PollInputEvents(void)
     (void)success;
 #endif
 
+#if PSP_PAD_FORCE_FREEZE
+    static int pspForceCount = 0;
+    if ((pad.Buttons & PSP_CTRL_CROSS) != 0) pspForceCount++;
+    if ((pspForceCount >= 60) && (pspForceCount < 63)) pad.Buttons = PSP_CTRL_HOLD;
+#endif
+
+#if PSP_PAD_FREEZE
+    if ((pad.Buttons & (PSP_CTRL_HOME | PSP_CTRL_HOLD)) != 0)
+    {
+#if PSP_PAD_LATCH
+        {
+            SceCtrlLatch discard = { 0 };
+            sceCtrlReadLatch(&discard);    // discard a make from the frozen window
+        }
+#endif
+        CORE.Input.Gamepad.lastButtonPressed = 0;
+        pspSuppressedPrev = 1;
+        pspFrozenFrames++;
+        pspStats.frozen_total++;
+        return;                            // snapshots untouched
+    }
+    if (pspSuppressedPrev)
+    {
+        pspResync = 1;
+        pspSuppressedPrev = 0;
+    }
+    for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
+    {
+        CORE.Input.Gamepad.previousButtonState[0][i] = CORE.Input.Gamepad.currentButtonState[0][i];
+    }
+    CORE.Input.Gamepad.lastButtonPressed = 0;
+#endif
+
     // Map the controller through one table into raylib's positional enum.
     memset(CORE.Input.Gamepad.currentButtonState[0], 0, sizeof(CORE.Input.Gamepad.currentButtonState[0]));
     for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
@@ -572,82 +707,201 @@ void PollInputEvents(void)
         if ((pad.Buttons & pspButtonMap[i].psp) != 0) CORE.Input.Gamepad.currentButtonState[0][pspButtonMap[i].raylib] = 1;
     }
 
-    // Normalize the nub; sprint 043 replaces this with calibrated values.
+    // Normalize the nub; sprint 043 (P8-S3) selects the calibrated path.
+#if PSP_PAD_CALIB
+    {
+        float dx = (float)pad.Lx - (float)PSP_NUB_CX;
+        float dy = (float)pad.Ly - (float)PSP_NUB_CY;
+        float rx = (dx >= 0.0f)? (float)PSP_NUB_RXP : (float)PSP_NUB_RXN;
+        float ry = (dy >= 0.0f)? (float)PSP_NUB_RYP : (float)PSP_NUB_RYN;
+        float nx = dx/rx;
+        float ny = dy/ry;
+        float mag;
+
+        if (nx > 1.0f) nx = 1.0f; else if (nx < -1.0f) nx = -1.0f;
+        if (ny > 1.0f) ny = 1.0f; else if (ny < -1.0f) ny = -1.0f;
+
+        mag = sqrtf(nx*nx + ny*ny);
+        if (mag < PSP_NUB_DZ)
+        {
+            nx = 0.0f;
+            ny = 0.0f;
+        }
+        else
+        {
+            float k = (mag - PSP_NUB_DZ)/(1.0f - PSP_NUB_DZ);
+            nx *= k/mag;
+            ny *= k/mag;
+            mag = sqrtf(nx*nx + ny*ny);
+            if (mag > 1.0f)
+            {
+                nx /= mag;
+                ny /= mag;
+            }
+        }
+
+        CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = nx;
+        CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = ny;
+    }
+#else
+    // 041/042 control: fixed centre and a per-axis 0.2 deadzone.
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = ((float)pad.Lx - 128.0f)/128.0f;
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = ((float)pad.Ly - 128.0f)/128.0f;
 
-    float deadZone = 0.2f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] < deadZone) &&
-        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = 0.0f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] < deadZone) &&
-        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = 0.0f;
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] < 0.2f) &&
+        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] > -0.2f)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X] = 0.0f;
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] < 0.2f) &&
+        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] > -0.2f)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y] = 0.0f;
+#endif
 
 #if !PSP_PAD_STRICT
     // Control arm: keep the old right-stick bytes and their deadzone.
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] = ((float)pad.Rsrv[0] - 128.0f)/128.0f;
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = ((float)pad.Rsrv[1] - 128.0f)/128.0f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] < deadZone) &&
-        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] = 0.0f;
-    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] < deadZone) &&
-        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] > -deadZone)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = 0.0f;
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] < 0.2f) &&
+        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] > -0.2f)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_X] = 0.0f;
+    if ((CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] < 0.2f) &&
+        (CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] > -0.2f)) CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_Y] = 0.0f;
 #endif
 
-    // Report the snapshot edge; the latch adds taps that fell between polls.
-    unsigned int snapshotNewMask = 0;
-    for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
+#if PSP_PAD_AS_KEYBOARD
+    // D-pad or calibrated nub -> arrows. Frozen frames return above, so this block
+    // only runs on a clean sample; a release during HOLD yields one release edge.
     {
-        if (CORE.Input.Gamepad.currentButtonState[0][i] && !CORE.Input.Gamepad.previousButtonState[0][i])
+        float lx = CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X];
+        float ly = CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y];
+        int keyDown[4];
+        const int keyCode[4] = { KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN };
+
+        keyDown[0] = ((pad.Buttons & PSP_CTRL_LEFT) != 0) || (lx < -PSP_PAD_KEY_THRESHOLD);
+        keyDown[1] = ((pad.Buttons & PSP_CTRL_RIGHT) != 0) || (lx > PSP_PAD_KEY_THRESHOLD);
+        keyDown[2] = ((pad.Buttons & PSP_CTRL_UP) != 0) || (ly < -PSP_PAD_KEY_THRESHOLD);
+        keyDown[3] = ((pad.Buttons & PSP_CTRL_DOWN) != 0) || (ly > PSP_PAD_KEY_THRESHOLD);
+
+        for (int i = 0; i < 4; i++)
         {
-            snapshotNewMask |= (1u << i);
-            if (CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN)
-                CORE.Input.Gamepad.lastButtonPressed = i;
-        }
-    }
+            int key = keyCode[i];
 
-#if PSP_PAD_LATCH
-    {
-        static unsigned int pspLatchOnly = 0;
-        SceCtrlLatch latch = { 0 };
-        unsigned int pspMappedButtons = 0;
-        int latchPressed = 0;
-
-        sceCtrlReadLatch(&latch);
-        for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++) pspMappedButtons |= pspButtonMap[i].psp;
-
-        for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
-        {
-            if ((latch.uiMake & pspButtonMap[i].psp) != 0)
+            if (keyDown[i] && !CORE.Input.Keyboard.previousKeyState[key])
             {
-                if ((snapshotNewMask & (1u << pspButtonMap[i].raylib)) == 0) pspLatchOnly++;
-            }
-        }
-
-        // First mapped make in GAMEPAD_BUTTON_* enum order.
-        for (int b = 1; b < MAX_GAMEPAD_BUTTONS; b++)
-        {
-            for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
-            {
-                if ((pspButtonMap[i].raylib == b) && ((latch.uiMake & pspButtonMap[i].psp) != 0))
+                if (CORE.Input.Keyboard.keyPressedQueueCount < MAX_KEY_PRESSED_QUEUE)
                 {
-                    latchPressed = b;
-                    break;
+                    CORE.Input.Keyboard.keyPressedQueue[CORE.Input.Keyboard.keyPressedQueueCount] = key;
+                    CORE.Input.Keyboard.keyPressedQueueCount++;
                 }
             }
-            if (latchPressed != 0) break;
-        }
 
-        if ((CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN) && (latchPressed != 0))
-            CORE.Input.Gamepad.lastButtonPressed = latchPressed;
-
-        if (latch.uiMake != 0)
-        {
-            TRACELOG(LOG_INFO, "PAD latchMake=0x%08X mapped=0x%08X latchOnly=%u",
-                latch.uiMake, pspMappedButtons, pspLatchOnly);
+            CORE.Input.Keyboard.currentKeyState[key] = keyDown[i]? 1 : 0;
         }
     }
-#else
-    (void)snapshotNewMask;
 #endif
+
+#if PSP_PAD_AS_MOUSE
+    // Calibrated axes are already 0 inside the deadzone, so the cursor does not drift.
+    {
+        float lx = CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_X];
+        float ly = CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_LEFT_Y];
+
+        CORE.Input.Mouse.previousPosition = CORE.Input.Mouse.currentPosition;
+
+        if ((lx != 0.0f) || (ly != 0.0f))
+        {
+            float dt = GetFrameTime();
+
+            CORE.Input.Mouse.currentPosition.x += lx*PSP_PAD_MOUSE_SPEED*dt;
+            CORE.Input.Mouse.currentPosition.y += ly*PSP_PAD_MOUSE_SPEED*dt;
+
+            if (CORE.Input.Mouse.currentPosition.x < 0.0f) CORE.Input.Mouse.currentPosition.x = 0.0f;
+            if (CORE.Input.Mouse.currentPosition.y < 0.0f) CORE.Input.Mouse.currentPosition.y = 0.0f;
+            if (CORE.Input.Mouse.currentPosition.x > (float)(CORE.Window.screen.width - 1)) CORE.Input.Mouse.currentPosition.x = (float)(CORE.Window.screen.width - 1);
+            if (CORE.Input.Mouse.currentPosition.y > (float)(CORE.Window.screen.height - 1)) CORE.Input.Mouse.currentPosition.y = (float)(CORE.Window.screen.height - 1);
+        }
+    }
+#endif
+
+#if PSP_PAD_FREEZE
+    if (pspResync)
+    {
+        memcpy(CORE.Input.Gamepad.previousButtonState[0], CORE.Input.Gamepad.currentButtonState[0],
+            sizeof(CORE.Input.Gamepad.previousButtonState[0]));
+        CORE.Input.Gamepad.lastButtonPressed = 0;
+#if PSP_PAD_LATCH
+        {
+            SceCtrlLatch discard = { 0 };
+            sceCtrlReadLatch(&discard);
+        }
+#endif
+        TRACELOG(LOG_INFO, "PAD unfreeze frames=%u", pspFrozenFrames);
+        pspFrozenFrames = 0;
+        pspResync = 0;
+    }
+    else
+#endif
+    {
+        unsigned int snapshotNewMask = 0;
+        for (int i = 0; i < MAX_GAMEPAD_BUTTONS; i++)
+        {
+            if (CORE.Input.Gamepad.currentButtonState[0][i] && !CORE.Input.Gamepad.previousButtonState[0][i])
+            {
+                snapshotNewMask |= (1u << i);
+                if (CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN)
+                    CORE.Input.Gamepad.lastButtonPressed = i;
+            }
+        }
+
+#if PSP_PAD_LATCH
+        {
+            SceCtrlLatch latch = { 0 };
+            unsigned int pspMappedButtons = 0;
+            int latchPressed = 0;
+
+            sceCtrlReadLatch(&latch);
+            for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++) pspMappedButtons |= pspButtonMap[i].psp;
+
+            for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
+            {
+                if ((latch.uiMake & pspButtonMap[i].psp) != 0)
+                {
+                    if ((snapshotNewMask & (1u << pspButtonMap[i].raylib)) == 0) pspStats.latch_only++;
+                }
+            }
+
+            // First mapped make in GAMEPAD_BUTTON_* enum order.
+            for (int b = 1; b < MAX_GAMEPAD_BUTTONS; b++)
+            {
+                for (int i = 0; i < PSP_BUTTON_MAP_COUNT; i++)
+                {
+                    if ((pspButtonMap[i].raylib == b) && ((latch.uiMake & pspButtonMap[i].psp) != 0))
+                    {
+                        latchPressed = b;
+                        break;
+                    }
+                }
+                if (latchPressed != 0) break;
+            }
+
+            if ((CORE.Input.Gamepad.lastButtonPressed == GAMEPAD_BUTTON_UNKNOWN) && (latchPressed != 0))
+                CORE.Input.Gamepad.lastButtonPressed = latchPressed;
+
+            if (latch.uiMake != 0)
+            {
+                TRACELOG(LOG_INFO, "PAD latchMake=0x%08X mapped=0x%08X latchOnly=%u",
+                    latch.uiMake, pspMappedButtons, pspStats.latch_only);
+            }
+        }
+#else
+        (void)snapshotNewMask;
+#endif
+
+#if !PSP_PAD_FREEZE
+        if ((CORE.Input.Gamepad.lastButtonPressed != GAMEPAD_BUTTON_UNKNOWN) && pspSuppressedPrev)
+        {
+            pspStats.spurious++;
+            TRACELOG(LOG_INFO, "PAD spurious=%u", pspStats.spurious);
+        }
+        pspSuppressedPrev = (pad.Buttons & (PSP_CTRL_HOME | PSP_CTRL_HOLD)) != 0;
+#endif
+    }
 }
 
 // Get name of a QWERTY key on the current keyboard layout
@@ -662,8 +916,8 @@ const char *GetKeyName(int key)
 
 // Set gamepad vibration
 // NOTE: No PSP model has rumble motors. This stays a no-op so portable game code
-// that calls it keeps linking and running; the warning is emitted once, not per
-// frame, so a game cannot flood the log by vibrating every tick.
+// that calls it keeps linking and running; the message is debug-level and emitted
+// once, so a game cannot flood the log by vibrating every tick.
 void SetGamepadVibration(int gamepad, float leftMotor, float rightMotor, float duration)
 {
     (void)gamepad; (void)leftMotor; (void)rightMotor; (void)duration;
@@ -672,7 +926,7 @@ void SetGamepadVibration(int gamepad, float leftMotor, float rightMotor, float d
     if (!vibrationWarned)
     {
         vibrationWarned = true;
-        TRACELOG(LOG_WARNING, "SetGamepadVibration() ignored: PSP has no rumble motors");
+        TRACELOG(LOG_DEBUG, "SetGamepadVibration() ignored: PSP has no rumble motors");
     }
 }
 
@@ -741,6 +995,20 @@ int InitPlatform(void)
     sceCtrlSetSamplingCycle(PSP_PAD_CYCLE);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
+    // Sprint 043 (P8-S3): record the firmware idle pair before changing it, then apply
+    // the measured pair only when the idle arm is selected.
+    {
+        int idleReset = -1;
+        int idleBack = -1;
+        int idleGet = sceCtrlGetIdleCancelThreshold(&idleReset, &idleBack);
+        TRACELOG(LOG_INFO, "PAD idle get ret=%d reset=%d back=%d", idleGet, idleReset, idleBack);
+#if PSP_PAD_IDLE
+        int idleSet = sceCtrlSetIdleCancelThreshold(PSP_PAD_IDLE_RESET, PSP_PAD_IDLE_BACK);
+        TRACELOG(LOG_INFO, "PAD idle set reset=%d back=%d ret=%d",
+            PSP_PAD_IDLE_RESET, PSP_PAD_IDLE_BACK, idleSet);
+#endif
+    }
+
     // Mark the first gamepad as ready and advertise exactly one pad.
     CORE.Input.Gamepad.ready[0] = true;
     CORE.Input.Gamepad.axisCount[0] = 2;
@@ -758,8 +1026,12 @@ int InitPlatform(void)
     CORE.Input.Gamepad.axisState[0][GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
 #endif
     TRACELOG(LOG_INFO, "PAD contract=%d fail=%d", PSP_PAD_STRICT, PSP_PAD_FAIL);
-    TRACELOG(LOG_INFO, "PAD poll=%d latch=%d freeze=%d cycle=%d trace=%d",
-        PSP_PAD_POLL, PSP_PAD_LATCH, PSP_PAD_FREEZE, PSP_PAD_CYCLE, PSP_PAD_TRACE);
+    TRACELOG(LOG_INFO, "PAD poll=%d latch=%d freeze=%d cycle=%d trace=%d force=%d stats=%d",
+        PSP_PAD_POLL, PSP_PAD_LATCH, PSP_PAD_FREEZE, PSP_PAD_CYCLE, PSP_PAD_TRACE, PSP_PAD_FORCE_FREEZE,
+        PSP_PAD_STATS_INTERVAL);
+    TRACELOG(LOG_INFO, "PAD calib=%d cx=%d cy=%d rxp=%d rxn=%d ryp=%d ryn=%d dz=%.2f",
+        PSP_PAD_CALIB, PSP_NUB_CX, PSP_NUB_CY, PSP_NUB_RXP, PSP_NUB_RXN, PSP_NUB_RYP, PSP_NUB_RYN,
+        (double)PSP_NUB_DZ);
 
     // NOTE: 6.2 has no CORE.Window.fullscreen member; fullscreen is a flag only.
     CORE.Window.flags |= FLAG_FULLSCREEN_MODE;

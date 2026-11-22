@@ -20,7 +20,8 @@ PSP_LARGE_MEMORY = 0
 FRAMES ?= 1800
 FRAME_MS ?= 16
 TAP ?= 0
-CFLAGS += -DFRAMES=$(FRAMES) -DFRAME_MS=$(FRAME_MS) -DTAP=$(TAP)
+KEYS ?= 0
+CFLAGS += -DFRAMES=$(FRAMES) -DFRAME_MS=$(FRAME_MS) -DTAP=$(TAP) -DKEYS=$(KEYS)
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak

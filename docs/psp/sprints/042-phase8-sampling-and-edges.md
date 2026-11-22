@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 8 — Input](../phases/08-input/index.md) |
 | Sprint | P8-S2 |
 | Branch / base commit | `master` @ the sprint 041 close (`4d000e0e`, 2026-11-21) |
-| Started / closed | 2026-11-21 / — |
+| Started / closed | 2026-11-21 / 2026-11-22 |
 | Build number(s) | pspgu `b24` (unchanged); `libraylib.a` builds with `PSP_PAD_POLL`, `PSP_PAD_LATCH`, `PSP_PAD_FREEZE` and `PSP_PAD_CYCLE`; 041's `PSP_PAD_FAIL` is preserved on the read arm |
-| Tasks | 1/6 done — T1 done; T2 doing; T3–T6 todo |
+| Tasks | 6/6 done — T1–T6 done |
 
 ## 0. Handover
 
@@ -171,11 +171,11 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **Poll arms**: `read\|peek\|readn` at 16/33/100 ms; a `read` vs `peek` arm with `PSP_DISABLE_VSYNC=1` at 16 ms; confirm peek return and `TimeStamp` units | `done` | table in §7; adopted arm named with numbers; no unbounded lag | adopted **peek**: 9 µs, no block in both vsync modes; read/readn block 13.7 ms with vsync off; readn returns up to 6 samples at 100 ms but blocks; full matrix in §7 |
-| T2 | **Latch edges**: `PSP_PAD_LATCH=0\|1`; map `uiMake` into `lastButtonPressed`; `latchOnly`; test with the adopted `peek` at 100 ms | `doing` | `TAP=1` at 100 ms: snapshot miss plus latch report; `latchOnly` matches; `readn` variant recorded | latch logic in `rcore_psp.c`; latch 0/1 peek PRXs built; device tap run pending |
-| T3 | **HOLD/interception**: `PSP_PAD_FREEZE=0\|1`; read-first order in `=1`; freeze/resync/suppress; `spurious` | `todo` | HOME/exit and HOLD runs: fixed spurious 0; control >0; held button stays down | — |
-| T4 | **Counters and one-reader rule**: `PAD` line at boot/every 30 polls; per-arm return counters; one library reader | `todo` | counters present in a 60-frame arm; `grep` shows one reader; `basic_shapes` exception recorded | — |
-| T5 | **Regression**: 041 contract, `PSP_PAD_FAIL` held-button run, `basic_shapes`, `batch_check` gate | `todo` | contract values unchanged; failure hook still logs/retains; gate hash unchanged | — |
-| T6 | **Cycle decision**: `PSP_PAD_CYCLE=0\|10000`, adopted poll, 16/100 ms | `todo` | block/lag table; chosen cycle recorded; no queue unbounded | — |
+| T2 | **Latch edges**: `PSP_PAD_LATCH=0\|1`; map `uiMake` into `lastButtonPressed`; `latchOnly`; test with the adopted `peek` at 100 ms | `done` | `TAP=1` at 100 ms: snapshot miss plus latch report; `latchOnly` matches; `readn` variant recorded | control: 0 nonzero snapshot buttons, no press; latch-on: `latchMake=0x00004000`, `latchOnly=1`, `PAD pressed=7 frame=7`; 1 s/20 recents pair; readn not adopted (ORed snapshot would catch, `latchOnly=0`) |
+| T3 | **HOLD/interception**: `PSP_PAD_FREEZE=0\|1`; read-first order in `=1`; freeze/resync/suppress; `spurious` | `done` | HOME/exit and HOLD runs: fixed spurious 0; control >0; held button stays down | fixed HOME: `PAD unfreeze frames=3`, no spurious; synthetic: control `PAD spurious=1`/`PAD pressed=7 frame=63`, fixed `PAD unfreeze frames=3`/no spurious; real HOLD: control `PAD spurious=1,2,3` and fresh press, fixed `PAD unfreeze frames=1`/no spurious |
+| T4 | **Counters and one-reader rule**: `PAD` line at boot/every 30 polls; per-arm return counters; one library reader | `done` | counters present in a 60-frame arm; `grep` shows one reader; `basic_shapes` exception recorded | stats 30: `ret0=0 retneg=0 retgt1=0`, `blockus_max=9`, `lagms_max=16.03–16.11`, `latchOnly=0 spurious=0 frozen=0`; one-reader grep clean; `basic_shapes:40` exception |
+| T5 | **Regression**: 041 contract, `PSP_PAD_FAIL` held-button run, `basic_shapes`, `batch_check` gate | `done` | contract values unchanged; failure hook still logs/retains; gate hash unchanged | contract axes 2/0, right 0/0, triggers −1/−1; frame 60 `cross=1`, `PAD input failed ret=-1`, `retneg=2`; `basic_shapes` `DONE 600` 60 fps; `batch_check` `b69830b8…` identical |
+| T6 | **Cycle decision**: `PSP_PAD_CYCLE=0\|10000`, adopted poll, 16/100 ms | `done` | block/lag table; chosen cycle recorded; no queue unbounded | four no-input arms, stats30: block max 9–10 µs in all; lag max 16.09/16.08 (cycle 0) → 8.95/7.83 ms (100 Hz) at 16/100 ms; `ret0=0 retneg=0 retgt1=0`; adopted `PSP_PAD_CYCLE=10000` |
 
 ### T1 design
 
@@ -294,6 +294,8 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
   unless the fixed rate removes an unbounded queue without adding block; a null result keeps 0 and records why.
 - Keep the default on 0 until the table is in hand. If 0 wins, fixed-rate remains a follow-up for a vsync-off
   build, not a hidden default.
+- **Adopted:** `PSP_PAD_CYCLE ?= 10000` in `src/Makefile`. 100 Hz halved `lagms_max` at both frame intervals
+  (16.09/16.08 → 8.95/7.83 ms) with block max unchanged (9 ms) and no return errors.
 
 ### Task log (append-only)
 
@@ -305,18 +307,59 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 - 2026-11-21 — T1 done: read/peek/readn at 16/33/100 and vsync-off arms; peek adopted (9 µs, no block);
   read/readn block 13.7 ms vsync off; readn ret up to 6 at 100 ms; `PSP_PAD_POLL=peek` is the default
 - 2026-11-21 — T2 `doing`: latch read after the snapshot, snapshot-priority, `latchOnly`, failure discard;
-  latch 0/1 peek PRXs built; device tap run not started
+  latch 0/1 peek PRXs built
+- 2026-11-21 — T2 100 ms run: `latchMake=0x00004000` mapped, `latchOnly` reached 19; the control also saw
+  repeated `PAD pressed=7`, so the single-tap miss was not isolated; 200 ms/30-frame control+change built
+- 2026-11-21 — T2 200 ms/30-frame run: zero nonzero `buttons` in both arms; the tap fell after DONE; a 200 ms
+  / 100-frame (20 s) pair is built for a tap while the counter is moving
+- 2026-11-21 — T2 200 ms/100-frame run: control no input; latch-on `latchMake=0x00004000`, `latchOnly=0`,
+  `PAD pressed=7 frame=30`; the snapshot caught the tap, so the missed-snapshot case is still not isolated;
+  a 1 s/20-frame pair is built
+- 2026-11-21 — T2 1 s/20-frame run: control caught the tap (`PAD pressed=7 frame=7`); latch-on also caught it
+  (`latchMake=0x4000`, `latchOnly=0`, `PAD pressed=7 frame=4`). The operator held the button to see the slow
+  display; a 1 s/20-frame pair with a persistent 2 s `RECENT PRESS` indicator was built for tap-and-release
+- 2026-11-21 — T2 done: control 0 nonzero buttons; latch-on `latchMake=0x00004000`, `latchOnly=1`,
+  `PAD pressed=7 frame=7`; `PSP_PAD_LATCH=1` is the default with `peek`
+- 2026-11-21 — T3 `doing`: read-first freeze, snapshot freeze/resync, latch discard, `PAD unfreeze`,
+  control `PAD spurious`; freeze 0/1 `peek`+latch 30 s PRXs built
+- 2026-11-22 — T3 HOME/HOLD run: fixed `PAD unfreeze frames=3` and no `PAD spurious`; control showed no
+  spurious because CROSS was released during HOME; a later `PAD pressed=7` was a fresh press
+- 2026-11-22 — T3 HOLD-only run: no `0x00020000`/`0x00010000` in 240 traced polls, no unfreeze/spurious; the
+  HOLD switch was not exercised
+- 2026-11-22 — control HOME hold-through is impossible: the system dialog requires releasing CROSS to choose
+  YES/NO
+- 2026-11-22 — prepared both T3 comparisons: `PSP_PAD_FORCE_FREEZE=1` injects 3 HOLD polls after 60 polls with
+  CROSS held (deterministic, test-only); control/fixed synthetic PRXs and the real HOLD-switch pair are built
+- 2026-11-22 — synthetic T3 run: control `PAD spurious=1`, `PAD pressed=7 frame=63`; fixed `PAD unfreeze
+  frames=3`, no spurious
+- 2026-11-22 — real HOLD T3 run: HOLD bit observed (4 control / 1 fixed); control `PAD spurious=1,2,3` and
+  fresh `PAD pressed=7`; fixed `PAD unfreeze frames=1`, no spurious; T3 `done`
+- 2026-11-22 — T4 `doing`: cumulative `PAD stats` (ret/block/lag/latch/spurious/frozen), boot `stats=`;
+  `PSP_PAD_STATS_INTERVAL=30` stats PRX built; one-reader grep clean (`basic_shapes` exception)
+- 2026-11-22 — T4 done: 60-frame stats run `ret0=0 retneg=0 retgt1=0`, `blockus_max=9`,
+  `lagms_max=16.03–16.11`, `latchOnly=0 spurious=0 frozen=0`
+- 2026-11-22 — T5 `doing`: contract PRX (default peek/latch/freeze/stats300), failure PRX (`read` +
+  `PSP_PAD_FAIL=1`, stats30), `basic_shapes` and `batch_check WRAP=0` rebuilt; gate `b69830b8…`
+- 2026-11-22 — T5 done: contract axes 2/0, right 0/0, triggers −1/−1; failure `cross=1 frame=60`,
+  `PAD input failed ret=-1`, `retneg=2`; `basic_shapes` `DONE 600` at 60 fps; `batch_check` gate identical
+- 2026-11-22 — T6 `doing`: cycle 0 and 100 Hz PRXs at 16/100 ms built with `PSP_PAD_STATS_INTERVAL=30`
+- 2026-11-22 — T6 done: four no-input arms; block max 9–10 µs in all; `lagms_max` 16.09/16.08 (cycle 0) →
+  8.95/7.83 ms (100 Hz) at 16/100 ms; `ret0=0 retneg=0 retgt1=0`, `latchOnly=0 spurious=0 frozen=0`;
+  `PSP_PAD_CYCLE ?= 10000` adopted; strict library rebuilt and staged; `pad_api` and `input_gamepad` rebuilt
+- 2026-11-22 — the adopted defaults are also the `rcore_psp.c` `#ifndef` fallbacks, so a direct compile matches
+  the library; the library build log shows `-DPSP_PAD_POLL=1 -DPSP_PAD_LATCH=1 -DPSP_PAD_FREEZE=1
+  -DPSP_PAD_CYCLE=10000 -DPSP_PAD_STATS_INTERVAL=300`
 
 ## 6. Budgets
 
 | item | budget | measured |
 |---|---|---|
-| poll call | ≤ 0.2 ms typical; `peek` no sampling-period block | |
-| queue lag | ≤ 1 sample interval at 16 ms; bounded at 100 ms | |
-| lost taps | 0 after the latch is enabled (or counted) | |
-| spurious presses through HOLD/interception | 0 in the fixed build | |
-| frame time | no renderer change; input cost only | |
-| cycle | choose by table, not preference | |
+| poll call | ≤ 0.2 ms typical; `peek` no sampling-period block | 9 µs max, both vsync modes |
+| queue lag | ≤ 1 sample interval at 16 ms; bounded at 100 ms | 8.95/7.83 ms max at 16/100 ms (100 Hz) |
+| lost taps | 0 after the latch is enabled (or counted) | 1 tap, `latchOnly=1`, reported |
+| spurious presses through HOLD/interception | 0 in the fixed build | 0 fixed; control 1–3 |
+| frame time | no renderer change; input cost only | 16.683 ms at 16 ms target, unchanged |
+| cycle | choose by table, not preference | `10000` (100 Hz); lag halved, block unchanged |
 
 ## 7. Measurements
 
@@ -365,22 +408,34 @@ Protocol: device only; one variable per run; control → change → control agai
 Adopted **peek**: 9 µs and no block in both vsync modes. `read` and `readn` block ~13.7 ms with vsync off;
 `readn` catches up to 6 samples at 100 ms but inherits that block. T2's latch is therefore required for taps.
 
+**T6 results (2026-11-22, PSP-1000, adopted peek + latch + freeze, no input, stats every 30 polls):**
+
+| cycle | frame ms | polls | block max µs | lag max ms | ret0 / neg / >1 | latchOnly / spurious / frozen |
+|---|---:|---:|---:|---:|---|---|
+| 0 (VBLANK) | 16 | 180 | 9 | 16.09 | 0 / 0 / 0 | 0 / 0 / 0 |
+| 0 (VBLANK) | 100 | 60 | 10 | 16.08 | 0 / 0 / 0 | 0 / 0 / 0 |
+| 10000 (100 Hz) | 16 | 180 | 9 | 8.95 | 0 / 0 / 0 | 0 / 0 / 0 |
+| 10000 (100 Hz) | 100 | 60 | 9 | 7.83 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+`PAD poll` reported `cycle=0` or `cycle=10000` as built. 100 Hz roughly halves the timestamp lag at both frame
+intervals with the same block time and no return errors, so `PSP_PAD_CYCLE=10000` is adopted.
+
 ## 8. Exit criteria
 
 - [x] the three poll arms are measured at 16/33/100 ms; the adopted arm and reason are recorded
 - [x] the peek return and `TimeStamp` scale are confirmed by the first probe, not assumed
 - [x] `peek` does not block; `read`'s block is quantified; `readn`'s merge rule is documented
-- [ ] a sub-frame tap is reported by the latch or counted as lost; `latchOnly` matches the observed taps
-- [ ] `readn`'s ORed snapshot case is recorded (`latchOnly=0` is valid when the tap was already captured)
-- [ ] HOLD and interception produce zero spurious presses in the fixed build; the control build shows the cause
-- [ ] the held button is still down when input returns, and its eventual release fires once
-- [ ] `PAD` counters are logged at boot and every 30 polls during the A/B
-- [ ] only `PollInputEvents()` reads or latches the library controller; `basic_shapes` is recorded as a known
+- [x] a sub-frame tap is reported by the latch or counted as lost; `latchOnly` matches the observed taps
+- [x] `readn`'s ORed snapshot case is recorded (`latchOnly=0` is valid when the tap was already captured)
+- [x] HOLD and interception produce zero spurious presses in the fixed build; the control build shows the cause
+- [x] the held button is still down when input returns, and its eventual release fires once
+- [x] `PAD` counters are logged at boot and every 30 polls during the A/B
+- [x] only `PollInputEvents()` reads or latches the library controller; `basic_shapes` is recorded as a known
       sample exception
-- [ ] 041's contract values and `PSP_PAD_FAIL` held-button behavior are unchanged
-- [ ] the renderer gate and `basic_shapes` are unchanged
-- [ ] `PSP_PAD_CYCLE=0` vs `10000` is measured and the chosen cycle recorded
-- [ ] no public header or renderer file appears in the sprint diff
+- [x] 041's contract values and `PSP_PAD_FAIL` held-button behavior are unchanged
+- [x] the renderer gate and `basic_shapes` are unchanged
+- [x] `PSP_PAD_CYCLE=0` vs `10000` is measured and the chosen cycle recorded
+- [x] no public header or renderer file appears in the sprint diff
 
 ## 9. Result
 
@@ -388,9 +443,39 @@ T1 is complete. The full matrix is in §7; **peek** is adopted. It holds 9 µs i
 `read` and `readn` block ~13.7 ms with vsync off; `readn` returns up to 6 samples at 100 ms but inherits the
 blocking read. `TimeStamp` is microseconds, and `peek` returned 1 on this PSP-1000.
 
-T2 latch code is implemented: the latch is read after the snapshot, snapshot presses take priority, `latchOnly`
-counts missed makes, and a failed read discards the latch. The latch-on/off `peek` PRXs are built; the device tap
-run is pending. T3–T6 remain pending. Evidence: `/home/psp/evidence/sprint042/`.
+T2 is done. With the 2 s `RECENT PRESS` indicator the operator could tap and release immediately: the control
+ran with zero nonzero snapshot buttons and no press; latch-on logged `latchMake=0x00004000`, `latchOnly=1` and one
+`PAD pressed=7 frame=7`. The fallback is now isolated on hardware. `readn` was not adopted; its ORed snapshot
+would catch the tap and report `latchOnly=0`, recorded as a design consequence rather than a separate run.
+`PSP_PAD_POLL=peek` and `PSP_PAD_LATCH=1` are the defaults.
+
+T3 is implemented: the fixed arm reads first, freezes on HOME/HOLD, resyncs on the first clean sample, discards
+the latch during the frozen window, and logs `PAD unfreeze`; the control arm keeps the old order and logs
+`PAD spurious`. The fixed HOME run froze for 3 frames with no spurious press. The control HOME comparison is
+impossible as specified: the system dialog requires releasing CROSS to choose YES/NO. A HOLD-only run produced no
+HOLD/HOME bit at all (240 traced polls, only `0x4000` CROSS).
+
+T3 is complete. The real HOLD switch was observed: control logged `PAD spurious=1,2,3` and a fresh
+`PAD pressed=7` after HOLD cleared; fixed logged `PAD unfreeze frames=1` with no spurious and no stale press.
+The deterministic synthetic pair agrees (control spurious 1, fixed unfreeze 3), and the fixed HOME run logged
+`PAD unfreeze frames=3` with no spurious. `PSP_PAD_POLL=peek`, `PSP_PAD_LATCH=1`, `PSP_PAD_FREEZE=1` are the
+defaults.
+
+T4 is done. The 60-frame stats run logged `PAD stats polls=1/30/60` with `ret0=0 retneg=0 retgt1=0`,
+`blockus_max=9`, `lagms_max=16.03–16.11`, and `latchOnly=0 spurious=0 frozen=0`. The one-reader grep shows all
+library reads/latches inside `PollInputEvents`; `psp-tests/basic_shapes:40` is the known second-reader exception.
+`PSP_PAD_STATS_INTERVAL=300` is the shipped default; 30 was used for the A/B.
+
+T5 is done. The contract PRX reported axes 2/0, right 0/0 and triggers −1/−1. The `read`+`PSP_PAD_FAIL=1`
+run held CROSS: frame 60 showed `cross=1`, followed by `PAD input failed ret=-1` and `retneg=2`. `basic_shapes`
+reported `DONE frames 600` at 60 fps, and `batch_check WRAP=0` is byte-identical to `b69830b8…`.
+
+T6 is done. With the adopted poll arm (peek + latch + freeze), the two cycle settings were compared at 16 and
+100 ms: `blockus_max` stayed at 9–10 µs in all four arms and every arm logged `ret0=0 retneg=0 retgt1=0` and
+`latchOnly=0 spurious=0 frozen=0`. `lagms_max` fell from 16.09/16.08 ms (cycle 0) to 8.95/7.83 ms (100 Hz) at
+the two frame intervals. 100 Hz halves the queue lag at no block-time cost, so `PSP_PAD_CYCLE` defaults to
+`10000` and the full sampling stack is now **peek + latch + freeze + 100 Hz + stats**. Evidence:
+`/home/psp/evidence/sprint042/`.
 
 ## 10. Follow-ups
 
@@ -400,4 +485,6 @@ run is pending. T3–T6 remain pending. Evidence: `/home/psp/evidence/sprint042/
 - Remove `basic_shapes`' direct `sceCtrl` read in Phase 13; it is a second reader.
 - `readn` was not adopted because it blocks with vsync off; its 6-sample merge is recorded, and a larger buffer
   is not a substitute for a non-blocking read.
-- If cycle 0 wins, fixed-rate sampling remains a follow-up for a `PSP_DISABLE_VSYNC` build.
+- 100 Hz sampling is the library default; a `PSP_DISABLE_VSYNC` build now samples at the same 100 Hz without a
+  blocking read. The renderer gate was verified on the cycle 0 build; the cycle change is input-only and no
+  renderer file changed.

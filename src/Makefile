@@ -597,14 +597,37 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     else
         CUSTOM_CFLAGS += -DPSP_PAD_POLL=0
     endif
-    PSP_PAD_LATCH ?= 0
+    # T2 adopted: the latch recovers taps between peek polls.
+    PSP_PAD_LATCH ?= 1
     CUSTOM_CFLAGS += -DPSP_PAD_LATCH=$(PSP_PAD_LATCH)
-    PSP_PAD_FREEZE ?= 0
+    # T3 adopted: HOME/HOLD freeze with resync.
+    PSP_PAD_FREEZE ?= 1
     CUSTOM_CFLAGS += -DPSP_PAD_FREEZE=$(PSP_PAD_FREEZE)
-    PSP_PAD_CYCLE ?= 0
+    # T6 adopted: 100 Hz sampling halves the timestamp lag at no block-time cost.
+    PSP_PAD_CYCLE ?= 10000
     CUSTOM_CFLAGS += -DPSP_PAD_CYCLE=$(PSP_PAD_CYCLE)
     PSP_PAD_TRACE ?= 0
     CUSTOM_CFLAGS += -DPSP_PAD_TRACE=$(PSP_PAD_TRACE)
+    # Test-only: force a 3-poll HOLD window after 60 polls with CROSS held,
+    # so the control/fixed freeze paths can be compared without the HOME dialog.
+    PSP_PAD_FORCE_FREEZE ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_FORCE_FREEZE=$(PSP_PAD_FORCE_FREEZE)
+    # T4: PAD stats interval; 30 for the A/B, 300 in the shipped build, 0 for the
+    # idle-timer run (a periodic log is host traffic during the idle window).
+    PSP_PAD_STATS_INTERVAL ?= 300
+    CUSTOM_CFLAGS += -DPSP_PAD_STATS_INTERVAL=$(PSP_PAD_STATS_INTERVAL)
+    # Sprint 043 (P8-S3): nub calibration and idle-cancel arms. Both adopted:
+    # T2 calibrated the nub, T3 kept a 6-minute nub-only session awake.
+    PSP_PAD_CALIB ?= 1
+    CUSTOM_CFLAGS += -DPSP_PAD_CALIB=$(PSP_PAD_CALIB)
+    PSP_PAD_IDLE ?= 1
+    CUSTOM_CFLAGS += -DPSP_PAD_IDLE=$(PSP_PAD_IDLE)
+    # Sprint 044 (P8-S4): optional pad->keyboard/mouse compatibility. Off by
+    # default: the shipped build keeps IsKeyDown and the mouse meaning "none".
+    PSP_PAD_AS_KEYBOARD ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_AS_KEYBOARD=$(PSP_PAD_AS_KEYBOARD)
+    PSP_PAD_AS_MOUSE ?= 0
+    CUSTOM_CFLAGS += -DPSP_PAD_AS_MOUSE=$(PSP_PAD_AS_MOUSE)
     # PSP_BATCH_TRACE=1 logs every batch flush and every deferred texture switch:
     # the only way to see what the batch actually submitted when a frame looks wrong.
     ifdef PSP_BATCH_TRACE

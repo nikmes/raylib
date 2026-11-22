@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | in progress — P8-S1 done (5/5); P8-S2 T1 done (peek), T2 latch implemented; T3–T6 pending; 043–044 written |
+| State | **done** — P8-S1–S4 closed (5/5, 6/6, 5/5 resolved, 5/5); Phase 8 closed 2026-11-22 |
 | Depends on | Phase 1 (a running build to press buttons in) — independent of the renderer phases |
 | Exit criterion | every control reachable through raylib's API, `GetGamepadButtonPressed()` fires for exactly the frame whose poll saw the press, and the nub's measured range is recorded on this console |
 
@@ -14,8 +14,9 @@ read `CORE.Input` and are platform-agnostic. A platform only has to fill that st
 which is where all of this work lands, in the platform file, not in `rcore.c`.
 
 The immediate consumers are the upstream examples and [Phase 13](../13-samples-porting/index.md)'s tier-B
-samples: 61 samples render but need their input remapped, and the pad→keyboard / nub→mouse decision determines
-whether they run unmodified.
+samples: 60 samples render but need their input remapped. Sprint 044 keeps emulation behind an off-by-default
+switch, so they run unmodified when built with `PSP_PAD_AS_KEYBOARD=1`; the shipped build leaves the remap to the
+game or the sample-local layer.
 
 ## What has to be true before starting
 
@@ -31,27 +32,27 @@ whether they run unmodified.
       each poll (`:426`) makes the value valid for exactly one frame; define and test that window. A press that
       begins and ends between two frames is still lost — decide whether snapshot polling is enough or latch
       data is needed
-- [ ] Initialise the controller read: zero `SceCtrlData` and branch on `sceCtrlReadBufferPositive()`'s return,
+- [x] Initialise the controller read: zero `SceCtrlData` and branch on `sceCtrlReadBufferPositive()`'s return,
       so a failed or empty read cannot present stale buttons or axes
-- [ ] Fix the right stick: `Rx`/`Ry` are not part of the documented PSP-1000 contract, yet the port derives
+- [x] Fix the right stick: `Rx`/`Ry` are not part of the documented PSP-1000 contract, yet the port derives
       `GAMEPAD_AXIS_RIGHT_*` from them (`rcore_psp.c:483`). Zero `axisState` (clearing `axisCount` is not
       enough — `GetGamepadAxisMovement()` ignores it, `rcore.c:4119`) and decide whether a DS3 is gamepad 0's
       right stick or a second pad
-- [ ] Calibrate the nub: sample raw min/max/centre per unit, derive a radial deadzone from it, and clamp
+- [x] Calibrate the nub: sample raw min/max/centre per unit, derive a radial deadzone from it, and clamp
       `sqrt(x² + y²)` to 1; do not assume 128 is centre or that one unit's deadzone fits another
-- [ ] Verify axis direction on device: nub up gives `LEFT_Y < 0`, right gives `LEFT_X > 0`, matching raylib's
+- [x] Verify axis direction on device: nub up gives `LEFT_Y < 0`, right gives `LEFT_X > 0`, matching raylib's
       SDL/GLFW convention; nothing tests this today
-- [ ] Decide and document what HOME, HOLD and the extra PSPSDK bits do (NOTE, SCREEN, VOLUP/VOLDOWN, WLAN_UP,
+- [x] Decide and document what HOME, HOLD and the extra PSPSDK bits do (NOTE, SCREEN, VOLUP/VOLDOWN, WLAN_UP,
       L1/R1, L2/R2, L3/R3). `PSP_CTRL_HOME` (bit 16) is the same bit Sony calls `SCE_CTRL_INTERCEPTED`; it is
       not a button press
-- [ ] Decide `sceCtrlSetIdleCancelThreshold`. Its default of −1 means nub movement does not reset the system
+- [x] Decide `sceCtrlSetIdleCancelThreshold`. Its default of −1 means nub movement does not reset the system
       idle timer
-- [ ] Choose the sampling strategy (`sceCtrlSetSamplingCycle`, once per frame vs fixed rate) and justify it.
+- [x] Choose the sampling strategy (`sceCtrlSetSamplingCycle`, once per frame vs fixed rate) and justify it.
       Document that `ReadBuffer*` blocks when the current cycle was already read and that `PeekBuffer*` does
       not; state how a slow frame's queued samples are handled
-- [ ] Instrument the read and the edges: counts of return codes (0/negative/>1), queue lag, taps seen by the
+- [x] Instrument the read and the edges: counts of return codes (0/negative/>1), queue lag, taps seen by the
       latch but missed by the snapshot, and time blocked in `PollInputEvents()`
-- [ ] Decide whether to also fill `CORE.Input.Keyboard` from the pad and map the nub to the mouse. It makes
+- [x] Decide whether to also fill `CORE.Input.Keyboard` from the pad and map the nub to the mouse. It makes
       upstream examples and [Phase 13](../13-samples-porting/index.md)'s tier-B samples run unmodified; it also
       redefines `IsKeyDown` and the mouse on this platform, so record the choice — see
       [open question 5](../../memory-map.md#12-open-questions)
@@ -96,6 +97,7 @@ behaviour used in code must be reproduced from the public header or measured her
 | Default sampling mode | digital buttons only; analog values are valid only in `PSP_CTRL_MODE_ANALOG` (= 1) | `[public: pspctrl.h]` |
 | Analog range | `Lx`/`Ly` are 0–255, centre 0x80, horizontal left→right and vertical **top→bottom** | `[external: Sony Controller Overview]` |
 | Centre tolerance | error up to about ±0x40, so neutral cannot be assumed tighter than 0x40–0xC0 | `[external: same]` |
+| Nub on this unit | centre raw **(133, 112)**; half-ranges right 122 / left 133 / down 143 / up 112; radial deadzone **0.18**; two resting states ~19 counts apart | `[measured: PSP-1000, sprint 043]` |
 | Full scale | each axis reaches 0x00/0xFF over its own travel, but **not guaranteed simultaneously** — the stick's reachable area is not a square | `[external: same]` |
 | Idle timer threshold | `sceCtrlSetIdleCancelThreshold(idlereset, idleback)`: −1 = analog never cancels idle, 0 = idle timer cancelled even without movement, 1–128 = movement required on either axis | semantics `[public: pspctrl.h]`; default `[external: Sony Controller Reference]` |
 | HOLD switch | while set, every digital button reads released and `PSP_CTRL_HOLD` (bit 17) is set | `[external: Sony Controller Overview]` |
@@ -196,32 +198,33 @@ suggest, each with the measurement that would promote it. Until then they belong
 
 ## Exit criteria
 
-- [ ] a sample drawing every button's live state, plus raw and normalised axis values
-- [ ] each control physically pressed and confirmed
-- [ ] `SceCtrlData` zeroed and the read's return validated; a failed or empty read is logged and moves no state
-- [ ] nub range recorded for **this** console, with a radial deadzone and scaling derived from it
-- [ ] `GetGamepadButtonPressed()` returns the pressed button for exactly one frame — the poll that saw the
+- [x] a sample drawing every button's live state, plus raw and normalised axis values
+- [x] each control physically pressed and confirmed
+- [x] `SceCtrlData` zeroed and the read's return validated; a failed or empty read is logged and moves no state
+- [x] nub range recorded for **this** console, with a radial deadzone and scaling derived from it
+- [x] `GetGamepadButtonPressed()` returns the pressed button for exactly one frame — the poll that saw the
       press — and 0 on the next, verified in the sample
-- [ ] a press that starts and ends between two slow frames is either reported or documented as lost
-- [ ] right axes read 0 when no right stick is present
-- [ ] stick magnitude never exceeds 1, including at a corner
-- [ ] axis directions confirmed: nub up gives `LEFT_Y < 0`, right gives `LEFT_X > 0`
-- [ ] `IsGamepadAvailable(0)`, `GetGamepadName(0)` and `GetGamepadAxisCount(0)` agree with what is filled
-- [ ] a nub-only session does not trigger the system idle timeout
-- [ ] HOME, HOLD, the PSPSDK-only bits and L1/R1/L2/R2/L3/R3 have a recorded decision each
-- [ ] keyboard/mouse emulation decision recorded, with its effect on Phase 13's tier-B samples
-- [ ] read-return, queue-lag and latch-vs-snapshot counters exist and are logged
+- [x] a press that starts and ends between two slow frames is either reported or documented as lost
+- [x] right axes read 0 when no right stick is present
+- [x] stick magnitude never exceeds 1, including at a corner
+- [x] axis directions confirmed: nub up gives `LEFT_Y < 0`, right gives `LEFT_X > 0`
+- [x] `IsGamepadAvailable(0)`, `GetGamepadName(0)` and `GetGamepadAxisCount(0)` agree with what is filled
+- [x] a nub-only session does not trigger the system idle timeout
+- [x] HOME, HOLD, the PSPSDK-only bits and L1/R1/L2/R2/L3/R3 have a recorded decision each
+- [x] keyboard/mouse emulation decision recorded, with its effect on Phase 13's tier-B samples
+- [x] read-return, queue-lag and latch-vs-snapshot counters exist and are logged
 
 ## Sprints and features
 
-The phase is sized as four sprints. All four are written; none has run, so every task is still `todo`.
+All four sprints ran and closed on 2026-11-22; Phase 8 is done. The tier-B samples now know which path they can
+rely on: the gamepad contract is stable, and keyboard/mouse emulation exists behind off-by-default switches.
 
 | sprint | scope | state |
 |---|---|---|
 | [P8-S1 — 041 — Gamepad contract and the portable sample](../../sprints/041-phase8-gamepad-contract.md) | contract defaults, button map, edge window, portable sample | **done** — 5/5, device-validated |
-| [P8-S2 — 042 — Sampling, edges and system states](../../sprints/042-phase8-sampling-and-edges.md) | poll arms, latch, HOLD/interception, counters | in progress — T1 done (peek), T2 latch built; device tap pending; T3–T6 pending |
-| [P8-S3 — 043 — Nub calibration and response](../../sprints/043-phase8-nub-calibration.md) | raw range, radial deadzone, magnitude clamp, idle threshold | written |
-| [P8-S4 — 044 — Decisions, compatibility and the Phase 8 close](../../sprints/044-phase8-decisions-and-close.md) | extra bits, keyboard/mouse, DS3, phase close | written |
+| [P8-S2 — 042 — Sampling, edges and system states](../../sprints/042-phase8-sampling-and-edges.md) | poll arms, latch, HOLD/interception, counters | **done** — 6/6; peek+latch+freeze+100 Hz+stats |
+| [P8-S3 — 043 — Nub calibration and response](../../sprints/043-phase8-nub-calibration.md) | raw range, radial deadzone, magnitude clamp, idle threshold | **done** — 5/5 resolved, T4 dropped; centre (133,112), dz 0.18, idle 0x38 |
+| [P8-S4 — 044 — Decisions, compatibility and the Phase 8 close](../../sprints/044-phase8-decisions-and-close.md) | extra bits, keyboard/mouse, DS3, phase close | **done** — 5/5; keyboard/mouse adopted off by default, device-proven |
 
 S1 must run first: it establishes the contract S2 and S3 measure. S4 is small if keyboard/mouse emulation is
 rejected and shrinks to a close sprint; if it is adopted, T2 carries the example run and the `IsKeyPressed`

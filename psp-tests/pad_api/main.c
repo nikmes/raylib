@@ -18,6 +18,9 @@
 #ifndef TAP
     #define TAP 0
 #endif
+#ifndef KEYS
+    #define KEYS 0
+#endif
 
 typedef struct {
     int button;
@@ -47,13 +50,34 @@ int main(void)
     if (!IsWindowReady()) return 1;
 
     int lastShown = 0;
+    int recentPress = 0;
+    double recentPressTime = -100.0;
 
     for (int frame = 0; frame < FRAMES; frame++)
     {
         double frameStart = GetTime();
         int pressed = GetGamepadButtonPressed();
         if ((pressed != 0) && (pressed != lastShown)) TraceLog(LOG_INFO, "PAD pressed=%d frame=%d", pressed, frame);
+        if (pressed != 0) { recentPress = pressed; recentPressTime = GetTime(); }
         lastShown = pressed;
+
+#if KEYS
+        {
+            static const int keyList[] = { KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN };
+            int queueKey = GetKeyPressed();
+
+            if (queueKey != 0) TraceLog(LOG_INFO, "KEY queue=%d frame=%d", queueKey, frame);
+            for (int i = 0; i < 4; i++)
+            {
+                if (IsKeyPressed(keyList[i])) TraceLog(LOG_INFO, "KEY pressed=%d frame=%d", keyList[i], frame);
+            }
+
+            if ((frame % 60) == 0)
+                TraceLog(LOG_INFO, "KEY state left=%d right=%d up=%d down=%d mouse=%d,%d",
+                    IsKeyDown(KEY_LEFT), IsKeyDown(KEY_RIGHT), IsKeyDown(KEY_UP), IsKeyDown(KEY_DOWN),
+                    GetMouseX(), GetMouseY());
+        }
+#endif
 
         if ((frame % 60) == 0)
         {
@@ -103,8 +127,30 @@ int main(void)
                 (down? RAYWHITE : LIGHTGRAY));
         }
 
+        if ((GetTime() - recentPressTime) < 2.0)
+            DrawText(TextFormat("RECENT PRESS: %d", recentPress), 10, 238, 10, ORANGE);
+        else
+            DrawText("RECENT PRESS: none", 10, 238, 10, DARKGRAY);
+
 #if TAP
         DrawText("TAP: tap CROSS once between frames", 10, 250, 10, ORANGE);
+#endif
+
+#if KEYS
+        {
+            static const int keyList[] = { KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN };
+            static const char *keyName[] = { "LEFT", "RIGHT", "UP", "DOWN" };
+
+            for (int i = 0; i < 4; i++)
+            {
+                int x = 10 + i*60;
+                bool down = IsKeyDown(keyList[i]);
+                DrawRectangle(x, 222, 52, 12, (down? GREEN : DARKGRAY));
+                DrawText(keyName[i], x, 210, 10, (down? RAYWHITE : LIGHTGRAY));
+            }
+
+            DrawCircle(GetMouseX(), GetMouseY(), 4, ORANGE);
+        }
 #endif
 
         EndDrawing();
