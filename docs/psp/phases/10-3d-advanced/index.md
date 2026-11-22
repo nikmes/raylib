@@ -59,7 +59,8 @@ x 193..287, y 92..189.
 not even link. The phase needs a design decision before implementation: implement the GL FBO entry points over
 pspgu's VRAM (sampling a render target, explicit read-after-write), or add a smaller PSP-specific target API. A
 256×256 8888 target is 256 KiB and a 512×256 target 512 KiB; both fit the ~913 KiB tail but compete with textures
-and the 3D depth buffer.
+and the 3D depth buffer. Working implementations do exist and all take the same route, not GL FBOs — see
+[Render-to-texture: what the references actually do](#render-to-texture-what-the-references-actually-do).
 
 **Scope gaps:**
 
@@ -181,8 +182,43 @@ measured 58.3 µs/sprite.
 | 2 | **Double-buffered dynamic vertex arrays** | required by the `GU_SEND` submission model: the list borrows pointers, so a buffer may not be rewritten while the GE reads it | `openTRI/triParticle.c:162-169,760`; `triGraphics.c:396-409` |
 | 3 | **GE skinning for a hero character, cached CPU skinning for crowds** | 7.2× on one hot instance, loses on 112 draws (4.9 vs 2.0 ms) — animation LOD, not one policy | blueprint §16.6, consistent with our own findings |
 | 4 | **VRAM-resident, swizzled atlases for 3D materials** | second-order for CPU cost, first-order once GE texture fetch becomes visible | `openTRI/triTexman.c:406-440`, `triImage.c:256-317` |
-| 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c` |
+| 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c:133-200`; `PGE/pgeGfx.c:451-490`; SDK `sample/graphics/scene` |
 | 6 | **`GU_SEND` dual lists** | ranked last even here: costs a frame of latency and 2× list memory, and buys nothing while the CPU is the constraint | `openTRI/triGraphics.c:396-409` |
+
+### Render-to-texture: what the references actually do
+
+Every working implementation in the reference set uses the same primitive: **point the GU draw buffer at a VRAM
+block with `sceGuDrawBufferList`, render, restore the screen buffer, then bind the block as a texture**. None uses
+a GL-style framebuffer object; on this hardware the draw buffer *is* the render target. The libgu manual gives the
+contract: `fbp` must be 8192-byte aligned and `fbw` a multiple of 64 between 64 and 1024; changing the draw buffer
+does not change the display buffer; and memory the GE has written may only be re-read as a texture after
+`sceGuTexFlush()` **and** `sceGuTexSync()`
+`[source scan: psp_sdk_660/usr/local/psp/devkit/document/html/graphics/libgu-Reference-English.htm:8509-8605, :10635-10749]`.
+
+| Source | Mechanism | Worth taking | Not worth taking |
+|---|---|---|---|
+| libgu 6.60 manual | `sceGuDrawBufferList(fpf, fbp, fbw)` for mid-list buffer changes; `sceGuCopyImage` note: `TexFlush` then `TexSync` before sampling | the alignment/width rules and the cache contract | — |
+| SDK `sample/graphics/scene` | renders a camera effect into a 256×256 5551 aux buffer placed after three 272 KiB frame buffers (`main.cpp:47-50`), redirects (`SceneGraph/Context.cpp:211-215`), restores screen and viewport (`:228-231`), binds with `TexMode`/`TexImage`/`TexFlush`/`TexSync` (`:232-236`), then composites a full-screen quad | the complete manual-conformant order: redirect → draw → restore → flush → sync → sample; 128 KiB target | fixed aux size; no dependency tracking — it flushes and syncs unconditionally on every camera switch |
+| PGE | `pgeGfxRenderToTexture` (`pgeGfx.c:451-469`) requires a VRAM texture, calls `sceGuSync(0, 2)` and `sceKernelDcacheWritebackAll()`, redirects, sets offset/viewport/scissor; `pgeGfxRenderToScreen` (`:471-490`) restores; sample `samples/graphics/rendertotexture/rendertotexture.c:30-55` uses a 128×128 8888 target | save/restore as a pair; validate that the target is VRAM | a whole-D-cache writeback and a GE sync per switch, and `pgeTextureActivate` (`pgeTexture.c:670-696`) never issues `TexFlush`/`TexSync` — it works because the sample's target is power-of-two and the sync is global, not because the contract is met |
+| openTRI | `triRendertotexture` (`triGraphics.c:604-632`) validates PSM and VRAM range then redirects; `triRendertoimage` (`:638-668`) and `triRendertoscreen` (`:671-686`) restore. 3D: `tri3dRenderbufferCreate` (`tri3d.c:133-159`), `SetRendertarget` (`:161-174`), `SetTexture` (`:176-190`) with `TexScale(logical/padded)`; call sites `sceGuTexSync()` (`tri3d.c:327` etc.) | `TexScale` for a padded target; the PSM whitelist; an explicit restore path | no sync at all before the redirect; `TexSync` without `TexFlush`; allocates `twidth*height` (`:158`) but declares `twidth*theight` (`:185`) — non-power-of-two heights over-read (already listed under hazards) |
+| daedalus | no render-to-texture path found: `sceGuDrawBuffer` appears only at context setup and resolution changes (`GraphicsContextPSP.cpp:787,862,912`); `sceGuCopyImage` (`:317-319`) is an interlaced display blit; its framebuffer effects are HLE (`Ucode_FB.h:24,65,96`) | confirmation that even a full emulator does not reach for GL FBOs here | does not supply an example; a search of `Source/SysPSP` for `sceGuDrawBufferList` and "render target" returned no RTT use |
+
+**What this decides for pspgu.** The backend needs a draw-target redirect, not FBO semantics implemented inside
+the GE. Whether the public API is `glGenFramebuffers`-style or a smaller PSP-specific one, it must emit
+`sceGuDrawBufferList` plus offset/viewport/scissor and restore the screen state afterwards. Three requirements
+follow from the sources:
+
+- **Synchronise read-after-write explicitly, and only then.** The manual's contract is `TexFlush` + `TexSync`
+  after the GE rendered into the target. PGE's whole-cache writeback and per-switch GE sync would violate phase
+  5's "no full GE wait" rule; openTRI's unconditional `TexSync` at every binding is closer but still too coarse
+  `[source scan: PGE pgeGfx.c:451-490; openTRI tri3d.c:327,507,530,554,584]`.
+- **Allocate and declare the same padded extent.** Pad width *and* height to the declared texture size and sample
+  with `TexScale = logical / padded`, as `tri3dRenderbufferSetTexture` does. A render target is sampled through
+  the same 512-pixel band path measured in sprint 020, so the window rule applies; sprint 023's strip table is a
+  measured null, so do not expect texture-cache tricks to rescue a poorly sized target.
+- **Budget the target as VRAM, not as a free block.** A 256×256 8888 target is 256 KiB; the SDK's 256×256 5551
+  aux buffer is 128 KiB; PGE's sample target is 64 KiB. Targets compete with the texture tail and, for 3D, the
+  depth buffer. Read the boot allocation counters; the texture allocator is a bump allocator with no free list.
 
 ### Do not copy — 3D-specific hazards found
 
