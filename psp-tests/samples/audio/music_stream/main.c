@@ -38,7 +38,7 @@ int main(void)
     float volume = 0.8f;
     SetMusicVolume(music, volume);
 
-    SetTargetFPS(30);
+    SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
     for (int frame = 0; frame < 600; frame++)

@@ -38,7 +38,7 @@ void sample_shapes_outlines_thickness(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frames = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frames++)    // Detect window close button or ESC key
+    for (int frames = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frames++)    // Detect window close button or ESC key
     {
         // Update
         //----------------------------------------------------------------------------------

@@ -49,7 +49,7 @@ void sample_core_3d_camera_free(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         pspFrame = frame;
         // Update

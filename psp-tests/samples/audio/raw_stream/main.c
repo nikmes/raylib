@@ -43,7 +43,7 @@ int main(void)
     int sineIndex = 0;
     double sineStartTime = 0.0;
 
-    SetTargetFPS(30);
+    SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
     for (int frame = 0; frame < 600; frame++)

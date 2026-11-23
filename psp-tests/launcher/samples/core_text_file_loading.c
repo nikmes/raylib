@@ -108,7 +108,7 @@ void sample_core_text_file_loading(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         pspFrame = frame;
         // Update

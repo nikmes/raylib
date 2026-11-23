@@ -40,7 +40,7 @@ void sample_shapes_lines_bezier(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         pspFrame = frame;
         // Update

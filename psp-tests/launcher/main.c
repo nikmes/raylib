@@ -25,8 +25,10 @@ int main(void)
     int top = 0;
     int autoDone = 0;
     int frame = 0;
+    int vsyncOn = 1;
 
     SetTargetFPS(60);
+    PSP_SetVsync(1);
 
     TraceLog(LOG_INFO, "LAUNCHER READY samples=%i", SAMPLE_COUNT);
 
@@ -57,6 +59,12 @@ int main(void)
 
         if (count == 0) selected = 0;
         else if (selected >= count) selected = count - 1;
+
+        if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT))
+        {
+            vsyncOn = !vsyncOn;
+            PSP_SetVsync(vsyncOn);
+        }
 
         if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_TRIGGER_1))
         {
@@ -115,7 +123,7 @@ int main(void)
 
             if (count == 0) DrawText("no samples in this category", 18, 44, 16, GRAY);
 
-            DrawText("X launch    START returns to the menu    L/R category", 10, 238, 12, LIGHTGRAY);
+            DrawText(TextFormat("X launch   START menu   L/R category   SELECT vsync: %s", vsyncOn? "on" : "off"), 10, 238, 11, LIGHTGRAY);
             DrawText(TextFormat("raylib PSP samples   %i ported", SAMPLE_COUNT), 10, 254, 10, DARKGRAY);
 
         EndDrawing();

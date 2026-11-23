@@ -37,10 +37,10 @@ void sample_audio_music_stream(void)
     float volume = 0.8f;
     SetMusicVolume(music, volume);
 
-    SetTargetFPS(30);
+    SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         UpdateMusicStream(music);
 

@@ -71,7 +71,7 @@ void sample_audio_amp_envelope(void)
     SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         if ((frame == 60) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) env.state = ATTACK;
 

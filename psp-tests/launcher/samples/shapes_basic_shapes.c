@@ -22,7 +22,7 @@ void sample_shapes_basic_shapes(void)
 
     SetTargetFPS(60);
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         rotation += 0.2f;
 

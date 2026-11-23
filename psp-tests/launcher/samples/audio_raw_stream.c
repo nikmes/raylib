@@ -42,10 +42,10 @@ void sample_audio_raw_stream(void)
     int sineIndex = 0;
     double sineStartTime = 0.0;
 
-    SetTargetFPS(30);
+    SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         if (IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_UP))
         {

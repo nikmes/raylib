@@ -46,7 +46,7 @@ void sample_shapes_math_angle_rotation(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frames = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frames++)
+    for (int frames = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frames++)
     {
         // Update
         //----------------------------------------------------------------------------------

@@ -58,7 +58,7 @@ void sample_textures_bunnymark(void)
 
     SetTargetFPS(60);
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         for (int i = 0; i < count; i++)
         {

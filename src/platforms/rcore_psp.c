@@ -73,6 +73,7 @@ typedef struct {
 extern CoreData CORE;                   // Global CORE state context
 
 static PlatformData platform = { 0 };   // Platform specific data
+static int pspVsync = 1;                // Display vblank sync, on by default (PSP_SetVsync)
 
 //----------------------------------------------------------------------------------
 // Module Internal Functions Declaration
@@ -332,6 +333,19 @@ void DisableCursor(void)
 void SwapScreenBuffer(void)
 {
     eglSwapBuffers(platform.device, platform.surface);
+}
+
+// Enable/disable display vblank sync at runtime (PSP only).
+// pspgu implements this through eglSwapInterval; on means wait for vblank.
+void PSP_SetVsync(int enable)
+{
+    pspVsync = (enable != 0);
+
+    if (platform.device != EGL_NO_DISPLAY)
+    {
+        eglSwapInterval(platform.device, pspVsync);
+        TRACELOG(LOG_INFO, "PLATFORM: VSYNC %s", pspVsync? "on" : "off");
+    }
 }
 
 //----------------------------------------------------------------------------------
@@ -937,6 +951,7 @@ void SetGamepadVibration(int gamepad, float leftMotor, float rightMotor, float d
 int exit_callback(int arg1, int arg2, void *common)
 {
     CORE.Window.shouldClose = true;
+    sceKernelExitGame();
     return 0;
 }
 
@@ -1169,10 +1184,11 @@ int InitPlatform(void)
         SetupViewport(CORE.Window.display.width, CORE.Window.display.height);
 
 #if defined(PSP_DISABLE_VSYNC)
-        // Measurement switch (sprint 004): 0 asks pspGL not to pace the swap to the
-        // display. Off by default so shipped behaviour is unchanged.
-        eglSwapInterval(platform.device, 0);
+        // Measurement switch (sprint 004): start with the swap unpaced.
+        pspVsync = 0;
 #endif
+        // Apply the runtime setting (on by default) now that the context is current.
+        eglSwapInterval(platform.device, pspVsync);
 
         TRACELOG(LOG_INFO, "PLATFORM: Device initialized successfully");
         TRACELOG(LOG_INFO, "    > Display size: %i x %i", CORE.Window.display.width, CORE.Window.display.height);

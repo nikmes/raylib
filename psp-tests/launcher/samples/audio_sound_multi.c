@@ -36,7 +36,7 @@ void sample_audio_sound_multi(void)
     SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         // One alias every 60 frames exercises all ten; CROSS plays the next slot.
         if (((frame%60) == 30) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))

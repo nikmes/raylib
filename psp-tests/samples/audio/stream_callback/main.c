@@ -59,7 +59,7 @@ int main(void)
     WaveType waveType = SINE;
     SetAudioStreamCallback(stream, waveCallbacks[waveType]);
 
-    SetTargetFPS(30);
+    SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
     for (int frame = 0; frame < 600; frame++)

@@ -30,7 +30,7 @@ void sample_audio_sound_loading(void)
     SetTargetFPS(60);
     //--------------------------------------------------------------------------------------
 
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         // CROSS plays the WAV, SQUARE the OGG. Frame 30/330 guarantee both are
         // exercised in a headless run.

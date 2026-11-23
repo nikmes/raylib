@@ -84,7 +84,7 @@ void sample_core_input_actions(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT); frame++)
+    for (int frame = 0; !IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT) && !WindowShouldClose(); frame++)
     {
         pspFrame = frame;
         // Update

@@ -1091,6 +1091,9 @@ RLAPI Matrix GetCameraMatrix2D(Camera2D camera);                        // Get c
 
 // Timing-related functions
 RLAPI void SetTargetFPS(int fps);                       // Set target FPS (maximum)
+#if defined(PLATFORM_PSP)
+RLAPI void PSP_SetVsync(int enable);                    // Enable/disable PSP display vblank sync (PSP only)
+#endif
 RLAPI float GetFrameTime(void);                         // Get time in seconds for last frame drawn (delta time)
 RLAPI double GetTime(void);                             // Get elapsed time in seconds since InitWindow()
 RLAPI int GetFPS(void);                                 // Get current FPS
