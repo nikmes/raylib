@@ -104,7 +104,7 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
 - [x] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency — 065:
-      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only (official order tested and rejected in P10-S9 T1)
+      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only (the documented order, local notes §2, tested and rejected in P10-S9 T1)
 - [x] Static bounds and GE-side object culling for scenes with many objects — 066: 917/1,000 culled,
       0 pixel change, 233.6 → 50 ms
 - [x] Tessellate large triangles on the CPU where the GE would drop them at the window edge — 066:
@@ -269,7 +269,7 @@ measured 58.3 µs/sprite.
 |---|---|---|---|
 | 1 | **CPU-side matrix maths in VFPU registers** (`vmmul.q`, `vqmul.q`, `vmov.q`) | one 4×4 multiply for N vertices instead of N; keep the loop in registers from load to store | `openTRI/triVMath_vfpu.c` (but see the erratum below) |
 | 2 | **Double-buffered dynamic vertex arrays** | required by the `GU_SEND` submission model: the list borrows pointers, so a buffer may not be rewritten while the GE reads it | `openTRI/triParticle.c:162-169,760`; `triGraphics.c:396-409` |
-| 3 | **GE skinning for a hero character, cached CPU skinning for crowds** | 7.2× on one hot instance, loses on 112 draws (4.9 vs 2.0 ms) — animation LOD, not one policy | blueprint §16.6, consistent with our own findings |
+| 3 | **GE skinning for a hero character, cached CPU skinning for crowds** | 7.2× on one hot instance, loses on 112 draws (4.9 vs 2.0 ms) — animation LOD, not one policy | local notes §3, consistent with our own findings |
 | 4 | **VRAM-resident, swizzled atlases for 3D materials** | second-order for CPU cost, first-order once GE texture fetch becomes visible | `openTRI/triTexman.c:406-440`, `triImage.c:256-317` |
 | 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c:133-200`; `PGE/pgeGfx.c:451-490`; local notes §2 (reference sample) |
 | 6 | **`GU_SEND` dual lists** | ranked last even here: costs a frame of latency and 2× list memory, and buys nothing while the CPU is the constraint | `openTRI/triGraphics.c:396-409` |
@@ -296,7 +296,7 @@ the GE. Whether the public API is `glGenFramebuffers`-style or a smaller PSP-spe
 `sceGuDrawBufferList` plus offset/viewport/scissor and restore the screen state afterwards. Three requirements
 follow from the sources:
 
-- **Synchronise read-after-write explicitly, and only then.** The manual's contract is `TexFlush` + `TexSync`
+- **Synchronise read-after-write explicitly, and only then.** The contract in local notes §2 is `TexFlush` + `TexSync`
   after the GE rendered into the target. PGE's whole-cache writeback and per-switch GE sync would violate phase
   5's "no full GE wait" rule; openTRI's unconditional `TexSync` at every binding is closer but still too coarse
   `[source scan: PGE pgeGfx.c:451-490; openTRI tri3d.c:327,507,530,554,584]`.
