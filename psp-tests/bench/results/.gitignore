@@ -1,0 +1,3 @@
+# Benchmark runs are machine- and session-specific; keep them local.
+# Commit a result only when it is the evidence for a sprint.
+*.json

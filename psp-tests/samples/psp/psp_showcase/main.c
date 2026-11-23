@@ -21,6 +21,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "raymath.h"
+#include "psp_counters.h"
 
 PSP_MODULE_INFO("psp_showcase", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
@@ -159,6 +160,7 @@ int main(void)
     }
 
     double avg = (frames > 0)? (sum/frames)*1000.0 : 0.0;
+    double swapAvg = (PspCountersSwapCalls() > 0)? (PspCountersSwapSeconds()/PspCountersSwapCalls())*1000.0 : 0.0;
 
     {
         extern unsigned int rlpspMergeRuns, rlpspMergeInstances, rlpspMergeReplays;
@@ -169,6 +171,8 @@ int main(void)
                  rlpspClassClean, rlpspClassDirty, rlpspClassCull);
     }
     TraceLog(LOG_INFO, "STAT n=%d avg=%.3f fps=%.1f", frames, avg, (avg > 0.0)? 1000.0/avg : 0.0);
+    TraceLog(LOG_INFO, "SPLIT n=%d work=%.3f swap=%.3f", frames, avg - swapAvg, swapAvg);
+    PspCountersDump("SCENE", frames);
     TraceLog(LOG_INFO, "DONE frames %d cubes %d", frames, GRID*GRID);
     sceKernelSleepThread();
 
