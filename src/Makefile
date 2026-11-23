@@ -196,10 +196,6 @@ ifeq ($(TARGET_PLATFORM),$(filter $(TARGET_PLATFORM),PLATFORM_WEB PLATFORM_WEB_R
     endif
 endif
 
-ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
-    OBJS += platforms/rlpsp_math.o
-endif
-
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
     # Android architecture
     # Starting at 2019 using arm64 is mandatory for published apps,
@@ -885,6 +881,10 @@ ifeq ($(RAYLIB_MODULE_AUDIO),TRUE)
 endif
 ifeq ($(RAYLIB_MODULE_RAYGUI),TRUE)
     OBJS += raygui.o
+endif
+
+ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
+    OBJS += platforms/rlpsp_math.o
 endif
 
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
