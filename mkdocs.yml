@@ -167,6 +167,11 @@ nav:
               - "P13-S12 — Audio: Sound and Music batch": psp/sprints/063-phase13-audio-sound-and-music.md
               - "P13-S13 — Audio: AudioStream batch": psp/sprints/064-phase13-audio-stream.md
               - P13-S19 — Corpus ledger: psp/sprints/075-phase13-corpus-ledger.md
+          - 14 — PSP Raylib Games:
+              - psp/phases/14-raylib-games/index.md
+              - P14-S1 — Backend and first frame: psp/sprints/082-phase14-backend-and-first-frame.md
+              - P14-S2 — Assets, VRAM and audio: psp/sprints/083-phase14-assets-vram-and-audio.md
+              - P14-S3 — Gameplay validation and close: psp/sprints/084-phase14-gameplay-validation-and-close.md
       - Templates:
           - psp/templates/sprint.md
           - psp/templates/feature.md

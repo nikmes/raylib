@@ -451,6 +451,18 @@ future corpus waves S14–S18 remain. Full
 corpus map, tier lists, gates, the per-sample [sample ledger](phases/13-samples-porting/ledger.md) and the
 porting recipe: [Phase 13](phases/13-samples-porting/index.md).
 
+### Phase 14 — PSP Raylib Games — **written**
+Complete third-party games as integration tests with gameplay, starting with **CppGalaga v3**
+(`TheCoderRaman/CppGalaga`, local clone `/home/psp/ref/CppGalaga` @ `b1232a6`). The target is a 224×288 60 Hz
+2D game whose platform seam is six renderer calls, six audio functions and two input functions; 23 of its 24
+non-backend translation units compile with `psp-gcc 15.2.0 -std=gnu++14` (the 24th, `src/infra/Game.cpp`, is
+stale and the port deletes it) `[measured: 2026-11-23]`. Three sprints: 082
+backend and first frame, 083 assets/VRAM/audio, 084 gameplay validation and close. The padded 8888 texture set
+is **908,544 B** against **913,344 B free**, so 16-bit formats or a repack is mandatory `[derived: PNG
+dimensions + pspgu padding]`. Port code, assets and EBOOT stay outside this repository: the upstream has no
+licence and the art/audio are Namco material. Full audit, capability map and exit criteria:
+[Phase 14](phases/14-raylib-games/index.md).
+
 ---
 
 ## 6. Measurement protocol
@@ -502,6 +514,7 @@ Lives in `/home/psp/ref`. Nothing from here is pasted into this zlib tree.
 | `openTRI` (own) | GPL-2.0 | best-fit VRAM, residency, vertex rings — ideas |
 | `PSPRuntime` (own, private) | none in repo; `vram.c` is Raphael 2007 "free to use with credit" | working GU renderer with raylib's API: batching structure, viewport idiom, best-fit allocator, bunnymark baseline |
 | `daedalus` | GPL-2.0-or-later | PSP performance playbook (`AI_MEMORY_MAP.md` §12), VFPU math/copy, heap and ROM-cache patterns — ideas only |
+| `CppGalaga` | **none — no LICENSE; Namco art and audio** | Phase 14 port target: a complete 2D game, 224×288, with an SDL2/SFML/olcPGE backend split. Local only; never redistribute the source or assets |
 
 **Take, with attribution rules in mind:** 1024-sprites-per-call batching structure; the pixel-exact 2D
 viewport idiom; direct-swizzle upload; the 512-byte-block best-fit allocator; its bunnymark as a
@@ -538,6 +551,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 | 2026-11-22 | **Keep pspgu as the installed `libGL.a`; verify before gate builds** | Another session switched the installed library back to pspGL at 23:03, which broke `scene_2d` linking (`pspguResidencyStats` undefined). `tools/pspgu-build.sh --check` is the first step before any renderer gate |
 | 2026-11-23 | **P10-S9: adopt FBO restore candidate (b); run the RTT gate at 8 frames** | `saved.draw = fbOffset[frames % 3]` fixes the 3-frame checker flicker. The earlier 624-800 px "RTT regression" was a 2-frame display-lag measurement: at 8 frames direct vs sampled is **0 diff**, `fb0=fb1=fb2`, `FLICK 0`; sample 16.683/16.684 ms median, 11.98-12.13 ms work. pspgu `b31`; `TexSync`→`TexFlush` order tested and rejected |
 | 2026-11-21 | Track the upstream `core`/`shapes`/`textures` corpus as **Phase 13**, gated by capability | Static audit of 127 samples: 13 drop-in, 61 input-gated, 49 blocked, 4 ported. Each wave names the phase whose capability it consumes; wave 0 needs none. Findings, gates and sprints 024–034 in [Phase 13](phases/13-samples-porting/index.md) |
+| 2026-11-23 | **Open Phase 14 (PSP Raylib Games) with CppGalaga v3 as the first target; port code stays outside this repo** | The game core is engine-agnostic: 23 of its 24 non-backend `.cpp` files compile under `psp-gcc 15.2.0 -std=gnu++14`; the 24th, `src/infra/Game.cpp`, is an obsolete pre-split entry point and is deleted by the port. The platform seam is six Renderer calls, six audio functions and two input functions; only `LEFT`/`RIGHT`/`FIRE` are read. Assets: 27 PNG, 23 mono 44.1 kHz WAV (7.0 MB); padded 8888 textures are **908,544 B** against **913,344 B free**, so 16-bit or a repack is mandatory. The upstream has no licence and the art/audio are Namco material, so the port and assets stay in `/home/psp/galaga-psp`. Sprints 082–084 in [Phase 14](phases/14-raylib-games/index.md) |
 
 ---
 
