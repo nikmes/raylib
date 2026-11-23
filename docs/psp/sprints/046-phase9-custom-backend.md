@@ -28,7 +28,7 @@ the exact range back, and block on `sceAudioOutputPannedBlocking()` from miniaud
 6. `src/external/miniaudio.h:20742-20910` — the playback thread: `onDeviceWrite()` receives a stack buffer.
 7. `pspdev/psp/sdk/include/pspaudio.h:76-180` — `PSP_AUDIO_SAMPLE_ALIGN`, `sceAudioChReserve`,
    `sceAudioOutputPannedBlocking`, `sceAudioGetChannelRestLength`; `psputils.h:73` — cache writeback.
-8. Sony's `at3mix` and `sas-streaming` sound threads (`psp_sdk_660/.../sample/sound/`) for call order only.
+8. The reference `at3mix` and `sas-streaming` sound threads (local notes §7) for call order only.
 
 **First action.** Extend `psp-tests/audio_smoke` to generate a deterministic 1 kHz, 1-second, 16-bit stereo
 sine, `LoadSoundFromWave()`, `PlaySound()`, run 600 frames, log `DONE`, sleep. The S1 silent binary is the

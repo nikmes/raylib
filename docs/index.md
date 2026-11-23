@@ -77,7 +77,7 @@ Neither is a premise for the rendering phases.
 ## Where to read
 
 Everything is on this disk: our fork, two raylib trees, six GU/pspGL references, the pspdev headers and
-samples, and the Sony SDK (reference only, never copied). When planning a sprint, start from the
+samples, and read-only reference material (never copied; provenance in the local notes). When planning a sprint, start from the
 [local source index](psp/memory-map.md#11-local-source-index) — it maps each path to the question it answers,
 with grep recipes and the list of ME/VFPU repositories worth cloning on demand.
 

@@ -17,7 +17,7 @@ returns (`tools/pspgu/gl_texture.c:231`). The texture id is valid and the GE sam
 019 closed the font-shaped half by rejecting generated atlases above 512; the general case — sprites, tile
 sheets, backgrounds — is still silent. The SDK envelope is now confirmed: `sceGuTexImage` requires width and
 height to be powers of two **≤512**, and `tbw` (the row stride) may be **up to 1024**, block-aligned
-(`psp_sdk_660/usr/local/psp/devkit/src/gu/debug.c:830-841`). A 1024-wide sheet can therefore be sampled as two
+(local notes §8: the GU debug source). A 1024-wide sheet can therefore be sampled as two
 512-wide windows with `tbw=1024`, if the probe in T1 proves the swizzled block offset works.
 
 **Read before acting**, in this order:
@@ -121,7 +121,7 @@ text path, cache-strip widths (023), and shape/sprite fast paths (021).
 - [x] Sprint 019 closed at `7e26613b`; pspgu `b23` and the text guard are in the tree
 - [x] `/home/psp/evidence/sprint018/` and `sprint019/` baselines are present
 - [x] `par_pspgl.raw` (`b69830b8…`) is present in `/tmp/s3`
-- [x] `psp_sdk_660` debug source confirms width/height ≤512 and `tbw` ≤1024
+- [x] the GU debug source (local notes §8) confirms width/height ≤512 and `tbw` ≤1024
 - [x] Device loop available: `usbhostfs_pc` at `/tmp/s3`, `pspsh`, `reset` between runs
 - [x] pspGL restorable (`2ab7378e`)
 

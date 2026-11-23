@@ -35,9 +35,8 @@ because the blueprint's measured claim is that baked vertex colour is the cheape
    reference and uses the float vertex path (061 gates packing to pspgu), so lit parity is comparable.
 6. 061's `UploadMesh` packer and pspgu's direct path (`fmt=0x163`, normals present): lighting consumes the same
    buffer; do not bypass it to test lighting.
-7. libgu 6.60 manual: `sceGuLight` (§5770), `sceGuLightColor` (§5906), `sceGuLightSpot` (§6007),
-   `sceGuLightAtt` (§6093), `sceGuLightMode` (§6169), `sceGuAmbient` (§6254), `sceGuModelColor` (§6541),
-   `sceGuFog` (§8844) `[source scan: psp_sdk_660/.../libgu-Reference-English.htm]`.
+7. The GU reference (local notes §1): `sceGuLight`, `sceGuLightColor`, `sceGuLightSpot`, `sceGuLightAtt`,
+   `sceGuLightMode`, `sceGuAmbient`, `sceGuModelColor`, `sceGuFog`.
 8. `../memory-map.md` §4 and §6 — VRAM and the measurement protocol; §9 — the traps.
 
 **First action.** Add `LIGHT=ge|bake|none`, `FOG=linear|none` and `TEXENV=modulate|replace|decal|add` arms to
@@ -47,7 +46,7 @@ already implements these GL calls; that capture is the comparison target for eve
 **Hard rules.**
 
 - **Bump the build tag to `b27` in T2.** A `b26` boot line means the lighting code is not in the archive.
-- **Light positions are world coordinates.** libgu takes the vector as given; GL would transform a position by
+- **Light positions are world coordinates.** the GU API takes the vector as given; GL would transform a position by
   the current modelview at call time. pspgu deliberately takes it as world space, so set lights after
   `BeginMode3D` with world coordinates and document the difference.
 - **Under lighting, `glColor*` maps to the model colour, not `sceGuColor`.** GE lighting ignores the vertex colour;
@@ -61,7 +60,7 @@ already implements these GL calls; that capture is the comparison target for eve
 - **Normals are unit-length.** The GE has no `GL_NORMALIZE`; `glEnable(GL_NORMALIZE)` is documented as unsupported
   rather than faked. GenMesh data is unit-length; a loaded model is not assumed to be.
 - **pspGL is a reference, not gospel.** Its fog mapping sends `1/(far-near)` and `far` to different registers than
-  libgu's `sceGuFog(near, far, colour)` implies. Calibrate against captures; do not copy the constants.
+  `sceGuFog(near, far, colour)` implies. Calibrate against captures; do not copy the constants.
 - **Lighting is per-vertex.** Specular is per-vertex and single-sided; the sprint records that limit and does not
   attempt a per-pixel approximation.
 - **No full GE wait in a measured scene.** The diagnostic arms may sync, as in 061; they are excluded from timing.

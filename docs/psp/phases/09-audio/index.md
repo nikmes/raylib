@@ -74,24 +74,23 @@ audio module.
 
 ## Audio-service facts
 
-Sources: PSPSDK `pspaudio.h` and `pspaudiolib.h`, Sony's Sound / Simple Audio / SAS overviews in the 6.6 SDK
-tree (reading aid only, [§11.4](../../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)), and the local
-psp-developer skill (`references/audio.md`, `references/media-engine.md`). Numbers measured elsewhere carry their
-hardware.
+Sources: the toolchain headers `pspaudio.h` and `pspaudiolib.h`, the local reference notes
+(`LOCAL-REFERENCES.md`, untracked, not in the repository) §7, and the local psp-developer skill
+(`references/audio.md`, `references/media-engine.md`). Numbers measured elsewhere carry their hardware.
 
 | fact | value | tag |
 |---|---|---|
 | Output channels | 8 regular channels, reserved by number (0–7) or `PSP_AUDIO_NEXT_CHANNEL` | `[public: pspaudio.h]` |
 | Regular-channel block | 64–65,472 samples, a multiple of **64 samples** (`PSP_AUDIO_SAMPLE_ALIGN`); pspaudiolib uses **1,024** | `[public: pspaudio.h]` |
-| Output2/SRC block | 17–4,111 samples; Sony `at3mix` uses **512**, `sas-streaming` **736** | `[public: pspaudio.h]` + `[external: Sony samples]` |
+| Output2/SRC block | 17–4,111 samples; the reference `at3mix` uses **512**, `sas-streaming` **736** | `[public: pspaudio.h]` + `[local notes §7]` |
 | Volume | 0–`0x8000` per channel, applied by the hardware digital volume | `[public: pspaudio.h]` |
 | Formats | `PSP_AUDIO_FORMAT_STEREO` = 0, `PSP_AUDIO_FORMAT_MONO` = 0x10 | `[public: pspaudio.h]` |
 | Regular-channel rate | 44.1 kHz by default; the kernel can switch the output between 44100 and 48000 only | `[public: uofw audio.c]` |
 | SRC channel | one channel, no channel number: `sceAudioSRCChReserve(frames, freq, 2)`; accepts 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000 Hz; other rates return `SCE_AUDIO_ERROR_INVALID_FREQUENCY` | `[public: pspaudio.h]` + `[public: uofw audio.c]` |
 | SRC handover | releasing and immediately re-reserving the SRC channel failed on hardware; one failed handover silenced the session | `[measured: PSP-3000, large 3D port, via skill]` |
-| Blocking semantics | `sceAudioOutput*Blocking()` returns when the block has been accepted; playback starts after the previous block. Double-buffer and do not overwrite on return | `[external: Sony Simple Audio Overview]` |
-| Buffer placement | PCM buffers for DMA must be in 32-bit-accessible main memory, 64-byte aligned, and **not** in eDRAM or scratchpad | `[external: same]` |
-| Thread starvation | if the output thread does not run, audio stops and an audible click is produced; interrupt/dispatch-disabled periods must stay at most a few hundred microseconds | `[external: same]` |
+| Blocking semantics | `sceAudioOutput*Blocking()` returns when the block has been accepted; playback starts after the previous block. Double-buffer and do not overwrite on return | `[local notes §7]` |
+| Buffer placement | PCM buffers for DMA must be in 32-bit-accessible main memory, 64-byte aligned, and **not** in eDRAM or scratchpad | `[local notes §7]` |
+| Thread starvation | if the output thread does not run, audio stops and an audible click is produced; interrupt/dispatch-disabled periods must stay at most a few hundred microseconds | `[local notes §7]` |
 | Double-buffer timing | with two 1,024-frame blocks in flight the blocking call is the audio clock, one block of latency (~23 ms at 44.1 kHz) | `[derived]` |
 | Music decode cost | Vorbis decode measured at ~5–6 ms of main-CPU time per frame even with clean I/O | `[measured: PSP-3000, large 3D port, via skill]` |
 | Mixer cost | a software mixer for an emulated sound chip measured 7.5 ms/frame on the game thread plus ~2 ms feeder time-stretch; moving it to the ME saved 5.8 ms/frame | `[measured: PSP-3000, large 3D port, via skill]` |
@@ -114,8 +113,8 @@ hardware.
 | `openTRI` `triAudioLib.c` | pspaudiolib clone; 4 channels, one thread each; caller supplies the thread priority | 1,024 | priority passed in (the header suggests 0x12) |
 | `openTRI` `triAt3.c` | kernel-mode ATRAC3; 64-byte-aligned codec and mix buffers; one thread fills, blocks on output, then decodes the next block | 1,024 | passes an uncached alias of the mix buffer to the output call |
 | `openTRI` `pmp_play.c` | separate decode and output threads, semaphores; audio blocking paces video | from file | both threads priority 0x8; channel 0 reserved stereo |
-| Sony `at3mix` | ATRAC3+ decode thread + **SAS on the ME** (`sceSasCoreWithMix`) + Simple Audio output thread | 512 | ME does the mixing; "reduces the load on the main CPU" |
-| Sony `sas-streaming` | `sceSasCore` then `sceAudioOutput2OutputBlocking` on one sound thread, double buffer | 736 | both buffers 64-byte aligned |
+| reference `at3mix` | ATRAC3+ decode thread + **SAS on the ME** (`sceSasCoreWithMix`) + Simple Audio output thread | 512 | ME does the mixing; "reduces the load on the main CPU" |
+| reference `sas-streaming` | `sceSasCore` then `sceAudioOutput2OutputBlocking` on one sound thread, double buffer | 736 | both buffers 64-byte aligned |
 | `PSPRuntime` | — | — | no audio code at all |
 
 The common shape is clear: **one dedicated output thread per channel, a double buffer, and a blocking call**.
@@ -128,7 +127,7 @@ The hardware facts and the rules for running code on the ME are in
 
 1. **The firmware already uses the ME for audio.** SAS (up to 32 voices, 44.1 kHz, VAG/ADPCM + raw PCM) runs
    mainly on the ME, and `__sceSasCoreWithMix` exists to let it mix and then hand the result to Simple Audio.
-   ATRAC3 is decoded by `sceAtrac`, not by SAS. `[external: Sony SAS Overview; public: pspsascore.h]`
+   ATRAC3 is decoded by `sceAtrac`, not by SAS. `[local notes §7; public: pspsascore.h]`
 2. **Taking the reset vector disables that.** A session that owns the ME loses `sceSas`, `sceAtrac` and
    `sceMpeg` until reboot. If the game needs an ATRAC or MPEG soundtrack, the ME is not available for a custom
    mixer. `[practice; measured: PSP-3000, large 3D port, via skill]`

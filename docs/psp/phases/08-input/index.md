@@ -43,7 +43,7 @@ game or the sample-local layer.
 - [x] Verify axis direction on device: nub up gives `LEFT_Y < 0`, right gives `LEFT_X > 0`, matching raylib's
       SDL/GLFW convention; nothing tests this today
 - [x] Decide and document what HOME, HOLD and the extra PSPSDK bits do (NOTE, SCREEN, VOLUP/VOLDOWN, WLAN_UP,
-      L1/R1, L2/R2, L3/R3). `PSP_CTRL_HOME` (bit 16) is the same bit Sony calls `SCE_CTRL_INTERCEPTED`; it is
+      L1/R1, L2/R2, L3/R3). `PSP_CTRL_HOME` (bit 16) is the same bit as `SCE_CTRL_INTERCEPTED`; it is
       not a button press
 - [x] Decide `sceCtrlSetIdleCancelThreshold`. Its default of −1 means nub movement does not reset the system
       idle timer
@@ -80,33 +80,32 @@ game or the sample-local layer.
 
 ## Controller-service facts
 
-Sources: the public PSPSDK header `pspctrl.h`, and Sony's Controller Overview / Reference in the 6.6 SDK tree
-(`/home/psp/psp_sdk_660/.../document/html/peripheral/`). The Sony tree is a **reading aid only**
-([§11.4](../../memory-map.md#the-sony-sdk-what-it-is-for-and-what-it-is-not)): a
-behaviour used in code must be reproduced from the public header or measured here, not copied from that tree.
+Sources: the toolchain header `pspctrl.h` and the measurements here. Vendor-document provenance is in the local
+reference notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §6; a behaviour used in code is
+reproduced from the public header or measured, never copied.
 
 | fact | value | tag |
 |---|---|---|
-| Sampling cycle 0 | sample every VBLANK period; the default at start-up | `[external: Sony Controller Reference]` |
-| Sampling cycle 5555–20000 | asynchronous sampling, period in **microseconds** (~180–50 Hz); values between 1 and 5554 are invalid | `[external: same]` |
+| Sampling cycle 0 | sample every VBLANK period; the default at start-up | `[local notes §6]` |
+| Sampling cycle 5555–20000 | asynchronous sampling, period in **microseconds** (~180–50 Hz); values between 1 and 5554 are invalid | `[local notes §6]` |
 | `sceCtrlReadBufferPositive()` | blocking if called again before the current sample exists; returns the number of samples read. With `count = 1` it consumes at most one queued sample per call | `[public: pspctrl.h]` |
-| Buffer depth | 64 samples; a return value **> 1** means frames were missed and history can be merged | `[external: Sony Controller Overview]` |
-| `sceCtrlPeekBufferPositive()` | reads the latest sample without consuming the buffer and does not block | `[external: same]` |
-| `sceCtrlReadLatch()` | cumulative make/press/break/release since the last read; clears on read; can bridge more than 64 cycles | `[external: Sony Controller Reference]` |
-| Buffer/latch ownership | global system resources; only one thread may read them, others must peek | `[external: Sony Controller Overview]` |
+| Buffer depth | 64 samples; a return value **> 1** means frames were missed and history can be merged | `[local notes §6]` |
+| `sceCtrlPeekBufferPositive()` | reads the latest sample without consuming the buffer and does not block | `[local notes §6]` |
+| `sceCtrlReadLatch()` | cumulative make/press/break/release since the last read; clears on read; can bridge more than 64 cycles | `[local notes §6]` |
+| Buffer/latch ownership | global system resources; only one thread may read them, others must peek | `[local notes §6]` |
 | Default sampling mode | digital buttons only; analog values are valid only in `PSP_CTRL_MODE_ANALOG` (= 1) | `[public: pspctrl.h]` |
-| Analog range | `Lx`/`Ly` are 0–255, centre 0x80, horizontal left→right and vertical **top→bottom** | `[external: Sony Controller Overview]` |
-| Centre tolerance | error up to about ±0x40, so neutral cannot be assumed tighter than 0x40–0xC0 | `[external: same]` |
+| Analog range | `Lx`/`Ly` are 0–255, centre 0x80, horizontal left→right and vertical **top→bottom** | `[local notes §6]` |
+| Centre tolerance | error up to about ±0x40, so neutral cannot be assumed tighter than 0x40–0xC0 | `[local notes §6]` |
 | Nub on this unit | centre raw **(133, 112)**; half-ranges right 122 / left 133 / down 143 / up 112; radial deadzone **0.18**; two resting states ~19 counts apart | `[measured: PSP-1000, sprint 043]` |
-| Full scale | each axis reaches 0x00/0xFF over its own travel, but **not guaranteed simultaneously** — the stick's reachable area is not a square | `[external: same]` |
-| Idle timer threshold | `sceCtrlSetIdleCancelThreshold(idlereset, idleback)`: −1 = analog never cancels idle, 0 = idle timer cancelled even without movement, 1–128 = movement required on either axis | semantics `[public: pspctrl.h]`; default `[external: Sony Controller Reference]` |
-| HOLD switch | while set, every digital button reads released and `PSP_CTRL_HOLD` (bit 17) is set | `[external: Sony Controller Overview]` |
-| Interception | `PSP_CTRL_HOME` (bit 16) is Sony's `SCE_CTRL_INTERCEPTED`; the PS button itself is not visible to applications, and analog values continue during interception | `PSP_CTRL_HOME` value `[public: pspctrl.h]`; interception `[external: Sony Controller Overview]` |
-| Analog-during-HOLD | Sony says sampling continues, but the wording about `Lx`/`Ly` is ambiguous — treat as unverified | `[external: same]` |
-| DS3 on PSP Go | Sony 6.3 says the wireless controller's right stick, L3/R3 and vibration are **not available**; PSPSDK's header says `Rx`/`Ry` are valid with a DS3 on a PSP Go. The sources conflict — verify before relying on either | `[external: same]` + `[public: pspctrl.h]` |
+| Full scale | each axis reaches 0x00/0xFF over its own travel, but **not guaranteed simultaneously** — the stick's reachable area is not a square | `[local notes §6]` |
+| Idle timer threshold | `sceCtrlSetIdleCancelThreshold(idlereset, idleback)`: −1 = analog never cancels idle, 0 = idle timer cancelled even without movement, 1–128 = movement required on either axis | semantics `[public: pspctrl.h]`; default `[local notes §6]` |
+| HOLD switch | while set, every digital button reads released and `PSP_CTRL_HOLD` (bit 17) is set | `[local notes §6]` |
+| Interception | `PSP_CTRL_HOME` (bit 16) is `SCE_CTRL_INTERCEPTED`; the PS button itself is not visible to applications, and analog values continue during interception | `PSP_CTRL_HOME` value `[public: pspctrl.h]`; interception `[local notes §6]` |
+| Analog-during-HOLD | The reference says sampling continues, but the wording about `Lx`/`Ly` is ambiguous — treat as unverified | `[local notes §6]` |
+| DS3 on PSP Go | The reference says the wireless controller's right stick, L3/R3 and vibration are **not available**; PSPSDK's header says `Rx`/`Ry` are valid with a DS3 on a PSP Go. The sources conflict — verify before relying on either | `[local notes §6]` + `[public: pspctrl.h]` |
 
 The extra PSPSDK bits — `PSP_CTRL_NOTE`, `SCREEN`, `VOLUP`, `VOLDOWN`, `WLAN_UP`, `REMOTE`, `DISC`, `MS` — do
-not appear in Sony's user-mode header. Treat them as undelivered until a device sample proves otherwise.
+not appear in the toolchain header. Treat them as undelivered until a device sample proves otherwise.
 `[public: pspctrl.h]`
 
 ## What the reference implementations do
@@ -116,8 +115,8 @@ All rows are code scans, not measurements on our console. Their licences are in
 
 | source | poll | deadzone | edges | notable |
 |---|---|---|---|---|
-| Sony `sample/graphics/stick` | `ReadBufferPositive`, once per frame | none (`(Lx-128)*0.01`) | `padd = cont & (cont ^ prev)` | START/SELECT on edge; axis scaled to ±1.28 |
-| Sony `sample/tips/analog_ctrl` | `ReadBufferPositive`, once per frame | **0x40–0xC0** | `padd = cont & (cont ^ prev)` | idle threshold `(0x40, -1)`; a four-band angle/speed response curve |
+| reference `stick` sample | `ReadBufferPositive`, once per frame | none (`(Lx-128)*0.01`) | `padd = cont & (cont ^ prev)` | START/SELECT on edge; axis scaled to ±1.28 |
+| reference `analog_ctrl` sample | `ReadBufferPositive`, once per frame | **0x40–0xC0** | `padd = cont & (cont ^ prev)` | idle threshold `(0x40, -1)`; a four-band angle/speed response curve |
 | `openTRI` `triInput.c` | `PeekBufferPositive` | 103 < Lx/Ly < 151 (≈ ±24) | `Pressed`/`Held` bitsets; `triInputPressed()` clears the bit it returns | sampling cycle 0; all 12 buttons |
 | `PGE` `pgeControls.c` | `PeekBufferPositive` | none in the axis maths | `pressed`/`held`/`released` bitsets | returns early on `PSP_CTRL_HOME`; idle threshold `(25, 25)`; magnitude clamped to 1; angle/magnitude helpers |
 | `PSPRuntime` `inputmanager.cpp` | `ReadBufferPositive` | 28 raw counts, configurable | previous/current snapshot | centre hardcoded 128; `GetKeyPressed` fixed priority order |
@@ -125,7 +124,7 @@ All rows are code scans, not measurements on our console. Their licences are in
 | `3D-PSP-Tutorials` (no licence) | `PeekBufferPositive` | none | none | raw −128; ideas only, never copy |
 
 The spread is the finding: three sources use `Peek`, three use `Read`; deadzones range from 0 to 0x40 raw; only
-PGE clamps the vector magnitude; only Sony's sample sets the idle threshold deliberately.
+PGE clamps the vector magnitude; only the reference sample sets the idle threshold deliberately.
 
 ## Gaps in the current platform file
 
@@ -137,7 +136,7 @@ Line references are `src/platforms/rcore_psp.c` at `37585003`.
    advertises a second pad that is never marked ready. Clearing `axisCount` is not enough —
    `GetGamepadAxisMovement()` ignores it (`rcore.c:4119`) — so zero `axisState` and gate on readiness, then
    decide whether a DS3 is pad 0's right stick or pad 1.
-2. **The deadzone is tighter than Sony's own tolerance.** 0.2 normalised is ±25.6 raw counts, while the
+2. **The deadzone is tighter than the reference tolerance.** 0.2 normalised is ±25.6 raw counts, while the
    documented centre error is up to ±0x40. A unit at the edge of tolerance will drift with the stick untouched;
    a unit at nominal centre loses usable travel under a 0x40 deadzone. One constant cannot serve both, which is
    why calibration is a task, not a number. The per-axis test is also a square deadzone: calibration should
@@ -193,8 +192,8 @@ suggest, each with the measurement that would promote it. Until then they belong
 | Vector magnitude clamp | if `sqrt(x²+y²) > 1`, scale both axes; two axes normalised by 128 independently can reach ~1.41, although the stick's reachable area is not a square | corner speed matches cardinal speed on a movement sample; the clamp is insurance regardless of the measured reachable radius |
 | Idle-cancel threshold | `sceCtrlSetIdleCancelThreshold(0x40, 0x40)` (or `25, 25` as PGE uses), chosen from the calibrated range | a nub-only session longer than the system idle timeout does not dim or sleep |
 | Interception/HOLD masking | while `PSP_CTRL_HOME` or `PSP_CTRL_HOLD` is set, freeze both snapshots and suppress edges, then resync `previousButtonState` on the first clean sample; letting `currentButtonState` drop to 0 during the frozen window emits a release edge when it clears | holding a button through the exit dialog produces no spurious `GetGamepadButtonPressed()` |
-| Response curve | Sony's four-band angle/speed mapping (slow inside the deadzone, faster at the rim) | a game needs finer slow control than a linear axis gives; not a core requirement |
-| Digital-only mode | `PSP_CTRL_MODE_DIGITAL` where the nub is unused, for the small power saving Sony notes | measured difference on battery, if anyone cares — otherwise keep analog mode always |
+| Response curve | The reference four-band angle/speed mapping (slow inside the deadzone, faster at the rim) | a game needs finer slow control than a linear axis gives; not a core requirement |
+| Digital-only mode | `PSP_CTRL_MODE_DIGITAL` where the nub is unused, for the small power saving the reference notes | measured difference on battery, if anyone cares — otherwise keep analog mode always |
 
 ## Exit criteria
 

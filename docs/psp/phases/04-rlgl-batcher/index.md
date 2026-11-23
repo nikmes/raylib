@@ -56,9 +56,8 @@ sprites, 512 for quads.
 
 ## Guidelines from the renderer blueprint
 
-Source: `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` §16 (an AI-written blueprint that lives inside the Sony SDK
-reference tree — it is **not** Sony documentation). Cross-checked against our own measurements below; where it
-disagrees, our numbers win.
+Sources: local reference notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §3, cross-checked
+against our own measurements below; where it disagrees, our numbers win.
 
 **What our toolchain actually offers** (headers checked, see [§14](../../memory-map.md#14-what-pspdev-actually-provides-verified-2026-11-20)):
 `GU_SPRITES 6`, `GU_TRANSFORM_2D` ("passed directly to the rasterizer"), `sceGuScissor(x, y, w, h)`,

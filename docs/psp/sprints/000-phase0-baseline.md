@@ -74,7 +74,7 @@ renumber; a task that no longer applies is `dropped` with the reason in the log 
 | budget | limit | measured | tag |
 |---|---|---|---|
 | repository size | any | 413 MB `.git`, full history | `[measured]` |
-| disk | — | 1.6 GB Sony SDK + 48 MB references + repo | `[measured]` |
+| disk | — | 1.6 GB reference material (read-only; local notes §8) + 48 MB references + repo | `[measured]` |
 
 ## 7. Measurements
 

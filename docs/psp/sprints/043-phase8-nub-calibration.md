@@ -229,11 +229,11 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
   `PAD idle get reset=%d back=%d`; the control arm's row therefore records the firmware default instead of
   assuming −1. `PSP_PAD_IDLE=0` changes nothing after the query; `=1` then calls
   `sceCtrlSetIdleCancelThreshold(idlereset, idleback)`, logs the requested pair and whether the return was `< 0`.
-- Pair choice: `idlereset` is a raw movement in counts on either axis. Sony's sample uses `(0x40, -1)` and PGE
+- Pair choice: `idlereset` is a raw movement in counts on either axis. the reference nub sample (local notes §6) uses `(0x40, -1)` and PGE
   `(25, 25)`; the phase page records both. Pick a value between them that the measured rim travel comfortably
   exceeds (start from the smaller of 0x40 and half the smaller half-range), and set `idleback` deliberately
   rather than only `idlereset`. Record the exact pair and the reason. **Adopted `0x38/0x38` (56/56):** below
-  Sony's `0x40` and half the smallest measured half-range (112/2 = 56). The boot `get` pair on this console is
+  the reference `0x40` and half the smallest measured half-range (112/2 = 56). The boot `get` pair on this console is
   `-1/-1`.
 - Idle test protocol, nub only:
   - launch with the nub untouched and the shell attached but silent; no prints during the window;
@@ -252,7 +252,7 @@ Status vocabulary: `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 ### T4 design
 
-- Sony's four-band angle/speed response is a candidate, not a core requirement. Sony's sample cites a four-band
+- The reference four-band angle/speed response is a candidate, not a core requirement. The reference sample cites a four-band
   response; the band edges are not in our sources, so any curve here is empirical and must be measured.
 - Decide from `RAWPOS` in T1: normalized output at raw 10/20/40/80 counts and at the rim, linear. Adopt a curve
   only if the linear path cannot resolve a deliberate small offset a game needs (record which offset fails); do

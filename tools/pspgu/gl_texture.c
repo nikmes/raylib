@@ -49,7 +49,7 @@ static unsigned int defaultTexture = 0;
 static int textureLogEnabled = 1;       // probes turn the per-texture line off while timing
 
 // T3: the standard 16-byte-block / 8-row swizzle, the same one PSPRuntime's SwizzleFast
-// and the SDK samples use. Swizzling changes no texel, only the order, so a correct
+// and the reference samples use. Swizzling changes no texel, only the order, so a correct
 // implementation must leave every capture identical - that is exactly how it is verified.
 // PSP_GU_NO_SWIZZLE=1 keeps the linear layout for the A/B.
 #ifndef PSP_GU_NO_SWIZZLE

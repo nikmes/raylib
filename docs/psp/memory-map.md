@@ -652,7 +652,7 @@ camera path; the project keeps scalar raymath and does not take on the thread-at
 | Memory | `lv.q` ~15 B/cycle from D-cache, ~2 B/cycle from RAM; `lw` ~0.9 B/cycle from RAM | `[public: vfpu-docs, PSP-1000]` |
 
 **Build-time traps (from the blueprint's porting notes, §15.6):** `__builtin_vfpu_*` and `__builtin_allegrex_*`
-are Sony-compiler intrinsics and pspdev GCC 15.2.0 does not provide them — use `pspgum`, `pspvfpu.h` or inline
+are vendor-compiler intrinsics (local notes §8) and pspdev GCC 15.2.0 does not provide them — use `pspgum`, `pspvfpu.h` or inline
 asm. `libgum_vfpu.a` is GUM compiled with `-DUSE_VFPU=1` and is not the default GUM. Reserve matrices with
 `pspvfpu_initcontext()` / `pspvfpu_use_matrices()` before issuing VFPU instructions, and keep 16-byte alignment
 (`ScePspFVector4` / `ScePspFMatrix4`). `[external: blueprint §15.6]`
@@ -746,29 +746,13 @@ written down.
 | `/home/psp/pspdev/psp/sdk/include` | the API truth: `pspgu.h`, `pspgum.h`, `pspaudio.h`, `pspctrl.h`, `pspthreadman.h`, `pspvfpu.h`, `pspiofilemgr.h` |
 | `/home/psp/pspdev/psp/sdk/samples` | working examples, including `me/basic` (reset-vector takeover) |
 | `/home/psp/pspdev/psp/lib`, `.../sdk/lib` | shipped static libs: `libGL`, `libpspaudio`, `libpspaudiolib`, `libpspgu`, `libpspgum`, `libraylib` |
-| `/home/psp/psp_sdk_660` | Sony's official devkit SDK, kept as a reading aid — see below |
-| `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` | **not Sony material**: an AI-written map of that tree. **§16 is a renderer blueprint** (fixed constraints, VRAM map, 2D/3D paths, batching, levers, acceptance criteria) and §15 is a GU/VFPU symbol index. Summarised into [Phase 4](phases/04-rlgl-batcher/index.md) and [Phase 10](phases/10-3d-advanced/index.md) |
+| `LOCAL-REFERENCES.md` (untracked) | vendor-document provenance: §1 the GU reference, §3 the renderer blueprint, §8 the toolchain/vendor notes |
 | `/home/psp/.kimi-code/skills/psp-developer/references/` | the PSP skill: `rendering.md`, `textures-uv.md`, `ge-arithmetic.md`, `vfpu-math.md`, `media-engine.md`, `audio.md`, `memory-map.md`, `file-io-memory-stick.md`, `instrumentation.md`, `optimization-profiling.md`, `real-hw-gotchas.md`, `power-exit-sleep.md` |
 
-#### The Sony SDK: what it is for, and what it is not
+#### Vendor reference material
 
-`/home/psp/psp_sdk_660` is the official devkit SDK, extracted from `psp_sdk_660.7z` (which is kept beside
-it): 1.6 GB, 9,384 files, 2017 vintage. Top level is `installers/`, `usr/` and a readme; inside
-`usr/local/psp/devkit/` are `bin.linux`, `bin.windows`, `contrib` (a GIM Photoshop plugin), `data` (models,
-DVD-UMD images) and `tool` (a VAG converter shipped as Windows `.exe` binaries).
-
-**Use it as a reading aid only.** Specifically:
-
-- Not a dependency: `PSPDEV` stays `~/pspdev`. Nothing links against this tree, and no build flag points at it.
-- Nothing from it is copied or paraphrased into this tree — no header, no documentation text, no source.
-- A fact that lives only there is not a fact we can put in code. Reproduce it from a public source (pspsdk
-  headers, PPSSPP, ARK) or measure it on the console, and cite that instead.
-- Legitimate uses: cross-checking a signature or field name when the open headers are ambiguous, understanding
-  what an official tool was meant to do, and picking a behaviour worth testing on hardware.
-- Its Windows-only tools are not needed: `atracdenc`, `ffmpeg` and pspdev's converters cover the same ground.
-
-The reason for the discipline is not squeamishness: this tree is zlib-licensed and upstream-mergeable, and
-code with unclear provenance cannot go into it without poisoning both properties.
+The vendor-document provenance, what that tree is for and the read-only discipline are in the local reference
+notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §8. Nothing from it is linked or copied.
 
 ### 11.5 Not on disk — clone on demand
 
@@ -931,7 +915,7 @@ below that must be timed as loops.
 
 ### GU: what exists, verified by signature
 
-- `int sceGuStart(int ctype, void* list)` — **two arguments** in PSPSDK. Sony's three-argument form does not
+- `int sceGuStart(int ctype, void* list)` — **two arguments** in PSPSDK. the three-argument form is not
   exist here, and a port that keeps it will not compile.
 - Primitives: `GU_POINTS 0`, `GU_LINES 1`, `GU_TRIANGLES 3`, `GU_TRIANGLE_STRIP 4`, `GU_TRIANGLE_FAN 5`,
   **`GU_SPRITES 6`** — the 2-vertex axis-aligned sprite primitive is real and available.
@@ -1072,7 +1056,7 @@ call order for each feature. `doublelist` is directly relevant to phase 5's list
 | `GU_SPRITES` = 2-vertex axis-aligned rect | `GU_SPRITES 6` exists | **confirmed** |
 | through mode for 2D | `GU_TRANSFORM_2D` = "passed directly to the rasterizer" | **confirmed** |
 | scissor takes width/height | `sceGuScissor(x, y, w, h)` | **confirmed** |
-| `sceGuStart` arity differs from Sony's | 2 arguments here | **confirmed** |
+| `sceGuStart` arity | 2 arguments here | **confirmed** |
 | VFPU intrinsics absent from pspdev GCC | `__has_builtin` says no | **confirmed** |
 | `libgum_vfpu` is not the default GUM | separate archive, no sample links it | **confirmed** |
 | 4 MB EDRAM is opt-in, not automatic | `sceGeEdramSetSize(0x400000)` errors on PSP FAT | **confirmed, and unavailable to us** |

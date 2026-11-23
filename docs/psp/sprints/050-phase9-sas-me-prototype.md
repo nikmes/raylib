@@ -38,8 +38,8 @@ workload. Do not start it because the phase page lists it.
    44.1 kHz, grain 64–2048 and volume `0x1000`.
 4. `pspdev/psp/sdk/lib/libpspsascore.a` — `psp-nm` shows the symbols are firmware stubs importing the
    `sceSasCore` module. The mix runs outside the user thread; the call itself still costs time.
-5. Sony `sample/sound/at3mix` and `sas-streaming` — call order, 512/736 output frames, 64-byte buffers, and
-   the buffer-size discrepancy below. Reading aid only; do not copy Sony code.
+5. The reference `at3mix` and `sas-streaming` samples (local notes §7) — call order, 512/736 output frames, 64-byte buffers, and
+   the buffer-size discrepancy below. Reading aid only; do not copy the sample code.
 6. `../memory-map.md` §10.2 and §11.5 — ME rules and the repos to clone on demand (`me-tiny-lib`, etc.).
 7. `../sprints/046-phase9-custom-backend.md` — the working route-A sink; reuse its channel/output idiom.
 
@@ -53,7 +53,7 @@ the module writes 4 or 8 bytes per frame. Record that before adding voices.
 - **Prototype only.** No production `raudio.c` path, no default build switch, no change to route A. The
   probe lives in `psp-tests/` and is deleted or left behind a build flag.
 - **Do not trust the SAS buffer-size formula.** `pspsascore.h:481,495` says
-  `grainSize * 4 * sizeof(int16_t)` (8 B/frame); Sony's `at3mix` allocates
+  `grainSize * 4 * sizeof(int16_t)` (8 B/frame); the reference `at3mix` allocates
   `short[frames * STEREO]` (4 B/frame) and passes `&outputBuf[playPosition*STEREO]`. Resolve with the
   sentinel test before allocating a production buffer.
 - **SAS is 44.1 kHz only, 32 voices, VAG/ADPCM or raw PCM.** ATRAC3 is not a SAS voice format; `sceAtrac`
@@ -77,7 +77,7 @@ make clean && make
 ```
 
 **Do not touch.** `src/raudio.c`, `src/platforms/raudio_psp.c`, the route-A library, renderer files, pspgu,
-and the `psp_sdk_660` tree except as read-only reference.
+and the local reference material except as read-only reference (local notes §8).
 
 **Done means** §8: measured numbers, a semantics table, and an explicit S7 go/no-go.
 
