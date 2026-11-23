@@ -262,9 +262,10 @@ is recorded, not redefined.
 
 ## 10. Follow-ups
 
-- **Per-call cost is the next programme.** ~51 µs per `DrawMesh` is rlgl state + pspgu list emission; a
-  prototype that merges identical draws must keep a per-instance AABB (or accept losing the skip) and measure
-  both sides. That is a sprint of its own, not a patch.
+- **Per-call cost is the next programme → P10-S11 (sprint 078).** ~51 µs per `DrawMesh` is rlgl state + pspgu
+  list emission; a prototype that merges identical draws must keep a per-instance AABB (or accept losing the
+  skip) and measure both sides. That is a sprint of its own, not a patch; it is written as sprint 078, with the
+  AABB rule as its constraint.
 - **Cheap cull cleanup**: an rlgl matrix generation counter would remove the two `glGetFloatv` copies per mesh;
   the corner math is already cheap enough that the cull stays ~13 µs without it.
 - **VFPU**: keep `PSPGU_VFPU=1` opt-in. Re-measure on a detached device (no PSPLink interrupts) before deciding
@@ -273,12 +274,8 @@ is recorded, not redefined.
   is the remaining share, and only worth VFPU when the attribute is already paid for.
 - **Sprint 069 correction**: its T1 result described “VFPU projection”; it was the inert scalar fallback. The
   claim is corrected here, not edited in 069.
-
-
-## 10. Follow-ups
-
-- If the clip dedup lands, the remaining clip cost is the polygon clipper itself; VFPU `clipLerp`/`packClipVertex`
-  is the next experiment.
-- If merging is rejected, the per-call overhead stands; instancing with GE-side transforms is a Phase 11 question.
-- P10-S9 (076) still owns the framebuffer rotation; coordinate the build tag.
-- GUM stays closed (070 T4); do not re-open without a new measurement that changes the fence cost.
+- **Clip after merging**: if the merged clean runs land (078), the remaining clip cost is the polygon clipper on
+  genuinely dirty draws; VFPU `clipLerp`/`packClipVertex` is the only experiment left there.
+- **If merging is rejected**, the per-call overhead stands; instancing with GE-side transforms is a Phase 11
+  question.
+- **GUM stays closed** (070 T4); do not re-open without a new measurement that changes the fence cost.
