@@ -134,6 +134,7 @@ nav:
               - P10-S12 — PGE-derived pspgu experiments: psp/sprints/079-phase10-pge-derived-pspgu-experiments.md
               - P10-S13 — 2D state scoping and colour gates: psp/sprints/080-phase10-2d-state-and-colour-gates.md
               - P10-S14 — Reference ideas, verified and measured: psp/sprints/081-phase10-reference-ideas-verified.md
+              - P10-S15 — Hardware optimisation sweep: psp/sprints/085-phase10-hardware-optimisation-sweep.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
