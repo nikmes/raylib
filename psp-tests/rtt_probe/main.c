@@ -29,6 +29,9 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 #ifndef TARGET_H
 #define TARGET_H 256
 #endif
+#ifndef RTT_FRAMES
+#define RTT_FRAMES 8
+#endif
 
 static void drawPattern(int w, int h)
 {
@@ -47,6 +50,22 @@ static int colourAt(const unsigned char *px, int x, int y)
     const unsigned char *p = px + ((size_t)y*TARGET_W + x)*4;
     return (p[0] << 16) | (p[1] << 8) | p[2];
 }
+
+#ifdef BAND_DIAG
+// P10-S9 T1b: read the target/screen last 16 rows and count black pixels. The read
+// is deliberately synchronous and diagnostic-only; it is not part of the shipped path.
+static void readBand(const char *tag, int y, int h)
+{
+    unsigned char *px = (unsigned char *)malloc((size_t)TARGET_W*h*4);
+    if (px == NULL) return;
+    glReadPixels(0, y, TARGET_W, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    int black = 0;
+    for (int i = 0; i < TARGET_W*h; i++)
+        if ((px[i*4] == 0) && (px[i*4+1] == 0) && (px[i*4+2] == 0)) black++;
+    TraceLog(LOG_INFO, "BAND %s y=%d h=%d black=%d", tag, y, h, black);
+    free(px);
+}
+#endif
 
 int main(void)
 {
@@ -74,7 +93,7 @@ int main(void)
     cam.projection = CAMERA_PERSPECTIVE;
 #endif
 
-    for (int frame = 0; frame < 2; frame++)
+    for (int frame = 0; frame < RTT_FRAMES; frame++)
     {
 #if defined(MODE_DIRECT)
         BeginDrawing();
@@ -83,6 +102,11 @@ int main(void)
 #elif defined(MODE_RTT) || defined(MODE_CHURN)
         BeginTextureMode(target);
             drawPattern(TARGET_W, TARGET_H);
+#ifdef BAND_DIAG
+            rlDrawRenderBatchActive();
+            readBand("target-lo", 0, 16);
+                readBand("target-hi", TARGET_H - 16, 16);
+#endif
         EndTextureMode();
 
         if (frame == 0)
@@ -102,6 +126,12 @@ int main(void)
         BeginDrawing();
             ClearBackground(BLACK);
             DrawTexture(target.texture, 0, 0, WHITE);
+#ifdef BAND_DIAG
+            rlDrawRenderBatchActive();
+            // Screen is 480x272; the panel is at top-left. Its last 16 screen rows are
+            // GL y = 272 - 256 .. 272 - 241 = 16..31 (glReadPixels is bottom-left).
+            readBand("screen", 272 - 256, 16);
+#endif
         EndDrawing();
 #elif defined(MODE_READBACK)
         BeginTextureMode(target);

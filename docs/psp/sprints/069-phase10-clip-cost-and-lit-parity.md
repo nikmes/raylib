@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `d1b5b6d8` (P10-S7 written; Phase 10 recorded closed at `7f4ad437`) |
 | Started / closed | 2026-11-22 (written) / — |
 | Build number(s) | pspgu `b30` (T1 changes the clip path); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | T1/T2/T3/T4 done; T5 deferred with its blocker recorded |
+| Tasks | T1/T2/T3/T4 done; T5 resolved by [P10-S9 (076)](076-phase10-framebuffer-rotation.md) |
 
 ## 0. Handover
 
@@ -119,7 +119,7 @@ close write-back.
 | T2 | Lit regression bisect and fix: packing on/off, cull on/off, packed normal value, colour/model mapping; **validate pspGL's 64 against an analytic Lambert value before treating it as truth**; 062 gate | `done` | cause identified; 062 gate corrected with evidence | see §9: the 062 driver rebuilt today also renders 128; pspGL renders 56 on a face that receives ambient 64 |
 | T3 | Sweep and final sample: `INSTANCES=0/250/500/750/1000`, `CULL=1`, two runs each at 120 frames; freeze N by work; then 300 frames twice at N | `done` | frozen N; both final runs median/p95/work pass; `arenaOverflows=0`; adjacent failing point recorded | N=0 6.79/6.79; N=100 18.03; N=250 28.34/29.05; N=50 final 16.683–16.684 / 11.56 |
 | T4 | Re-close Phase 10: full gates, update the phase exit criteria met/not met, sprint table, memory map, archive, restore pspGL. **067 stays the historical record; 069 supersedes its timing result in the phase page**, not by editing 067's evidence | `done` | criteria have numbers; strict build; `2ab7378e` installed | gates 0/0/0/0/0/0; shapes 284; phase page updated |
-| T5 | **Unplanned, found during T1**: the sample's checker flicker. `glBindFramebuffer` saves a stale screen target and the restore pins drawing to buffer 0 while the display rotates | `deferred` | cause identified; the fix must not regress the 065 RTT gate | before `fb0=53130, fb1=0, fb2=0`; both candidate fixes make all three equal but move the RTT direct-vs-sampled diff to 624-800 px; not shipped, follow-up in §10 |
+| T5 | **Unplanned, found during T1**: the sample's checker flicker. `glBindFramebuffer` saves a stale screen target and the restore pins drawing to buffer 0 while the display rotates | `done` (076) | cause identified; P10-S9 adopted candidate (b) and an 8-frame RTT gate | before `fb0=53130, fb1=0, fb2=0`; 076: RTT 0 diff at 8 frames, fb0=fb1=fb2, sample 16.683/16.684 ms |
 
 ### Design notes
 
@@ -240,22 +240,17 @@ re-clipping the ground every frame cost ~18 ms for no pixel change. At N=50, on 
 The cost above N=50 is rlgl's per-`DrawMesh` matrix and culling work in soft float, which is P10-S8/070's subject,
 not the clip path.
 
-**T5 — the checker flicker (unplanned, deferred with the cause identified).** The user-reported tearing was not
-z-fighting. `glBindFramebuffer` saves the screen target with `saved.draw = pspgu.drawOffset`, but at the first bind
-of a frame `drawOffset` still holds the *previous* frame's buffer; the restore then pinned every frame's drawing to
-one buffer while the display rotated through three. The frame-to-frame diff was a strict 3-frame cycle of 53,130
-pixels, and reading EDRAM directly showed `fb0=53,130`, `fb1=0`, `fb2=0`; that is why the stopped frame looked
-correct.
+**T5 — the checker flicker (resolved by P10-S9/076).** The user-reported tearing was not z-fighting.
+`glBindFramebuffer` saved the screen target with `saved.draw = pspgu.drawOffset`, but at the first bind of a frame
+`drawOffset` still held the *previous* frame's buffer; the restore then pinned every frame's drawing to one buffer
+while the display rotated through three. The frame-to-frame diff was a strict 3-frame cycle of 53,130 pixels, and
+reading EDRAM directly showed `fb0=53,130`, `fb1=0`, `fb2=0`; that is why the stopped frame looked correct.
 
-Two fixes were tested. (a) Start the frame before saving, and (b) save `fbOffset[frames % 3]` instead of
-`drawOffset`. Both make all three buffers carry the identical frame (`fb0 = fb1 = fb2`, diff 0), and both **break
-the 065 RTT gate**: direct vs sampled differ by 624-800 px in a 16-row band at the panel edge. Bisect: the exact
-065 driver (b28, commit `6df56cb8`) with the current app and library gives 0; the corrected rotation gives the band;
-a `sceGuTexFlush()` at target unbind does not remove it; a full `sceGuSync` inside the open list deadlocks the app
-(so the band is not a plain write-visibility race). The band is deterministic (two captures 8 s apart are identical)
-and only appears when the screen pass draws into the rotated buffer after an FBO restore. The fix is therefore
-**not shipped**: the driver keeps the old restore and the documented defect, rather than trading a visible flicker
-fix for an RTT regression. The diagnostic (`SAMPLE_DIAG`, `pspguDebugFrameStats`) stays for the follow-up.
+Sprint 076 adopted candidate (b): save `fbOffset[frames % 3]` without starting a list before the save. The earlier
+624-800 px "RTT regression" was a **2-frame display-lag measurement**, not a render band. With the gate at
+**8 frames**, RTT direct vs sampled is **0 diff**, `fb0 = fb1 = fb2`, `FLICK 0`, and the sample keeps 16.683/16.684
+ms median, 11.98-12.13 ms work. The official `TexSync`→`TexFlush` order was tested and rejected (656 vs 528 px at
+2 frames); `TexFlush`→`TexSync` remains the default. The diagnostic (`SAMPLE_DIAG`, `pspguDebugFrameStats`) stays.
 
 **T2 — lit parity.** The 062 gate cannot be used as a parity oracle. The **exact 062 combination** — 062 app +
 062 library + 062 driver, all rebuilt from `288d33bb` — renders the lit cube at 248/128/160 (top/front/right),
@@ -282,9 +277,7 @@ clipped output exceeds the arena.
 - ME work stays dropped with Phase 9 sprint 051.
 - The guard-band clip region (±8 NDC) supersedes 066's screen-edge choice; the 066 probe still passes and the 066
   page remains the historical record.
-- **The framebuffer-rotation fix (T5) is [sprint 076 (P10-S9)](076-phase10-framebuffer-rotation.md).** Cause and blocker are measured: the restore uses a
-  stale screen target, and both correct-restore variants break the 065 RTT gate with a deterministic 624-800 px band
-  in the panel's last 16 rows. The b28 driver gives 0 on the same app/library; `sceGuTexFlush` at unbind does not
-  help; a full `sceGuSync` inside the open list deadlocks. The next attempt should instrument the target render and
-  the screen sample separately (EDRAM content of the target's last two 8-row tiles vs the sampled pixels) before
-  changing the restore again. Do not ship a rotation fix without re-running the RTT pair.
+- **The framebuffer-rotation fix (T5) is closed by [sprint 076 (P10-S9)](076-phase10-framebuffer-rotation.md).**
+  Candidate (b), `saved.draw = fbOffset[frames % 3]`, is adopted in pspgu `b31`. The 2-frame band was display lag;
+  the gate now runs 8 frames. RTT 0 diff, `fb0=fb1=fb2`, `FLICK 0`, sample 16.683/16.684 ms. Do not re-run the
+  2-frame gate as a render check.

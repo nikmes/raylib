@@ -181,7 +181,18 @@ void glBindFramebuffer(GLenum target, GLuint id)
     {
         saved.valid = 1;
         saved.id = id;
+#if PSPGU_FB_RESTORE == 1
+        // P10-S9 candidate (a): advance the frame before saving the screen target.
+        // Measured: fixes the flicker but leaves a 4096-black target band (BAND_DIAG).
+        pspguBeginFrame();
         saved.draw = pspgu.drawOffset;
+#elif PSPGU_FB_RESTORE == 2
+        // P10-S9 candidate (b): save this frame's rotating buffer directly, without
+        // starting a list before the save. The frame index is the current one.
+        saved.draw = pspgu.fbOffset[pspgu.frames % PSP_GU_FB_COUNT];
+#else
+        saved.draw = pspgu.drawOffset;
+#endif
         saved.depth = pspgu.depthOffset;
         saved.width = pspgu.width;
         saved.height = pspgu.height;

@@ -5,6 +5,8 @@
 #   tools/pspgu-build.sh                 # build, install over libGL.a, keep the old one
 #   tools/pspgu-build.sh --depth=0       # 2D-only build, 272 KiB of VRAM back
 #   tools/pspgu-build.sh --texfmt=auto    # per-texture 16-bit formats (measured, not default)
+#   PSPGU_TEXSYNC_FIRST=0 tools/pspgu-build.sh  # pre-P10-S9 TexFlush->TexSync order
+#   PSPGU_FB_RESTORE=1 tools/pspgu-build.sh     # P10-S9 corrected screen-target save
 #   tools/pspgu-build.sh --check         # is the installed libGL.a a pspgu build, and which?
 #   tools/pspgu-build.sh --restore       # put pspGL back (rebuilds it from /home/psp/ref)
 #   tools/pspgu-build.sh --verify-repeat # build twice, require the same content hash
@@ -32,6 +34,8 @@ build() {
 
     [ -n "$depth" ] && args+=("PSP_GU_DEPTH=${depth}")
     [ -n "${PSP_GU_TEXFMT:-}" ] && args+=("PSP_GU_TEXFMT=${PSP_GU_TEXFMT}")
+    [ -n "${PSPGU_TEXSYNC_FIRST:-}" ] && args+=("PSPGU_TEXSYNC_FIRST=${PSPGU_TEXSYNC_FIRST}")
+    [ -n "${PSPGU_FB_RESTORE:-}" ] && args+=("PSPGU_FB_RESTORE=${PSPGU_FB_RESTORE}")
 
     make -C "$SRC" clean >/dev/null 2>&1
     make -C "$SRC" "${args[@]}" || return 1

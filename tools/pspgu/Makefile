@@ -6,6 +6,7 @@
 #   make                      # libGL.a in this directory
 #   make PSP_GU_DEPTH=0       # 2D-only build, 272 KiB of VRAM back
 #   make PSP_GU_TRACE=1       # log the unimplemented symbols a scene still calls
+#   make PSPGU_TEXSYNC_FIRST=0 # old TexFlush->TexSync order for the P10-S9 A/B
 
 TARGET_LIB = libGL.a
 OBJS = egl.o gl_state.o gl_matrix.o gl_draw.o gl_texture.o gl_immediate.o gl_query.o
@@ -25,6 +26,17 @@ endif
 ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif
+
+# P10-S9 T1: the official libgu samples put the read-out barrier before the cache
+# flush. T1 measured it: it did not clear the band (656 vs 528 px), so the default
+# stays 0 (the pre-P10-S9 order); =1 remains the measured arm.
+PSPGU_TEXSYNC_FIRST ?= 0
+CFLAGS += -DPSPGU_TEXSYNC_FIRST=$(PSPGU_TEXSYNC_FIRST)
+
+# P10-S9 T1: corrected screen-target save for the FBO unbind. 2 is candidate (b),
+# the adopted fix (0 diff at 8 frames); 0 and 1 remain the control arms.
+PSPGU_FB_RESTORE ?= 2
+CFLAGS += -DPSPGU_FB_RESTORE=$(PSPGU_FB_RESTORE)
 
 all: $(TARGET_LIB)
 

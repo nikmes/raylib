@@ -12,8 +12,16 @@ TARGET = rtt_probe
 OBJS = main.o
 
 MODE ?= rtt
+BAND ?= 0
+# P10-S9: two frames show display lag with the corrected restore; 8 settles the
+# three-buffer rotation before the capture.
+FRAMES ?= 8
 
-CFLAGS = -Wall -O2
+CFLAGS = -Wall -O2 -DRTT_FRAMES=$(FRAMES)
+
+ifeq ($(BAND),1)
+    CFLAGS += -DBAND_DIAG
+endif
 
 ifeq ($(MODE),direct)
     CFLAGS += -DMODE_DIRECT

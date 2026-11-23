@@ -20,7 +20,8 @@ explicit read-after-write policy, and routes rlgl's GL11 calls through it **with
 **Read before acting**, in this order:
 
 1. `../phases/10-3d-advanced/index.md` §Readiness review blocker 2 and §Render-to-texture: what the references
-   actually do — the redirect mechanism, the explicit `TexFlush`+`TexSync` contract, and the VRAM costs.
+   actually do — the redirect mechanism, the explicit `TexFlush`/`TexSync` contract (the official order was tried
+   in P10-S9 T1 and rejected), and the VRAM costs.
 2. 060/061/062 §9 — the draw paths, per-list arenas, the packed/direct path and the lighting state this sprint
    must not disturb. All three are closed.
 3. `src/rtextures.c` — `LoadRenderTextureEx` and the exact call order; `src/rcore.c` —
@@ -52,7 +53,9 @@ archive it; then confirm the pspGL archive still links after the first rlgl edit
   multiple of 64, a power-of-two sampled extent, no main-RAM shadow, and it must be pinned: never evicted, never
   reloaded from a shadow it does not have.
 - **Read-after-write is explicit.** Mark the attached texture dirty on unbind; on the next bind emit
-  `sceGuTexFlush()` + `sceGuTexSync()`. Do **not** add `sceGuSync` at unbind, and do not rely on the next frame.
+  `sceGuTexFlush()` + `sceGuTexSync()`. P10-S9 T1 tested the official `TexSync`-then-`TexFlush` order
+  (billboard:848, monochrome:633); it did not clear the band (656 vs 528 px), so the default remains this order.
+  Do **not** add `sceGuSync` at unbind, and do not rely on the next frame.
 - **Save and restore as a pair.** Binding an FBO changes draw buffer, depth buffer, offset, viewport and scissor;
   unbinding must restore the scene's back buffer, scene depth and the viewport the GL state expects. A 2D frame
   drawn after an RTT frame is the leak test.
@@ -141,7 +144,7 @@ lighting/fog interaction beyond one regression arm, and any performance target b
 | T1 | Weak FBO routing, active tracker, depth renderbuffer | `done` | pspGL links and refuses; pspgu creates | pspGL: one log, id 0; pspgu: "created successfully" |
 | T2 | FBO objects, target promotion, bind/unbind state | `done` | 1:1 sample parity; 2D restored | **0 diff** vs direct; churn **0 diff** |
 | T3 | Depth renderbuffer and bind | `done` | depth occlusion | near cube wins (one surface); 16-bit RGB depth |
-| T4 | RAW dirty flag | `done` | TexFlush+TexSync, no CPU wait | dirty path exercised every sample; no sync at unbind |
+| T4 | RAW dirty flag | `done` | TexFlush+TexSync (official order tested and rejected in P10-S9 T1), no CPU wait | dirty path exercised every sample; no sync at unbind |
 | T5 | Orientation, NPOT, readback | `done` | marker/readback; 300×200 decision | 8888 readback target-aware; 300×200 **rejected** (VRAM) |
 | T6 | Budget/regression/write-back | `done` | gates, table | 2D 0; 060/062 gates 0; 284 colours |
 
@@ -215,7 +218,7 @@ Protocol: device only; direct-to-screen is the reference (pspGL has no FBOs); tw
 - [x] pspGL A/B links; RTT refuses with one log and no crash
 - [x] target is 8192-aligned, pinned, shadow-free; survives churn
 - [x] bind/unbind restores draw buffer, depth, offset, dimensions, PSM, viewport, scissor and dither
-- [x] RAW is `TexFlush`+`TexSync`; no CPU wait at unbind
+- [x] RAW uses the `TexFlush`+`TexSync` pair; no CPU wait at unbind (official order tested and rejected in P10-S9 T1)
 - [x] `glReadPixels` uses the target's offset/dimensions; 8888 path added
 - [x] 300×200 recorded as **rejected** with its allocation numbers, not silently accepted
 - [x] 2D gate 0; 060/062 gates 0; `basic_shapes` 284
@@ -238,6 +241,9 @@ Sprint 065 closed 6/6. Render-to-texture works on pspgu and refuses cleanly on p
   in an already-linked object); framebuffer offset 0 is legal and must not be NULL-guarded on restore; the GE keeps
   no alpha in 8888; and dithering the target plus the sample doubles the pattern.
 - **Gates:** 2D 0, 060 probe 0, 062 lit gate 0, `basic_shapes` 284. Boot tag `b28`.
+- **P10-S9 follow-up (2026-11-23):** the 2-frame RTT gate above is a display-lag measurement once the restore is
+  corrected. `PSPGU_FB_RESTORE=2` + **8 frames** gives RTT **0 diff**, `fb0=fb1=fb2`, `FLICK 0`, and the sample
+  16.683/16.684 ms. `rtt_probe` now defaults to `FRAMES=8`; see [076](076-phase10-framebuffer-rotation.md).
 
 ## 10. Follow-ups
 

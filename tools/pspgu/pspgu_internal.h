@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b30"
+#define PSPGU_BUILD "b31"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -51,6 +51,22 @@
     #define PSPGU_TEXFMT_AUTO 0
 #endif
 #define PSPGU_TEXFMT_NAME (PSPGU_TEXFMT_AUTO? "auto" : "8888")
+
+// P10-S9 T1: TexSync (block frame-buffer read-out) before TexFlush (drop the
+// texture cache), the order used by the official billboard/monochrome samples.
+// Measured: it did not clear the band (656 vs 528 px), so the default stays 0;
+// =1 remains the measured arm for a later retest.
+#ifndef PSPGU_TEXSYNC_FIRST
+    #define PSPGU_TEXSYNC_FIRST 0
+#endif
+
+// P10-S9 T1: corrected screen-target save. 0 = old saved.draw; 1 = candidate (a),
+// start the frame before saving; 2 = candidate (b), save fbOffset[frames % count].
+// Candidate (b) is adopted: RTT direct-vs-sampled is 0 diff at 8 frames. 0/1 remain
+// for the A/B.
+#ifndef PSPGU_FB_RESTORE
+    #define PSPGU_FB_RESTORE 2
+#endif
 
 #ifndef PSP_GU_DEPTH
     #define PSP_GU_DEPTH 1              // 16-bit depth buffer, 272 KiB at 512 stride

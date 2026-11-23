@@ -36,7 +36,7 @@ typedef struct {
     int swizzled;               // 1 when the texels are in the swizzled layout
     int renderTarget;           // attached to an FBO: no shadow, never evicted
     int pinned;                 // held by an FBO
-    int dirty;                  // the GE wrote it; TexFlush+TexSync before sampling
+    int dirty;                  // the GE wrote it; TexSync+TexFlush before sampling
     int warnedNonSwizzle;       // the dimensions were complained about once
     unsigned int guFormat;      // GU_PSM_*
     int filter;                 // GU_NEAREST / GU_LINEAR
@@ -344,6 +344,17 @@ static void applyTexture(PspGuTexture *t)
     // the top-left of the padded image.
     sceGuTexScale(scaleU, scaleV);
     sceGuTexOffset(0.0f, 0.0f);
+#if PSPGU_TEXSYNC_FIRST
+    // The official samples put the read-out barrier before the cache flush:
+    // TexSync blocks texture read-out until the GE's frame-buffer write completes,
+    // then TexFlush drops the cache (libgu-Reference English: sceGuTexSync).
+    if (t->dirty)
+    {
+        sceGuTexSync();
+        t->dirty = 0;
+    }
+    sceGuTexFlush();
+#else
     sceGuTexFlush();
     if (t->dirty)
     {
@@ -351,6 +362,7 @@ static void applyTexture(PspGuTexture *t)
         sceGuTexSync();
         t->dirty = 0;
     }
+#endif
 }
 
 // Evict until one span can satisfy `bytes`. Priority is the strong weight; age breaks
