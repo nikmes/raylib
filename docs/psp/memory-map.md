@@ -638,6 +638,9 @@ optional and both have rules that each cost a debugging session.
 
 ### 10.1 VFPU — COP2, 128 single-precision registers
 
+**Sprint 070 (PSP-1000):** the camera builders cost 1.48 µs per frame in total, so VFPU GUM buys nothing on the
+camera path; the project keeps scalar raymath and does not take on the thread-attribute/context cost.
+
 | fact | value | tag |
 |---|---|---|
 | Register file | 8 x 4x4 matrices (M000..M700), single precision only | `[public: vfpu-docs]` |
@@ -908,6 +911,14 @@ Checked against the toolchain we link, not against documentation. Paths are unde
 
 A GU program links `-lpspgum -lpspgu` (that is the samples' line). GUM usually needs `-lm`-equivalent helpers
 from `libpspmath` only if it is called directly.
+
+**GUM measured, not adopted (sprint 070).** `gumLookAt`/`gumPerspective`/`gumOrtho` would replace builders that
+cost 0.24-0.91 µs and run once per frame (1.48 µs/frame, 0.009 % of a 16.68 ms frame). The scene's matrix-shaped
+cost is elsewhere: the conservative cull in `DrawMesh` transforms eight corners in soft float at **~12 µs per
+call** (20 % of a frame at 500 cubes), and GUM has no vector transform. The cache pattern for per-entity
+projections (compose `P*V` once, `QuaternionTransform`, divide by `w`) is 13x cheaper than `GetWorldToScreenEx`
+per call (6.31 vs 0.49 µs at N=1000) and needs no library. `libpspgum_vfpu` stays opt-in. Calibration: one
+`sceKernelGetSystemTimeWide` call costs **3.94 µs**, so spans below that must be timed as loops.
 
 ### GU: what exists, verified by signature
 

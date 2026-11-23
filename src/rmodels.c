@@ -55,6 +55,17 @@
 #include <string.h>         // Required for: strlen(), memcmp()
 #include <math.h>           // Required for: sinf(), cosf(), sqrtf(), fabsf()
 
+// Sprint 070 (P10-S8): measurement-only attribution for matrix_probe MODE=scene.
+// The switch is off in every shipped build; when on it adds two syscalls per segment.
+#if defined(PLATFORM_PSP) && defined(PSP_MATRIX_PROBE)
+    #include <pspkernel.h>
+    unsigned long long rlpspProbeComposeUs;
+    unsigned long long rlpspProbeMultUs;
+    unsigned long long rlpspProbeCullUs;
+    unsigned int rlpspProbeDraws;
+    static SceInt64 rlpspProbeNow(void) { return sceKernelGetSystemTimeWide(); }
+#endif
+
 #if defined(GRAPHICS_API_OPENGL_11)
     #include <GL/gl.h>      // Required for: gl*Pointer() in the packed-mesh path
 #endif
@@ -1697,11 +1708,20 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
 #if defined(PLATFORM_PSP)
+#if defined(PSP_MATRIX_PROBE)
+    {
+        SceInt64 _c0 = rlpspProbeNow();
+        int culled = pspGeCullMesh(&mesh, transform);
+        rlpspProbeCullUs += (unsigned long long)(rlpspProbeNow() - _c0);
+        if (culled) { rlDisableTexture(); return; }
+    }
+#else
     if (pspGeCullMesh(&mesh, transform))
     {
         rlDisableTexture();
         return;
     }
+#endif
     // A colour array added after upload (a bake) must reach the generic path.
     PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(mesh.vboId) : NULL;
 #else
@@ -1725,17 +1745,37 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 #if defined(PLATFORM_PSP)
         if (pg != NULL)
         {
+#if defined(PSP_MATRIX_PROBE)
+            SceInt64 _m0 = rlpspProbeNow();
+#endif
             float sc = 32768.0f/pg->K;
             // Row-vector composition: quantised position is scaled, moved to the mesh
             // centre, then transformed by the caller's model matrix.
             Matrix drawMat = MatrixMultiply(MatrixMultiply(MatrixScale(sc, sc, sc),
                                              MatrixTranslate(pg->cx, pg->cy, pg->cz)),
                                             transform);
+#if defined(PSP_MATRIX_PROBE)
+            rlpspProbeComposeUs += (unsigned long long)(rlpspProbeNow() - _m0);
+            _m0 = rlpspProbeNow();
+#endif
             rlMultMatrixf(MatrixToFloat(drawMat));
+#if defined(PSP_MATRIX_PROBE)
+            rlpspProbeMultUs += (unsigned long long)(rlpspProbeNow() - _m0);
+            rlpspProbeDraws++;
+#endif
         }
         else
 #endif
-        rlMultMatrixf(MatrixToFloat(transform));
+        {
+#if defined(PSP_MATRIX_PROBE)
+            SceInt64 _m0 = rlpspProbeNow();
+#endif
+            rlMultMatrixf(MatrixToFloat(transform));
+#if defined(PSP_MATRIX_PROBE)
+            rlpspProbeMultUs += (unsigned long long)(rlpspProbeNow() - _m0);
+            rlpspProbeDraws++;
+#endif
+        }
 
         rlColor4ub(material.maps[MATERIAL_MAP_DIFFUSE].color.r,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.g,

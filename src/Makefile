@@ -579,6 +579,13 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     CUSTOM_CFLAGS += -DPSP_CULL=$(PSP_CULL)
     PSP_TRI_FAST ?= 1
     CUSTOM_CFLAGS += -DPSP_TRI_FAST=$(PSP_TRI_FAST)
+
+    # PSP_MATRIX_PROBE=1 adds the sprint 070 measurement-only counters around the
+    # per-object matrix build, rlMultMatrixf and the cull in DrawMesh. Off by default;
+    # matrix_probe MODE=scene reads the symbols, every shipped build omits them.
+    ifdef PSP_MATRIX_PROBE
+        CUSTOM_CFLAGS += -DPSP_MATRIX_PROBE
+    endif
     # P11-S12: internal VFPU/matrix helpers; 0 keeps the scalar fallback and adds no SDK link.
     PSP_VFPU_HELPERS ?= 0
     CUSTOM_CFLAGS += -DPSP_VFPU_HELPERS=$(PSP_VFPU_HELPERS)

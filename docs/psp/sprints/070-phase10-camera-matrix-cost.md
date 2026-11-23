@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `9957a5b2` (P10-S7 and P10-S9 written; pin at start) |
 | Started / closed | 2026-11-22 (written) / — |
 | Build number(s) | arm `a` = measurement only: `libraylib.a` default `PSP_BATCH=1`, pspgu `b30` (`2ea2da7a…`), no renderer change. arm `b` only if GUM lands |
-| Tasks | 0/5 done |
+| Tasks | 4/5 done — T4 `dropped` with the numbers |
 
 ## 0. Handover
 
@@ -123,10 +123,10 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Per-call cost probe**: `psp-tests/matrix_probe` (`MODE=api|calls|scene`). Protocol: `InitWindow(480,272)` once (only to give `GetWorldToScreen` real dimensions) then no `BeginDrawing`/`EndDrawing`; 100-call warm-up; 20 blocks x 10,000 calls; per-call µs = median and p95 of the 20 block means; a `volatile` checksum consumes every result; machine-readable line per function (`API <name> n=10000 med_us= p95_us= sum=`). Functions: `GetCameraMatrix2D`, `GetWorldToScreen2D`, `GetScreenToWorld2D`, `GetWorldToScreen`, `GetWorldToScreenEx`, `MatrixLookAt`, `MatrixPerspective`, `MatrixOrtho`, `MatrixMultiply`, `Vector3Transform`, `QuaternionTransform`, `UpdateCamera(CAMERA_CUSTOM)` | `todo` | µs/call median and p95 for each, two runs within repeatability; total per frame at the call count named in §3 | — |
-| T2 | **Cached vs rebuild**: for N=100/1000 world positions compare `GetWorldToScreen*` per call with the app-side pattern: build `matProj` and `matView` once, compose `P*V`, then `Vector3Transform` + perspective divide. Report µs total and µs/position for both, plus the break-even N; document the pattern as guidance (no public API change) | `todo` | µs for both at N=100/1000; break-even; no API change | — |
-| T3 | **Scene attribution**: N=1/10/100/500 cubes in the probe's `MODE=scene` with the `bunnymark` `STAT`/`SPLIT` harness. Attribute with measurement-only counters under `PSP_MATRIX_PROBE`: (a) per-object model build in `DrawMesh` (Matrix multiply/scale/translate), (b) `rlMultMatrixf` -> `glMultMatrixf`, (c) pspgu matrix upload (`sceGuSetMatrix`), (d) the remainder to the frame. Cross-check the slope against 069's measured sample: `(28.3 - 11.56) / (250 - 50) = 0.084 ms/cube` | `todo` | matrix share in ms and % of frame at N=1/10/100/500; slope agrees with 0.084 ms/cube within noise | — |
-| T5 | **Decision and write-back**: adopt cache pattern, adopt GUM, or close "not justified"; update Phase 10 page, memory map §10.1/§14 and baselines | `todo` | decision text with metric/threshold/result; docs build `--strict` | — |
+| T1 | **Per-call cost probe**: `psp-tests/matrix_probe` (`MODE=api|calls|scene`). Protocol: `InitWindow(480,272)` once (only to give `GetWorldToScreen` real dimensions) then no `BeginDrawing`/`EndDrawing`; 100-call warm-up; 20 blocks x 10,000 calls; per-call µs = median and p95 of the 20 block means; a `volatile` checksum consumes every result; machine-readable line per function (`API <name> n=10000 med_us= p95_us= sum=`). Functions: `GetCameraMatrix2D`, `GetWorldToScreen2D`, `GetScreenToWorld2D`, `GetWorldToScreen`, `GetWorldToScreenEx`, `MatrixLookAt`, `MatrixPerspective`, `MatrixOrtho`, `MatrixMultiply`, `Vector3Transform`, `QuaternionTransform`, `UpdateCamera(CAMERA_CUSTOM)` | `done` | µs/call median and p95 for each, two runs within repeatability | table in §9; two runs within 0.02 µs; clock calibration 3.94 µs |
+| T2 | **Cached vs rebuild**: for N=100/1000 world positions compare `GetWorldToScreen*` per call with the app-side pattern: build `matProj` and `matView` once, compose `P*V`, then `Vector3Transform` + perspective divide. Report µs total and µs/position for both, plus the break-even N; document the pattern as guidance (no public API change) | `done` | µs for both at N=100/1000; break-even; no API change | 6.27 vs 0.50 µs/pos at N=100; 6.31 vs 0.49 at N=1000; 13x |
+| T3 | **Scene attribution**: N=1/10/100/500 cubes in the probe's `MODE=scene` with the `bunnymark` `STAT`/`SPLIT` harness. Attribute with measurement-only counters under `PSP_MATRIX_PROBE`: (a) per-object model build in `DrawMesh` (Matrix multiply/scale/translate), (b) `rlMultMatrixf` -> `glMultMatrixf`, (c) pspgu matrix upload (`sceGuSetMatrix`), (d) the remainder to the frame. Cross-check the slope against 069's measured sample: `(28.3 - 11.56) / (250 - 50) = 0.084 ms/cube` | `done` | matrix share in ms and % of frame at N=1/10/100/500; slope agrees with 0.084 ms/cube within noise | cull ~12-13 µs/call, compose ~3, mult ~3.5; 20 % of the frame at N=500; frame slope 0.069-0.113 ms/cube |
+| T5 | **Decision and write-back**: adopt cache pattern, adopt GUM, or close "not justified"; update Phase 10 page, memory map §10.1/§14 and baselines | `done` | decision text with metric/threshold/result; docs build `--strict` | keep raymath; cache pattern documented; cull is the next lever |
 
 ### Design notes
 
@@ -150,16 +150,24 @@ capture must stay byte-identical with the switch off. The counters are a build-t
 - 2026-11-23 — implementation review: base commit, preconditions, probe path and protocol, corrected command
   recipe, T4's authorising rows made component-specific, `gl_matrix.c` upload reference fixed, GUM library
   locations verified, matrix-layout trap added. Ready for T1.
+- 2026-11-23 — T1 built `psp-tests/matrix_probe`; the first run was invalid (GCC hoisted the inline raymath
+  helpers, all reading 0.068 µs = the clock floor). Adding a per-iteration input (`jit[i & 15]`) fixed it.
+- 2026-11-23 — T2 measured both N; the cached arm agrees with the API to 0.0005 px.
+- 2026-11-23 — T3 added `PSP_MATRIX_PROBE` counters to `src/rmodels.c` and the switch to `src/Makefile`;
+  measured N=1/10/100/500 with the counters and N=1/10/100/500 without. The clock call costs 3.94 µs, so each
+  bracket embeds one clock: the corrected components are in §9, the raw brackets in §7.
+- 2026-11-23 — T4 dropped: the builders are 1.48 µs/frame, below the 0.1 ms threshold. T5 written back.
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| per-call repeatability | two runs within 5 % or 0.5 µs, whichever is larger | | |
-| camera matrix build | record (µs/call and per frame) | | |
-| per-object matrix share | ≤ 0.1 ms/frame or 1 % | | |
-| frame regression (any change) | 0 | | |
-| capture parity (any change) | 0 differing pixels | | |
+| per-call repeatability | two runs within 5 % or 0.5 µs, whichever is larger | **within 0.02 µs** | `a` |
+| camera matrix build | record (µs/call and per frame) | **0.24-0.91 µs/call; 1.48 µs/frame** | `a` |
+| per-object matrix share | ≤ 0.1 ms/frame or 1 % | **7.7 ms, 20 % at N=500** | `a` |
+| clock calibration | must be recorded | **3.94 µs per call** | `a` |
+| frame regression (any change) | 0 | no change landed | `a` |
+| capture parity (any change) | 0 differing pixels | 2D and `SCENE=both` 0 | `a` |
 
 At 16.68 ms the 1 % figure is 0.167 ms, so **0.1 ms/frame is the binding threshold**; state which row authorised
 each decision.
@@ -168,32 +176,70 @@ each decision.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| probe protocol | `P10-S8 a` | 2 runs, 20 x 10k | repeatability | | within 5 % or 0.5 µs |
-| camera API | `P10-S8 a` | 10k calls each | µs/call median / p95 | | T1; includes `GetWorldToScreen` and the primitives |
-| world-to-screen N=100 | `P10-S8 a` | per call vs cached | µs total | | T2 |
-| world-to-screen N=1000 | `P10-S8 a` | per call vs cached | µs total | | T2 |
-| scene N=1/10/100/500 | `P10-S8 a` | cubes | matrix ms / frame | | T3 |
-| GUM A/B | `P10-S8 b` | same scene | µs, frame p95, captures | | only if T3 authorises |
-| gate | `P10-S8 b` | `batch_check` | hash | | `b69830b8…` if a library change lands |
+| repeatability | `P10-S8 a` | 2 runs, 20 x 10k | µs median | within 0.02 | pass |
+| calibration | `P10-S8 a` | `sceKernelGetSystemTimeWide` | µs/call | **3.94** | any bracket below this is unmeasurable |
+| camera API | `P10-S8 a` | 10k each | µs/call | see §9 table | 0.17-9.08 |
+| world-to-screen N=100 | `P10-S8 a` | per call / cached | µs total | **627.1 / 49.7** | 6.27 / 0.50 per pos; 0.0002 px |
+| world-to-screen N=1000 | `P10-S8 a` | per call / cached | µs total | **6308.8 / 485.0** | 6.31 / 0.49 per pos; 0.0005 px |
+| scene N=1/10/100/500 | `P10-S8 a` | cubes, counters off | work ms | **0.598 / 1.618 / 11.071 / 38.625** | medians 16.683 to N=100, 50.050 at N=500 |
+| attribution N=100 | `P10-S8 a` | counters on, corrected | ms/frame | **cull 1.31, compose 0.23, mult 0.29** | 16.5 % of work |
+| attribution N=500 | `P10-S8 a` | counters on, corrected | ms/frame | **cull 6.01, compose 0.82, mult 0.89** | 20 % of work |
+| instrumentation | `P10-S8 a` | counters on vs off | work delta | **+1.59 @100, +5.56 @500** | raw brackets overstate |
+| GUM A/B | — | — | — | **dropped** | builders 1.48 µs/frame; no vector transform |
+| gate | `P10-S8 a` | `batch_check` / `SCENE=both` | diff | **0 / 0** | 613 colours; 19,608 px |
 
 ## 8. Exit criteria
 
-- [ ] per-call µs median/p95 table for every camera/matrix helper, two runs within repeatability
-- [ ] cached-vs-rebuild delta at N=100/1000, with the app-side pattern documented
-- [ ] matrix share of the scene at N=1/10/100/500, in ms and % of frame
-- [ ] a written GUM go/no-go using the 0.1 ms / 1 % threshold
-- [ ] if GUM is adopted: 0-diff captures, p95 frame not worse, default GUM only
-- [ ] if not adopted: the number that decided it, and the cache pattern left as guidance
-- [ ] no public API change; `examples/` diff empty; docs build `--strict`
+- [x] per-call µs median/p95 table for every camera/matrix helper, two runs within repeatability
+- [x] clock calibration recorded (3.94 µs) so the attribution correction is reproducible
+- [x] cached-vs-rebuild delta at N=100/1000, with the app-side pattern documented
+- [x] matrix share of the scene at N=1/10/100/500, in ms and % of frame
+- [x] a written GUM go/no-go using the 0.1 ms / 1 % threshold — **no-go**, with the number
+- [x] not adopted: the cache pattern left as guidance and the deciding numbers in §9
+- [x] no public API change; `examples/` diff empty; docs build `--strict`
 
 ## 9. Result
 
-Not started.
+Sprint 070 closes 4/5. **T4 (GUM) is `dropped`** with the numbers that decided it; no library change landed.
+
+**T1 — per-call cost** (µs, median of 20 x 10k; two runs within 0.02): `GetCameraMatrix2D` 6.30,
+`GetWorldToScreen2D` 6.70, `GetScreenToWorld2D` 9.08, `GetWorldToScreen` 6.78, `GetWorldToScreenEx` 6.27,
+`MatrixLookAt` 0.91, `MatrixPerspective` 0.33, `MatrixOrtho` 0.24, `MatrixMultiply` 1.67, `Vector3Transform` 0.17,
+`QuaternionTransform` 0.17, `UpdateCamera(CUSTOM)` 1.12. Calibration: `sceKernelGetSystemTimeWide` **3.94 µs** per
+call. The world-to-screen helpers rebuild the projection and the view and do three soft-float divides on every
+call; the builders they use are sub-microsecond.
+
+**T2 — the cache pattern is a 13x win.** N=100: 6.27 vs 0.50 µs/position (627 vs 50 µs); N=1000: 6.31 vs 0.49
+(6,309 vs 485 µs); the cached result agrees with the API to 0.0005 px. The pattern is: compose `P*V` once, transform
+with `QuaternionTransform` (the `w` row is needed for the divide), no API change. A frame that projects 1,000
+entities would spend 6.3 ms of 16.68 ms on the API path and 0.5 ms on the cached path.
+
+**T3 — the scene's matrix cost is the cull, not the camera.** Frame work (counters off): N=1 **0.598 ms**,
+N=10 **1.618**, N=100 **11.071**, N=500 **38.625** (median 16.683 up to N=100, 50.050 at N=500). With
+`PSP_MATRIX_PROBE`, subtracting one clock call (3.94 µs) from each bracket: conservative cull **12-13 µs per
+call** (eight corner transforms and two matrix multiplies in soft float), per-object compose **~3 µs**,
+`rlMultMatrixf` **~3.5 µs**. At N=500 (500 cull calls, 282 drawn) that is 6.01 + 0.82 + 0.89 = **7.7 ms, 20 % of
+the frame**. The instrumentation costs 1.59 ms at N=100 and 5.56 ms at N=500, which is why the corrected numbers,
+not the raw brackets, are quoted. The frame slope (0.069-0.113 ms/cube) matches sprint 069's 0.084 ms/cube.
+
+**T4 — GUM dropped.** The three builders total **1.48 µs per frame** (one call each), **0.009 %** of a 16.68 ms
+frame against a 0.1 ms / 1 % threshold. GUM has no vector transform, so it cannot touch the cull (the dominant
+matrix-shaped cost) or the three divides inside `GetWorldToScreenEx`; a non-VFPU GUM dependency would buy
+microseconds and add a library, a layout conversion and an A/B surface. `libpspgum_vfpu` stays opt-in and is not
+justified by these numbers either.
+
+**T5 — decision.** Keep raymath. The cache pattern is the guidance for per-entity projections; the next lever is the
+conservative cull's eight-corner test (~12 µs/call), which belongs to `rmodels`, not to a matrix library. Phase page
+and memory map carry the decision.
 
 ## 10. Follow-ups
 
-- If per-object matrix work is the real cost, the next target is **skinning/instance transforms**, where
-  GUM/VFPU can batch many vertices; do not generalise from the camera numbers.
-- If the cost is draw submission, the owner is Phase 10's clip/GE path, not a matrix library.
-- `libpspgum_vfpu` remains opt-in; any adoption needs the thread attribute, context init and an A/B that
-  includes the state-corruption risk.
+- **The cull is the next target**: ~12 µs per `DrawMesh`, 20 % of the frame at N=500. Two `glGetFloatv` calls per
+  mesh and an eight-corner transform in soft float; a per-frame MVP cache plus a cheaper conservative test
+  (sphere or 4-corner) is the obvious experiment. Measure with this probe.
+- **Per-entity projections**: document the cache pattern (compose `P*V` once, `QuaternionTransform`, divide by `w`);
+  the API path is 13x the cost and there is no reason to change the API.
+- **Methodology**: `sceKernelGetSystemTimeWide` costs 3.94 µs, so any span below that cannot be bracketed with it;
+  time loops, not statements. The calibration row is part of the probe now.
+- `libpspgum_vfpu` remains opt-in; any adoption needs the thread attribute, context init and an A/B that includes
+  the state-corruption risk.

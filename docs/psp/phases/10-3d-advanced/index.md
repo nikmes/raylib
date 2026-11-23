@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 carries the remaining per-DrawMesh CPU cost; P10-S9 (written) resolves the deferred framebuffer-rotation defect |
+| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 closed the camera/matrix question (cache 13x, GUM dropped; the cull is the next lever); P10-S9 (written) resolves the deferred framebuffer-rotation defect |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
 | Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **met at the frozen N=50**: median 16.683 ms, p95 16.695, work 11.56 ms, 0 arena resets (069). The 60 fps ceiling is between N=50 and N=99; the cost above it is engine-side soft float (P10-S8) |
 
@@ -104,7 +104,7 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
 - [x] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency — 065:
-      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only
+      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only (order revised in P10-S9 T1)
 - [x] Static bounds and GE-side object culling for scenes with many objects — 066: 917/1,000 culled,
       0 pixel change, 233.6 → 50 ms
 - [x] Tessellate large triangles on the CPU where the GE would drop them at the window edge — 066:
@@ -320,5 +320,5 @@ float, specified as **P10-S8 (070)**.
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | NDC clip + fan, conservative culling, ME dropped | **done** — 236/720 vs 0; 917 culled, 0 diff |
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | **done** — 20 fps; two criteria recorded not met |
 | [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, guard-band clip region, VFPU projection, framebuffer-rotation fix, lit correction, sweep, re-close | **done** — 60 fps at N=50, work 11.56 ms, 0 overflows; 237/720 px; lit corrected; b30 |
-| [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | **written** — reviewed 2026-11-23; implementation-ready |
-| [P10-S9 — Framebuffer rotation with render targets](../../sprints/076-phase10-framebuffer-rotation.md) | the deferred flicker: localize the RTT band, list break on unbind, 2-buffer fallback | written |
+| [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | **done** — cache 13x (6.31 -> 0.49 µs/pos); GUM dropped (builders 1.48 µs/frame); cull ~12 µs/call = 20 % at N=500 |
+| [P10-S9 — Framebuffer rotation with render targets](../../sprints/076-phase10-framebuffer-rotation.md) | the deferred flicker: localize the RTT band, list break on unbind, 2-buffer fallback | written — T1 `TexSync`/`TexFlush` A/B implemented; device run pending |
