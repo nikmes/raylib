@@ -345,9 +345,9 @@ static void applyTexture(PspGuTexture *t)
     sceGuTexScale(scaleU, scaleV);
     sceGuTexOffset(0.0f, 0.0f);
 #if PSPGU_TEXSYNC_FIRST
-    // The official samples put the read-out barrier before the cache flush:
+    // The reference samples (local notes §5) put the read-out barrier before the cache flush:
     // TexSync blocks texture read-out until the GE's frame-buffer write completes,
-    // then TexFlush drops the cache (libgu-Reference English: sceGuTexSync).
+    // then TexFlush drops the cache (local notes §1: sceGuTexSync).
     if (t->dirty)
     {
         sceGuTexSync();

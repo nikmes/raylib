@@ -27,7 +27,7 @@ ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif
 
-# P10-S9 T1: the official libgu samples put the read-out barrier before the cache
+# P10-S9 T1: the reference samples (local notes §5) put the read-out barrier before the cache
 # flush. T1 measured it: it did not clear the band (656 vs 528 px), so the default
 # stays 0 (the pre-P10-S9 order); =1 remains the measured arm.
 PSPGU_TEXSYNC_FIRST ?= 0
