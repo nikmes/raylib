@@ -151,3 +151,6 @@ psp-tests/**/EBOOT.PBP
 psp-tests/**/PARAM.SFO
 psp-tests/**/*.raw
 psp-tests/**/*.png
+
+# Local reference notes: vendor-document provenance, never committed
+/LOCAL-REFERENCES.md

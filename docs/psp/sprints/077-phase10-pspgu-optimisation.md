@@ -27,6 +27,9 @@ the remaining structural question (per-call merging) with numbers. It does **not
 | per-object compose + `rlMultMatrixf` | ~3 µs + ~3.5 µs |
 | GUM | closed: default slower (5.39 vs 1.67 µs multiply); VFPU build 0.75 µs but needs a VFPU/FPU fence (FPU Exception IV measured) and cannot touch the cull |
 
+Reference provenance for the audit items is in the local reference notes (`LOCAL-REFERENCES.md`, untracked, not
+in the repository) §5.
+
 **What we would have done differently** (the retrospective this sprint exists to act on):
 
 1. **The cull should have cached what it already knows.** Sprint 066 added two `glGetFloatv` and two 4×4 multiplies

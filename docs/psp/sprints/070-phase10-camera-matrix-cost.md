@@ -29,7 +29,8 @@ math, not the camera. This sprint measures that before any GUM code.
 4. `../memory-map.md` §10.1/§14 — GUM default vs VFPU, no VFPU intrinsics, thread attribute and context
    rules. The libraries are `$PSPDEV/psp/sdk/lib/libpspgum.a` and `libpspgum_vfpu.a`, the header
    `$PSPDEV/psp/sdk/include/pspgum.h` (both present, verified 2026-11-23); the API is `gumLookAt`,
-   `gumPerspective`, `gumOrtho`, `gumMultMatrix`.
+   `gumPerspective`, `gumOrtho`, `gumMultMatrix`. Archive provenance and the disassembly notes: local reference
+   notes (`LOCAL-REFERENCES.md`, untracked) §4.
 5. `../sprints/061-phase10-camera-relative-and-ge-native-models.md` §9/§T5 — the camera-relative result was
    **null** because pspgu composes view×model on the CPU; do not repeat that experiment.
 
@@ -226,7 +227,8 @@ not the raw brackets, are quoted. The frame slope (0.069-0.113 ms/cube) matches 
 frame against a 0.1 ms / 1 % threshold. GUM has no matrix-vector transform, so it cannot touch the cull (the
 dominant matrix-shaped cost) or the three divides inside `GetWorldToScreenEx`.
 
-The archive-level check of the two shipped GUM archives settles where GUM *could* help. `libpspgum.a` is scalar
+The archive-level check of the two shipped GUM archives (provenance: local reference notes §4) settles where GUM
+*could* help. `libpspgum.a` is scalar
 throughout; only `libpspgum_vfpu.a` replaces `gumMultMatrix`, `gumScale`, `gumTranslate`, `gumRotate*` and
 `gumFastInverse` (verified by disassembly — the builders `gumLookAt`/`gumPerspective`/`gumOrtho` are the same
 scalar objects in both archives). Measured with `matrix_probe MODE=gum` (µs/call, 20 x 10k):

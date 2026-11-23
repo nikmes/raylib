@@ -136,7 +136,8 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 
 Re-read the GU API surface and the samples shipped with our toolchain, then A/B the current driver and reuse the
 069/070 measurements. All numbers are device-only; every behaviour cited below is either measured here or comes
-from the toolchain's own headers and samples.
+from the toolchain's own headers and samples. Vendor-document provenance for the GU features checked is in the
+local reference notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §5.
 
 **What is already at or above the samples' level.** Three framebuffers with two rotating direct lists, a per-list
 vertex arena and targeted waits (13-19 µs, no full GE wait at 60 fps); GE-native packed meshes on the direct path;
@@ -186,8 +187,8 @@ why 070 dropped it. The clip pass is the largest *driver-side* share and the per
 
 ## Guidelines from the renderer blueprint
 
-Source: `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` §16.5–16.8 (AI-written blueprint inside the Sony SDK reference
-tree, **not** Sony documentation). Cross-checked against our own measurements; where they disagree, ours win.
+Sources: local reference notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §3, cross-checked against
+our own measurements; where they disagree, ours win.
 
 **Vertex pipeline and formats:**
 
@@ -270,23 +271,22 @@ measured 58.3 µs/sprite.
 | 2 | **Double-buffered dynamic vertex arrays** | required by the `GU_SEND` submission model: the list borrows pointers, so a buffer may not be rewritten while the GE reads it | `openTRI/triParticle.c:162-169,760`; `triGraphics.c:396-409` |
 | 3 | **GE skinning for a hero character, cached CPU skinning for crowds** | 7.2× on one hot instance, loses on 112 draws (4.9 vs 2.0 ms) — animation LOD, not one policy | blueprint §16.6, consistent with our own findings |
 | 4 | **VRAM-resident, swizzled atlases for 3D materials** | second-order for CPU cost, first-order once GE texture fetch becomes visible | `openTRI/triTexman.c:406-440`, `triImage.c:256-317` |
-| 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c:133-200`; `PGE/pgeGfx.c:451-490`; SDK `sample/graphics/scene` |
+| 5 | **Render-to-texture with an explicit target size** | see the bug below; the pattern is a separate target and a copy, not a resize in place | `openTRI/tri3d.c:133-200`; `PGE/pgeGfx.c:451-490`; local notes §2 (reference sample) |
 | 6 | **`GU_SEND` dual lists** | ranked last even here: costs a frame of latency and 2× list memory, and buys nothing while the CPU is the constraint | `openTRI/triGraphics.c:396-409` |
 
 ### Render-to-texture: what the references actually do
 
 Every working implementation in the reference set uses the same primitive: **point the GU draw buffer at a VRAM
 block with `sceGuDrawBufferList`, render, restore the screen buffer, then bind the block as a texture**. None uses
-a GL-style framebuffer object; on this hardware the draw buffer *is* the render target. The libgu manual gives the
-contract: `fbp` must be 8192-byte aligned and `fbw` a multiple of 64 between 64 and 1024; changing the draw buffer
-does not change the display buffer; and memory the GE has written may only be re-read as a texture after
-`sceGuTexFlush()` **and** `sceGuTexSync()`
-`[source scan: psp_sdk_660/usr/local/psp/devkit/document/html/graphics/libgu-Reference-English.htm:8509-8605, :10635-10749]`.
+a GL-style framebuffer object; on this hardware the draw buffer *is* the render target. The draw-buffer contract
+(local reference notes §2) is: `fbp` must be 8192-byte aligned and `fbw` a multiple of 64 between 64 and 1024;
+changing the draw buffer does not change the display buffer; and memory the GE has written may only be re-read as a
+texture after `sceGuTexFlush()` **and** `sceGuTexSync()`.
 
 | Source | Mechanism | Worth taking | Not worth taking |
 |---|---|---|---|
-| libgu 6.60 manual | `sceGuDrawBufferList(fpf, fbp, fbw)` for mid-list buffer changes; `sceGuCopyImage` note: `TexFlush` then `TexSync` before sampling | the alignment/width rules and the cache contract | — |
-| SDK `sample/graphics/scene` | renders a camera effect into a 256×256 5551 aux buffer placed after three 272 KiB frame buffers (`main.cpp:47-50`), redirects (`SceneGraph/Context.cpp:211-215`), restores screen and viewport (`:228-231`), binds with `TexMode`/`TexImage`/`TexFlush`/`TexSync` (`:232-236`), then composites a full-screen quad | the complete manual-conformant order: redirect → draw → restore → flush → sync → sample; 128 KiB target | fixed aux size; no dependency tracking — it flushes and syncs unconditionally on every camera switch |
+| local notes §2 (GU manual) | `sceGuDrawBufferList(fpf, fbp, fbw)` for mid-list buffer changes; `sceGuCopyImage` note: `TexFlush` then `TexSync` before sampling | the alignment/width rules and the cache contract | — |
+| local notes §2 (reference sample) | renders a camera effect into a 256×256 5551 aux buffer placed after three 272 KiB frame buffers (`main.cpp:47-50`), redirects (`SceneGraph/Context.cpp:211-215`), restores screen and viewport (`:228-231`), binds with `TexMode`/`TexImage`/`TexFlush`/`TexSync` (`:232-236`), then composites a full-screen quad | the complete contract-conformant order: redirect → draw → restore → flush → sync → sample; 128 KiB target | fixed aux size; no dependency tracking — it flushes and syncs unconditionally on every camera switch |
 | PGE | `pgeGfxRenderToTexture` (`pgeGfx.c:451-469`) requires a VRAM texture, calls `sceGuSync(0, 2)` and `sceKernelDcacheWritebackAll()`, redirects, sets offset/viewport/scissor; `pgeGfxRenderToScreen` (`:471-490`) restores; sample `samples/graphics/rendertotexture/rendertotexture.c:30-55` uses a 128×128 8888 target | save/restore as a pair; validate that the target is VRAM | a whole-D-cache writeback and a GE sync per switch, and `pgeTextureActivate` (`pgeTexture.c:670-696`) never issues `TexFlush`/`TexSync` — it works because the sample's target is power-of-two and the sync is global, not because the contract is met |
 | openTRI | `triRendertotexture` (`triGraphics.c:604-632`) validates PSM and VRAM range then redirects; `triRendertoimage` (`:638-668`) and `triRendertoscreen` (`:671-686`) restore. 3D: `tri3dRenderbufferCreate` (`tri3d.c:133-159`), `SetRendertarget` (`:161-174`), `SetTexture` (`:176-190`) with `TexScale(logical/padded)`; call sites `sceGuTexSync()` (`tri3d.c:327` etc.) | `TexScale` for a padded target; the PSM whitelist; an explicit restore path | no sync at all before the redirect; `TexSync` without `TexFlush`; allocates `twidth*height` (`:158`) but declares `twidth*theight` (`:185`) — non-power-of-two heights over-read (already listed under hazards) |
 | daedalus | no render-to-texture path found: `sceGuDrawBuffer` appears only at context setup and resolution changes (`GraphicsContextPSP.cpp:787,862,912`); `sceGuCopyImage` (`:317-319`) is an interlaced display blit; its framebuffer effects are HLE (`Ucode_FB.h:24,65,96`) | confirmation that even a full emulator does not reach for GL FBOs here | does not supply an example; a search of `Source/SysPSP` for `sceGuDrawBufferList` and "render target" returned no RTT use |
@@ -304,7 +304,7 @@ follow from the sources:
   with `TexScale = logical / padded`, as `tri3dRenderbufferSetTexture` does. A render target is sampled through
   the same 512-pixel band path measured in sprint 020, so the window rule applies; sprint 023's strip table is a
   measured null, so do not expect texture-cache tricks to rescue a poorly sized target.
-- **Budget the target as VRAM, not as a free block.** A 256×256 8888 target is 256 KiB; the SDK's 256×256 5551
+- **Budget the target as VRAM, not as a free block.** A 256×256 8888 target is 256 KiB; the reference 256×256 5551
   aux buffer is 128 KiB; PGE's sample target is 64 KiB. Targets compete with the texture tail and, for 3D, the
   depth buffer. Read the boot allocation counters; the allocator is a 512-byte span allocator with a free list and
   coalescing (sprint 015 T3), and `pspguVramStats` reports the largest free span — but a target must be
