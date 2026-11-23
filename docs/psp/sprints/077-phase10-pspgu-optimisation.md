@@ -6,8 +6,8 @@
 | Sprint | P10-S10 |
 | Branch / base commit | `master` @ `bc650344` (audit written; P10-S8 closed) |
 | Started / closed | 2026-11-23 (written) / — |
-| Build number(s) | pspgu `b31` planned (P10-S9 also plans `b31`; if P10-S9 lands first this sprint takes `b32` — take the next free tag and record it in §7). `libraylib.a` default `PSP_BATCH=1`; engine changes stay behind existing switches |
-| Tasks | 0/6 done |
+| Build number(s) | pspgu `b32` (P10-S9 shipped `b31`), content hash `0d354986…`; `libraylib.a` default `PSP_BATCH=1`. New switches: `PSPGU_VFPU=1` (opt-in VFPU), `PSP_MATRIX_PROBE=1` (measurement-only) |
+| Tasks | 4/6 done — T1 and T5 dropped with the numbers |
 
 ## 0. Handover
 
@@ -141,12 +141,12 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Clip classification, deduplicated and fused.** For indexed draws, classify each unique vertex once (small index→clip-coord cache over the chunk) and reuse it for every triangle that references it; fuse the s16 fetch and the VFPU transform so a unique vertex is read/transformed once. Keep the per-object AABB shortcut and the in-index-order run emission unchanged | `todo` | `PSPGU_NO_CLIP` A/B at N=100/500: clip share cut ≥30 %; clip probes 237/720; inside geometry 0 diff; sample N=50 thresholds hold | — |
-| T2 | **Cull: per-frame MVP + VFPU corners.** In `rmodels`, replace the two `glGetFloatv` and the two scalar 4×4 multiplies with a per-frame MVP cache, and transform the eight AABB corners with the same VFPU transform the clipper uses (scalar fallback). Keep the test conservative and the culled set unchanged | `todo` | `PSP_MATRIX_PROBE` cull 12 µs → ≤5 µs/call; CULL=0 vs CULL=1 captures 0 diff at N=1,000; frame delta measured | — |
-| T3 | **VFPU `glMultMatrixf`.** Replace the scalar 4×4 multiply in the GL stack with a VFPU matrix×matrix (same readiness and scalar fallback as T1's transform); the upload stays skipped when the composed matrix is unchanged | `todo` | `PSP_MATRIX_PROBE` `mult_ms` 3.5 µs → ≤1.5 µs/call; all captures 0 diff; sample thresholds hold | — |
-| T4 | **Per-call overhead: attribute, then decide instancing.** Attribute the ~51 µs/call baseline with counters (array setup, texture bind, matrix, driver entry) in a measurement-only build. Prototype merging identical `DrawMesh` calls behind `PSP_MERGE_DRAWS=1` and measure — including the lost per-object AABB shortcut — then adopt or drop with the number | `todo` | attribution in ms/frame; merged vs per-object work at N=100/500; 0 diff captures; decision text | — |
-| T5 | **Opt-in compact formats (conditional).** `PSP_FAST2D=1`: batcher vertices as `GU_TRANSFORM_2D` + s16 position + 16-bit UV (colour stays 8888 for the gate). `GU_NORMAL_8BIT` for packed lit meshes. Both behind flags, both gated by the pixel captures; drop either with the number if parity or speed is against it | `todo` | per flag: capture diff vs default; work delta; decision | — |
-| T6 | **Re-close.** Full gates (2D, 060, MESH_SCENE, 061, 065, 066, `basic_shapes`), sample 300 frames ×2, docs (audit section updated with what landed), commit, restore pspGL | `todo` | every gate 0; sample thresholds; `2ab7378e` installed; strict build | — |
+| T1 | **Clip classification, deduplicated and fused.** For indexed draws, classify each unique vertex once (small index→clip-coord cache over the chunk) and reuse it for every triangle that references it; fuse the s16 fetch and the VFPU transform so a unique vertex is read/transformed once. Keep the per-object AABB shortcut and the in-index-order run emission unchanged | `dropped` | measured, not adopted | **dedup costs 1.2 ms at N=500**: control 40.745 ms, dedup-only 41.986. The per-triangle early-out matters more than vertex sharing on dirty-heavy draws (the cube scene is 10/12 dirty per mesh). The early-out itself was kept: the old loop fetched the other two vertices for nothing. Clip probes still 237/720, inside geometry 0 diff. |
+| T2 | **Cull: per-frame MVP + VFPU corners.** In `rmodels`, replace the two `glGetFloatv` and the two scalar 4×4 multiplies with a per-frame MVP cache, and transform the eight AABB corners with the same VFPU transform the clipper uses (scalar fallback). Keep the test conservative and the culled set unchanged | `done` (no gain) | per-frame `P*V` cache + one multiply per draw + VFPU corner path (opt-in) | cull still **~13 µs/call** bracketed (one 3.94 µs clock removed): the two `glGetFloatv` calls and the bounds lookup dominate, not the transforms. The cache is kept (one less multiply); the cull is not the lever. CULL=0 vs 1 gate in §7. |
+| T3 | **VFPU `glMultMatrixf`.** Replace the scalar 4×4 multiply in the GL stack with a VFPU matrix×matrix (same readiness and scalar fallback as T1's transform); the upload stays skipped when the composed matrix is unchanged | `done` (opt-in) | `PSP_MATRIX_PROBE` `mult` 3.5 → **1.1 µs true** per call with `PSPGU_VFPU=1`; scalar default; captures 0 diff | The VFPU path was **inert until this sprint** (weak `pspvfpu_initcontext` never pulled the archive; the ELF showed `w`). Fixed by vendoring `pspvfpu.o` into `libGL.a` and using a strong reference (`T`, self-check `maxerr=0.000000`). Under PSPLink the thread attribute costs ~1.2 ms/frame in the sample; hence opt-in, default off. |
+| T4 | **Per-call overhead: attribute, then decide instancing.** Attribute the ~51 µs/call baseline with counters (array setup, texture bind, matrix, driver entry) in a measurement-only build. Prototype merging identical `DrawMesh` calls behind `PSP_MERGE_DRAWS=1` and measure — including the lost per-object AABB shortcut — then adopt or drop with the number | `done` (decision) | attribution + decision | Attribution at N=500: cull ~13, compose ~1.7, multiply 3.5 scalar / 1.1 VFPU, clip ~47 µs per submitted draw; the per-call baseline (~51 µs) dominates. **Merging deferred**: a merged batch loses the per-object AABB skip and the workload is dirty-heavy; needs its own prototype. Way forward in §10. |
+| T5 | **Opt-in compact formats (conditional).** `PSP_FAST2D=1`: batcher vertices as `GU_TRANSFORM_2D` + s16 position + 16-bit UV (colour stays 8888 for the gate). `GU_NORMAL_8BIT` for packed lit meshes. Both behind flags, both gated by the pixel captures; drop either with the number if parity or speed is against it | `dropped` | not CPU-bound, parity-bound | The compact 2D/s8 formats trade exact pixels (613-colour gate; 061 s16-UV cost 37 px) for vertex bandwidth the scene does not spend; the per-call cost dominates. No device experiment spent. |
+| T6 | **Re-close.** Full gates (2D, 060, MESH_SCENE, 061, 065, 066, `basic_shapes`), sample 300 frames ×2, docs (audit section updated with what landed), commit, restore pspGL | `done` | every gate 0; sample thresholds; `2ab7378e` installed; strict build | 2D 0/613, `SCENE=both` 0, RTT 0, clip 237/720, `basic_shapes` 284; sample 16.683/16.684, p95 16.728, work 11.96/11.99 |
 
 ### Design notes
 
@@ -220,7 +220,60 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
 ## 9. Result
 
-—
+Sprint 077 closes 4/6: T2/T3/T4/T6 done, **T1 and T5 dropped with numbers**. The headline is not a speed-up —
+it is that **the VFPU was never actually active** and that the remaining cost is per-call, not per-vertex.
+
+**The instrument bug (biggest finding).** `pspvfpu_initcontext` was declared weak so apps without
+`-lpspvfpu` would fall back. A weak undefined symbol never pulls an archive member, so it stayed `w` in every
+final ELF: `clipVfpuReady` was 0, and every “VFPU” path since sprint 066 silently ran its scalar fallback (the
+“maxerr=0.000000” checks compared scalar to scalar). The fix vendors the 9.5 KB `pspvfpu.o` into `libGL.a` and
+uses a strong reference: the ELF now shows `T`, and both self-checks (`matrix:` and `clip:`) log real VFPU
+agreement. No app link flag changed.
+
+**T1 — dedup dropped.** Measured at N=500: control (scalar, no dedup) **40.745 ms**, dedup-only **41.986**,
+dedup+VFPU 40.108, VFPU-only 41.365 (±1 ms instrument noise; medians all 50.050). Sharing saves transforms but
+loses the per-triangle early-out, and this scene is 10/12 dirty per mesh. The early-out was kept and improved: the
+old loop fetched the remaining vertices after the first outside one; the new loop stops at it. Clip probes stay
+237/720 px and inside geometry is 0 diff, so the clip contract is unchanged.
+
+**T2 — MVP cache, no measurable gain.** `P*V` is now composed once per frame (two 64-byte compares) and each mesh
+pays one multiply; a VFPU corner path exists behind the VFPU switch. The cull measures **~13 µs/call** bracketed
+(one 3.94 µs clock removed), unchanged: the two `glGetFloatv` calls, the bounds lookup and the plane tests
+dominate, not the eight transforms. The cache is kept; the cull is not the lever.
+
+**T3 — VFPU multiply is real but opt-in.** With the VFPU actually enabled, `PSP_MATRIX_PROBE` puts the
+per-object `rlMultMatrixf` at **1.1 µs** true versus **3.5 µs** scalar. But enabling the thread attribute makes
+the kernel save/restore the 128 VFPU registers on every context switch; under PSPLink the frozen sample pays
+**~1.2 ms/frame** (work 12.72 vs 11.96 scalar) while a 500-cube scene saves ~0.7 ms. The driver therefore keeps
+VFPU **off by default** and exposes `PSPGU_VFPU=1` for matrix-heavy workloads measured without PSPLink attached.
+
+**T4 — per-call is the wall.** Attribution at N=500: cull ~13 µs, compose ~1.7 µs, multiply 3.5/1.1 µs, clip
+~47 µs per submitted draw, of a ~51 µs baseline per `DrawMesh`. Merging/instancing is **deferred**: a merged batch
+loses the per-object AABB skip (the scene is dirty-heavy) and needs its own prototype. The way forward is in §10.
+
+**T5 — formats dropped.** The compact 2D / s8-normal formats trade exact pixels for vertex bandwidth the renderer
+does not spend; the CPU is the constraint. No device time was spent on them.
+
+**T6 — re-close.** Sample N=50, 300 frames ×2: median **16.683 / 16.684 ms**, p95 **16.728** both, work
+**11.960 / 11.991 ms** (thresholds hold; p95 is 0.022 ms from the limit). Gates: 2D **0 / 613 colours**,
+`SCENE=both` **0**, RTT direct-vs-sampled **0**, clip probes **237 / 720 px**, `basic_shapes` **284**, CULL=0 vs
+CULL=1 **0** at 1,000 cubes. Cube scene N=500: **39.85 ms** — the ≤30.9 ms budget is **not met**, and the number
+is recorded, not redefined.
+
+## 10. Follow-ups
+
+- **Per-call cost is the next programme.** ~51 µs per `DrawMesh` is rlgl state + pspgu list emission; a
+  prototype that merges identical draws must keep a per-instance AABB (or accept losing the skip) and measure
+  both sides. That is a sprint of its own, not a patch.
+- **Cheap cull cleanup**: an rlgl matrix generation counter would remove the two `glGetFloatv` copies per mesh;
+  the corner math is already cheap enough that the cull stays ~13 µs without it.
+- **VFPU**: keep `PSPGU_VFPU=1` opt-in. Re-measure on a detached device (no PSPLink interrupts) before deciding
+  whether the context-switch cost flips. The multiply itself is a real 3× win.
+- **Clip**: the early-out is now optimal for dirty-heavy draws; the polygon clipper (`clipLerp`/`packClipVertex`)
+  is the remaining share, and only worth VFPU when the attribute is already paid for.
+- **Sprint 069 correction**: its T1 result described “VFPU projection”; it was the inert scalar fallback. The
+  claim is corrected here, not edited in 069.
+
 
 ## 10. Follow-ups
 

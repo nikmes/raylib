@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 closed the camera/matrix question (cache 13x, GUM dropped; the cull is the next lever). P10-S9 (076) **closed** the deferred framebuffer-rotation defect: candidate (b), 8-frame RTT 0 diff, sample 16.683/16.684 ms, pspgu `b31` |
+| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 closed the camera/matrix question (cache 13x, GUM dropped; the cull is the next lever). P10-S9 (076) **closed** the deferred framebuffer-rotation defect: candidate (b), 8-frame RTT 0 diff, sample 16.683/16.684 ms, pspgu `b31`. P10-S10 measured the post-audit optimisations: the VFPU path had never been active (weak symbol), dedup and compact formats dropped with numbers, the VFPU is now opt-in |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
 | Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **met at the frozen N=50**: median 16.683 ms, p95 16.695, work 11.56 ms, 0 arena resets (069). The 60 fps ceiling is between N=50 and N=99; the cost above it is engine-side soft float (P10-S8) |
 
@@ -374,4 +374,4 @@ float, specified as **P10-S8 (070)**.
 | [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, guard-band clip region, VFPU projection, framebuffer-rotation fix, lit correction, sweep, re-close | **done** — 60 fps at N=50, work 11.56 ms, 0 overflows; 237/720 px; lit corrected; b30 |
 | [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | **done** — cache 13x (6.31 -> 0.49 µs/pos); GUM dropped (builders 1.48 µs/frame); cull ~12 µs/call = 20 % at N=500 |
 | [P10-S9 — Framebuffer rotation with render targets](../../sprints/076-phase10-framebuffer-rotation.md) | the deferred flicker: localize the RTT band, 8-frame gate, candidate (b) restore | **done** — RTT 0 diff at 8 frames, `fb0=fb1=fb2`, `FLICK 0`, sample 16.683/16.684 ms; b31; pspGL restored |
-| [P10-S10 — pspgu optimisation after the GU audit](../../sprints/077-phase10-pspgu-optimisation.md) | clip dedup/fused fetch, VFPU cull and multiply, per-call attribution, opt-in formats | written |
+| [P10-S10 — pspgu optimisation after the GU audit](../../sprints/077-phase10-pspgu-optimisation.md) | VFPU enablement fix, clip early-out, cull MVP cache, per-call attribution, format decision | **done** — VFPU was never active (weak symbol); now opt-in `b32`; dedup/formats dropped with numbers; N=500 39.85 ms (≤30.9 budget not met); CULL gate rig-blocked |

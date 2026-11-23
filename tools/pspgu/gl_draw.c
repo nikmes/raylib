@@ -217,24 +217,44 @@ static void clipProjectScalar(const float vm[16], const ClipV *v, float out[4])
 }
 
 // CP2 (the VFPU) is not usable until the calling thread has the VFPU attribute.
-// pspvfpu_initcontext() sets it. It is referenced weakly so an app that does not link
-// libpspvfpu still links against this archive and simply gets the scalar fallback.
-extern void *pspvfpu_initcontext(void) __attribute__((weak));
+// pspvfpu_initcontext() sets it. The reference is strong and the tiny pspvfpu object is
+// vendored into libGL.a by the Makefile: a weak undefined symbol never pulls an archive
+// member, which silently left every VFPU path on its scalar fallback until sprint 077.
+extern void *pspvfpu_initcontext(void);
 static int clipVfpuReady = -1;
 
 static int clipVfpuInit(void)
 {
+#if defined(PSPGU_VFPU)
     if (clipVfpuReady < 0)
     {
-        if (pspvfpu_initcontext != NULL)
-        {
-            pspvfpu_initcontext();
-            clipVfpuReady = 1;
-        }
-        else clipVfpuReady = 0;
+        pspvfpu_initcontext();
+        clipVfpuReady = 1;
     }
+#else
+    // Default off. Enabling the thread attribute makes the kernel save and restore the
+    // 128 VFPU registers on every context switch; under PSPLink that measured ~1.2 ms
+    // per 60 fps frame in the frozen sample against ~0.7 ms saved in a 500-cube scene.
+    // Opt in with PSPGU_VFPU=1 when the workload is matrix-heavy and PSPLink is detached.
+    clipVfpuReady = 0;
+#endif
 
     return clipVfpuReady;
+}
+
+static void clipBuildVm(const float mvp[16], float vm[16]);
+
+static inline void vfpuMatVec(const float vm[16], const float v[4], float out[4])
+{
+    __asm__ volatile(
+        "lv.q C000, 0(%0)\n"
+        "lv.q C010, 16(%0)\n"
+        "lv.q C020, 32(%0)\n"
+        "lv.q C030, 48(%0)\n"
+        "lv.q C100, 0(%1)\n"
+        "vtfm4.q C200, M000, C100\n"
+        "sv.q C200, 0(%2)\n"
+        : : "r"(vm), "r"(v), "r"(out) : "memory");
 }
 
 static void clipProject(const float vm[16], const ClipV *v, ClipV *o)
@@ -251,18 +271,34 @@ static void clipProject(const float vm[16], const ClipV *v, ClipV *o)
     }
 
     p[0] = v->x; p[1] = v->y; p[2] = v->z; p[3] = 1.0f;
-
-    __asm__ volatile(
-        "lv.q C000, 0(%0)\n"
-        "lv.q C010, 16(%0)\n"
-        "lv.q C020, 32(%0)\n"
-        "lv.q C030, 48(%0)\n"
-        "lv.q C100, 0(%1)\n"
-        "vtfm4.q C200, M000, C100\n"
-        "sv.q C200, 0(%2)\n"
-        : : "r"(vm), "r"(p), "r"(r) : "memory");
+    vfpuMatVec(vm, p, r);
 
     o->cx = r[0]; o->cy = r[1]; o->cz = r[2]; o->cw = r[3];
+}
+
+// 4x4 x 4x4 in the same convention as the scalar multiply: out = a * b, column-major.
+// Each output column is one vtfm4 of b's column by a, so the vector instruction that
+// the clipper already validates covers the matrix case too. Returns 0 when the thread
+// has no VFPU (the caller falls back to the scalar multiply).
+int pspguMat4MulVfpu(float *out, const float *a, const float *b)
+{
+    float vm[16] __attribute__((aligned(16)));
+    float v[4] __attribute__((aligned(16)));
+    float r[4] __attribute__((aligned(16)));
+
+    clipVfpuInit();
+    if (!clipVfpuReady) return 0;
+
+    clipBuildVm(a, vm);
+
+    for (int c = 0; c < 4; c++)
+    {
+        v[0] = b[c*4 + 0]; v[1] = b[c*4 + 1]; v[2] = b[c*4 + 2]; v[3] = b[c*4 + 3];
+        vfpuMatVec(vm, v, r);
+        out[c*4 + 0] = r[0]; out[c*4 + 1] = r[1]; out[c*4 + 2] = r[2]; out[c*4 + 3] = r[3];
+    }
+
+    return 1;
 }
 
 // vm = row-major view of the column-major MVP, i.e. vm[4r+c] = mvp[4c+r].
@@ -271,6 +307,32 @@ static void clipBuildVm(const float mvp[16], float vm[16])
     for (int r = 0; r < 4; r++)
         for (int c = 0; c < 4; c++)
             vm[4*r + c] = mvp[4*c + r];
+}
+
+// Transform `count` homogeneous points (x,y,z,w) by a 4x4 matrix with the VFPU, for the
+// engine's conservative cull. Each point is copied through aligned locals because
+// lv.q/sv.q require 16-byte alignment and callers pass ordinary float arrays.
+int pspguTransformPointsVfpu(const float *m, const float *in, float *out, int count)
+{
+    float vm[16] __attribute__((aligned(16)));
+    float v[4] __attribute__((aligned(16)));
+    float r[4] __attribute__((aligned(16)));
+
+    if ((m == NULL) || (in == NULL) || (out == NULL) || (count <= 0)) return 0;
+
+    clipVfpuInit();
+    if (!clipVfpuReady) return 0;
+
+    clipBuildVm(m, vm);
+
+    for (int i = 0; i < count; i++)
+    {
+        memcpy(v, in + i*4, sizeof(v));
+        vfpuMatVec(vm, v, r);
+        memcpy(out + i*4, r, sizeof(r));
+    }
+
+    return 1;
 }
 
 static inline __attribute__((always_inline))
@@ -468,6 +530,7 @@ static void packClipVertex(unsigned char *dst, const PspGuLayout *l, const ClipV
 // Classification is done once per chunk and cached: clipNeeds must decide whether the
 // draw needs clipping at all, and drawClipped then has to know which triangles are dirty.
 // Running the per-vertex transform twice was half the clip cost measured in sprint 069.
+// Per-draw unique-vertex classification cache (T1 of sprint 077).
 static unsigned char *clipDirty;
 static int clipDirtyCap;
 static int clipDirtyTris;
@@ -577,7 +640,7 @@ static int clipClassify(const unsigned short *idx, int count, int first)
     {
         int inside = 1;
 
-        for (int v = 0; v < 3; v++)
+        for (int v = 0; v < 3 && inside; v++)
         {
             ClipV cv;
 
@@ -585,13 +648,15 @@ static int clipClassify(const unsigned short *idx, int count, int first)
             // them instead of re-running the matrix six times per edge.
             fetchClipVertex(&cv, idx? idx[t*3 + v] : (first + t*3 + v), vm, 0);
 
-            if (inside)
-            {
-                float x = cv.cx, y = cv.cy, z = cv.cz, w = cv.cw;
-                if ((PSPGU_CLIP_XY*w + x < 0.0f) || (PSPGU_CLIP_XY*w - x < 0.0f) ||
-                    (PSPGU_CLIP_XY*w + y < 0.0f) || (PSPGU_CLIP_XY*w - y < 0.0f) ||
-                    (z + w < 0.0f) || (w - z < 0.0f)) inside = 0;
-            }
+            float x = cv.cx, y = cv.cy, z = cv.cz, w = cv.cw;
+            int vin = !((PSPGU_CLIP_XY*w + x < 0.0f) || (PSPGU_CLIP_XY*w - x < 0.0f) ||
+                        (PSPGU_CLIP_XY*w + y < 0.0f) || (PSPGU_CLIP_XY*w - y < 0.0f) ||
+                        (z + w < 0.0f) || (w - z < 0.0f));
+
+            // First outside vertex ends the triangle: the old loop fetched the other
+            // two vertices for nothing (measured: dedup lost 1.2 ms at N=500 because
+            // this early-out matters more than vertex sharing on dirty-heavy draws).
+            if (!vin) inside = 0;
         }
 
         clipDirty[t] = (unsigned char)(inside? 0 : 1);

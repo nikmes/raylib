@@ -168,8 +168,45 @@ static void multiply(PspGuMatrix *result, const float *a, const float *b)
 void glMultMatrixf(const GLfloat *matf)
 {
     PspGuMatrix out;
+    static int vfpuState = -1;      // -1 untested, 0 scalar, 1 VFPU
 
     if (matf == NULL) return;
+
+    if (vfpuState != 0)
+    {
+        float vf[16] __attribute__((aligned(16)));
+
+        if (pspguMat4MulVfpu(vf, currentMatrix()->m, matf))
+        {
+            if (vfpuState < 0)
+            {
+                // One-time convention check against the scalar multiply the rest of the
+                // driver uses; a layout mismatch disables the VFPU path, it never ships.
+                PspGuMatrix ref;
+                float worst = 0.0f, scale = 0.0f;
+                multiply(&ref, currentMatrix()->m, matf);
+                for (int i = 0; i < 16; i++)
+                {
+                    float d = vf[i] - ref.m[i];
+                    if (d < 0) d = -d;
+                    if (d > worst) worst = d;
+                    float a = ref.m[i];
+                    if (a < 0) a = -a;
+                    if (a > scale) scale = a;
+                }
+                pspguLog("matrix: vfpu multiply check maxerr=%f scale=%f", (double)worst, (double)scale);
+                vfpuState = (worst <= (scale*1e-5f + 1e-5f))? 1 : 0;
+            }
+
+            if (vfpuState == 1)
+            {
+                memcpy(currentMatrix()->m, vf, sizeof(vf));
+                return;
+            }
+        }
+        else vfpuState = 0;
+    }
+
     multiply(&out, currentMatrix()->m, matf);
     *currentMatrix() = out;
 }

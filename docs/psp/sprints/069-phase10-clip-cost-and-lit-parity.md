@@ -281,3 +281,9 @@ clipped output exceeds the arena.
   Candidate (b), `saved.draw = fbOffset[frames % 3]`, is adopted in pspgu `b31`. The 2-frame band was display lag;
   the gate now runs 8 frames. RTT 0 diff, `fb0=fb1=fb2`, `FLICK 0`, sample 16.683/16.684 ms. Do not re-run the
   2-frame gate as a render check.
+
+- **Correction (sprint 077):** the VFPU projection described in T1 was inert. `pspvfpu_initcontext` was a weak
+  undefined symbol, and a weak undefined symbol never pulls an archive member, so `clipVfpuReady` stayed 0 and the
+  scalar fallback ran (the `maxerr=0.000000` check compared scalar to scalar). The VFPU is now opt-in
+  (`PSPGU_VFPU=1`, default off because the thread attribute costs more under PSPLink than it saves); see
+  077 §9. The clip result itself (60 fps at N=50, 0 overflows) stands unchanged.

@@ -40,13 +40,24 @@ CFLAGS += -DPSPGU_FB_RESTORE=$(PSPGU_FB_RESTORE)
 
 all: $(TARGET_LIB)
 
+# Vendored from the SDK's libpspvfpu.a. CP2 is unusable without the thread attribute, and
+# setting it is pspvfpu_initcontext's job; keeping the object in this archive means an app
+# that links -lGL needs no extra -lpspvfpu and the reference is a strong one, so the
+# archive member is actually extracted.
+PSPVFPU_LIB = $(PSPSDK)/lib/libpspvfpu.a
+VFPU_STAGE  = .pspvfpu
+
 $(TARGET_LIB): $(OBJS)
-	psp-ar rcs $@ $^
+	rm -rf $(VFPU_STAGE) && mkdir -p $(VFPU_STAGE)
+	cd $(VFPU_STAGE) && psp-ar x $(PSPVFPU_LIB)
+	rm -f $@
+	psp-ar rcs $@ $^ $(VFPU_STAGE)/pspvfpu.o
 
 %.o: %.c pspgu_internal.h
 	psp-gcc -c $< -o $@ $(CFLAGS)
 
 clean:
 	rm -f $(OBJS) $(TARGET_LIB)
+	rm -rf $(VFPU_STAGE)
 
 .PHONY: all clean

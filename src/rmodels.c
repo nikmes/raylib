@@ -1401,6 +1401,15 @@ static void mat4Mul(float out[16], const float a[16], const float b[16])
                            a[2*4+r]*b[c*4+2] + a[3*4+r]*b[c*4+3];
 }
 
+#if defined(PLATFORM_PSP)
+// pspgu-only accelerators. Weak on purpose: a pspGL build resolves both to NULL and the
+// cull stays scalar, so the A/B links against either driver.
+extern int pspguMat4MulVfpu(float *out, const float *a, const float *b) __attribute__((weak));
+extern int pspguTransformPointsVfpu(const float *m, const float *in, float *out, int count) __attribute__((weak));
+static float pspCullP[16], pspCullV[16], pspCullPV[16];
+static int pspCullPVValid = 0;
+#endif
+
 // Conservative object cull: the mesh AABB's 8 corners transformed by
 // projection * modelview * model; skip only when all 8 are outside one NDC plane.
 static int pspGeCullMesh(Mesh *mesh, Matrix transform)
@@ -1418,9 +1427,19 @@ static int pspGeCullMesh(Mesh *mesh, Matrix transform)
     float M[16];
     memcpy(M, MatrixToFloat(transform), sizeof(M));
 
-    float VM[16], MVP[16];
-    mat4Mul(VM, V, M);
-    mat4Mul(MVP, P, VM);
+    // P*V changes at most once per frame and M per mesh, so cache the composed pair by
+    // value (two 64-byte compares) and pay one multiply per draw instead of two.
+    if (!pspCullPVValid || (memcmp(P, pspCullP, sizeof(P)) != 0) || (memcmp(V, pspCullV, sizeof(V)) != 0))
+    {
+        mat4Mul(pspCullPV, P, V);
+        memcpy(pspCullP, P, sizeof(P));
+        memcpy(pspCullV, V, sizeof(V));
+        pspCullPVValid = 1;
+    }
+
+    float MVP[16];
+
+    if ((pspguMat4MulVfpu == NULL) || !pspguMat4MulVfpu(MVP, pspCullPV, M)) mat4Mul(MVP, pspCullPV, M);
 
     float c[8][4] = {
         { b->bmin[0], b->bmin[1], b->bmin[2], 1.0f }, { b->bmax[0], b->bmin[1], b->bmin[2], 1.0f },
@@ -1429,13 +1448,27 @@ static int pspGeCullMesh(Mesh *mesh, Matrix transform)
         { b->bmin[0], b->bmax[1], b->bmax[2], 1.0f }, { b->bmax[0], b->bmax[1], b->bmax[2], 1.0f }
     };
 
+    float transformed[32] __attribute__((aligned(16)));
+    int haveClip = (pspguTransformPointsVfpu != NULL) &&
+                   pspguTransformPointsVfpu(MVP, (const float *)c, transformed, 8);
+
     int allLeft = 1, allRight = 1, allDown = 1, allUp = 1, allNear = 1, allFar = 1;
     for (int i = 0; i < 8; i++)
     {
-        float x = MVP[0]*c[i][0] + MVP[4]*c[i][1] + MVP[8]*c[i][2] + MVP[12];
-        float y = MVP[1]*c[i][0] + MVP[5]*c[i][1] + MVP[9]*c[i][2] + MVP[13];
-        float z = MVP[2]*c[i][0] + MVP[6]*c[i][1] + MVP[10]*c[i][2] + MVP[14];
-        float w = MVP[3]*c[i][0] + MVP[7]*c[i][1] + MVP[11]*c[i][2] + MVP[15];
+        float x, y, z, w;
+
+        if (haveClip)
+        {
+            x = transformed[i*4 + 0]; y = transformed[i*4 + 1];
+            z = transformed[i*4 + 2]; w = transformed[i*4 + 3];
+        }
+        else
+        {
+            x = MVP[0]*c[i][0] + MVP[4]*c[i][1] + MVP[8]*c[i][2] + MVP[12];
+            y = MVP[1]*c[i][0] + MVP[5]*c[i][1] + MVP[9]*c[i][2] + MVP[13];
+            z = MVP[2]*c[i][0] + MVP[6]*c[i][1] + MVP[10]*c[i][2] + MVP[14];
+            w = MVP[3]*c[i][0] + MVP[7]*c[i][1] + MVP[11]*c[i][2] + MVP[15];
+        }
 
         if (!(x < -w)) allLeft = 0;
         if (!(x >  w)) allRight = 0;
