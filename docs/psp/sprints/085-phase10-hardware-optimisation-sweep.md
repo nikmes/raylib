@@ -96,7 +96,7 @@ the Media Engine, audio, streaming, and any change to the 2D `batch_check` pixel
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `todo` | clear-only work; 0 diff; drop if < 0.05 ms or no GE-time change | — |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
-| T6a | **List-local vertex memory.** gLib2D allocates every batch with `sceGuGetMemory` inside the direct list (glib2d.c:406). Replace the per-list 512 KiB arena with list-local vertices for one arm; measure CPU submission, main-RAM (2×512 KiB saved), `listUsedMax`/overflow and coherence. Only the memory placement is tested; gLib2D's single-list full sync is not | `todo` | T1 split; main-RAM ledger; `listUsedMax`; 0 diff; no list overflow; drop if no win or overflow | — |
+| T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `todo` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | — |
 | T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
 | T8 | **Gates and close.** Full gate table, the pair twice, docs, commit, restore the chosen driver | `todo` | §7 all green; two runs; strict docs build | — |
 
@@ -133,6 +133,16 @@ are static; matrices stay in the parent list. Measure `sceGuCallList`/stall upda
 **T7 — coherence is verified, not assumed.** The driver already writes back vertices/indices/textures and keeps one
 arena per rotating list. The stress probe is the evidence; only a failing frame justifies code.
 
+**T6a — list-local vertices are uncached and capped by the list.** Public pspsdk `sceGuStart` maps the list with
+`| 0x40000000` (uncached); `sceGuGetMemory` returns a 4-byte-aligned block from that alias, writes a pair of command
+words before it, and advances the stall address for a direct list. Writes through the returned pointer therefore
+need no `pspguWriteback`, and the block is invalid as soon as the same list is refilled — the two-list rotation
+already provides that lifetime. The costs are the **240 KiB list cap** (the GE maximum is 0x3FFFF), no bounds check
+in the public function, 4-byte rather than 64-byte alignment, uncached stores instead of cached stores plus a
+range writeback, and one stall syscall per allocation. Measure one block per list (one stall) against one block per
+batch (gLib2D's pattern, one stall per batch), and fall back to the arena when the block would not fit. The vendor
+6.6.0 graphics samples use the same API widely (30 samples); its headers and code are not copied.
+
 ### gLib2D reference (LGPLv3) — what to test and what not to copy
 
 Source: <https://github.com/libcg/gLib2D>, `glib2d.c`. Ideas only; do not copy code, comments or inline assembly.
@@ -140,7 +150,7 @@ Source: <https://github.com/libcg/gLib2D>, `glib2d.c`. Ideas only; do not copy c
 | gLib2D choice | disposition |
 |---|---|
 | `glib2d.c:375-440` — 2-vertex `GU_SPRITES`, 6-vertex `GU_TRIANGLES` for rotated; `GU_TRANSFORM_2D`, 32-bit position, `GU_TEXTURE_16BIT`, optional 8888 colour (20-byte textured vertex) | **T2b** — the only new ingredient is the 16-bit UV in through mode; the through-mode and compact-format priors are already negative |
-| `glib2d.c:406` — `sceGuGetMemory` for the batch inside the direct list | **T6a** — the strongest new idea: list-local vertices versus our 2×512 KiB arena |
+| `glib2d.c:406` — `sceGuGetMemory` for the batch inside the direct list | **T6a** — the strongest new idea: list-local vertices are uncached (no writeback), but bounded by the 240 KiB list with no bounds check; the 2×512 KiB arena saves 1 MiB if the frame fits |
 | `glib2d.c:39-45,428` — 512 KiB single direct list, 64-px sprite slicing | **T5b** for the slicing; the single list is rejected |
 | `glib2d.c:633-644` — `sceGuFinish` + `sceGuSync(0,0)` every frame | **Rejected** — our two rotating lists and targeted waits are measured better (069/076) |
 | `glib2d.c:264-266` — `GU_DITHER` globally off | **Rejected** — 5650 dither parity (012) |
@@ -198,8 +208,10 @@ Pending — no device runs yet.
 - `docs/psp/recipes/benchmarking.md` and `tools/psp-bench.sh` — the pair, work/swap, JSON fields
 - sprints 017 (CLUT4), 023 (cache strips), 061 (s16), 066 (index deferral), 069/076 (targeted waits),
   077 (compact formats), 078 (merged clean runs), 079 (PGE/fast clear), 080/081 (state and reference checks)
+- public pspsdk `src/gu/sceGuGetMemory.c`, `sceGuStart.c`, `sceGuFinishId.c` — list-local memory, the uncached
+  list alias, the stall update and the missing bounds check
 - `tools/pspgu/gl_draw.c` (`guPrimitive`, `guVertexFormat`, index paths), `gl_texture.c` (no CLUT),
-  `gl_state.c` (clear), `egl.c` (list waits), `gl_matrix.c` (s16/s8 scale rule)
+  `gl_state.c` (clear), `egl.c` (list waits/arena), `gl_matrix.c` (s16/s8 scale rule)
 - gLib2D — <https://github.com/libcg/gLib2D>, `glib2d.c` lines 39-45, 153, 241, 264-266, 375-440, 588-589, 633-644,
   1384. LGPLv3; ideas only, no code copied.
 - public: PPSSPP GE documentation (vertex pipeline, display lists, raster rules), pspsdk `samples/gu` and
