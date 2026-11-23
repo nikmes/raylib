@@ -196,7 +196,7 @@ static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)
 static void *arenaAllocHard(unsigned int bytes);
 
 #ifndef PSPGU_NO_CLIP
-typedef struct __attribute__((aligned(16))) {
+typedef struct {
     float x, y, z;
     float u, v;
     float nx, ny, nz;
@@ -429,73 +429,26 @@ static float clipDistance(const ClipV *v, int plane)
     }
 }
 
-static void clipLerpScalar(ClipV *out, const ClipV *a, const ClipV *b, float t)
+static ClipV clipLerp(const ClipV *a, const ClipV *b, float t)
 {
-    out->x = a->x + (b->x - a->x)*t;
-    out->y = a->y + (b->y - a->y)*t;
-    out->z = a->z + (b->z - a->z)*t;
-    out->u = a->u + (b->u - a->u)*t;
-    out->v = a->v + (b->v - a->v)*t;
-    out->nx = a->nx + (b->nx - a->nx)*t;
-    out->ny = a->ny + (b->ny - a->ny)*t;
-    out->nz = a->nz + (b->nz - a->nz)*t;
-    out->r = a->r + (b->r - a->r)*t;
-    out->g = a->g + (b->g - a->g)*t;
-    out->b = a->b + (b->b - a->b)*t;
-    out->a = a->a + (b->a - a->a)*t;
-    out->cx = a->cx + (b->cx - a->cx)*t;
-    out->cy = a->cy + (b->cy - a->cy)*t;
-    out->cz = a->cz + (b->cz - a->cz)*t;
-    out->cw = a->cw + (b->cw - a->cw)*t;
-}
-
-#if PSPGU_VFPU && PSPGU_VFPU_CLIP
-// Four VFPU groups cover the 16 ClipV floats in memory order:
-// {x,y,z,u}, {v,nx,ny,nz}, {r,g,b,a}, {cx,cy,cz,cw}.
-static void clipLerpVfpu(ClipV *out, const ClipV *a, const ClipV *b, float t)
-{
-    float tv = t;
-
-    __asm__ volatile(
-        "lv.s S000, 0(%3)\n"
-        "lv.q C000, 0(%1)\n"
-        "lv.q C010, 0(%2)\n"
-        "vsub.q C020, C010, C000\n"
-        "vscl.q C030, C020, S000\n"
-        "vadd.q C020, C000, C030\n"
-        "sv.q C020, 0(%0)\n"
-        "lv.q C100, 16(%1)\n"
-        "lv.q C110, 16(%2)\n"
-        "vsub.q C120, C110, C100\n"
-        "vscl.q C130, C120, S000\n"
-        "vadd.q C120, C100, C130\n"
-        "sv.q C120, 16(%0)\n"
-        "lv.q C200, 32(%1)\n"
-        "lv.q C210, 32(%2)\n"
-        "vsub.q C220, C210, C200\n"
-        "vscl.q C230, C220, S000\n"
-        "vadd.q C220, C200, C230\n"
-        "sv.q C220, 32(%0)\n"
-        "lv.q C300, 48(%1)\n"
-        "lv.q C310, 48(%2)\n"
-        "vsub.q C320, C310, C300\n"
-        "vscl.q C330, C320, S000\n"
-        "vadd.q C320, C300, C330\n"
-        "sv.q C320, 48(%0)\n"
-        : : "r"(out), "r"(a), "r"(b), "r"(&tv) : "memory");
-}
-#endif
-
-static void clipLerp(ClipV *out, const ClipV *a, const ClipV *b, float t)
-{
-#if PSPGU_VFPU && PSPGU_VFPU_CLIP
-    if (clipVfpuReady)
-    {
-        clipLerpVfpu(out, a, b, t);
-        return;
-    }
-#endif
-    clipLerpScalar(out, a, b, t);
+    ClipV o;
+    o.x = a->x + (b->x - a->x)*t;
+    o.y = a->y + (b->y - a->y)*t;
+    o.z = a->z + (b->z - a->z)*t;
+    o.u = a->u + (b->u - a->u)*t;
+    o.v = a->v + (b->v - a->v)*t;
+    o.nx = a->nx + (b->nx - a->nx)*t;
+    o.ny = a->ny + (b->ny - a->ny)*t;
+    o.nz = a->nz + (b->nz - a->nz)*t;
+    o.r = a->r + (b->r - a->r)*t;
+    o.g = a->g + (b->g - a->g)*t;
+    o.b = a->b + (b->b - a->b)*t;
+    o.a = a->a + (b->a - a->a)*t;
+    o.cx = a->cx + (b->cx - a->cx)*t;
+    o.cy = a->cy + (b->cy - a->cy)*t;
+    o.cz = a->cz + (b->cz - a->cz)*t;
+    o.cw = a->cw + (b->cw - a->cw)*t;
+    return o;
 }
 
 static int clipPolygon(ClipV *poly, int n, ClipV *out)
@@ -538,8 +491,7 @@ static int clipPolygon(ClipV *poly, int n, ClipV *out)
             if ((dp >= 0.0f) != (dq >= 0.0f))
             {
                 float t = dp/(dp - dq);
-                clipLerp(&b[m], p, q, t);
-                m++;
+                b[m++] = clipLerp(p, q, t);
                 if (m >= 8) break;
             }
         }
@@ -988,54 +940,6 @@ static void *arenaCopy(const void *src, unsigned int bytes)
     return dst;
 }
 
-#if PSPGU_FAST2D
-// P10-S12 T4: through mode wants texel UVs, while the batcher stores normalised UVs.
-// Copy the run into the list arena and scale u,v by the logical texture size.
-static void *arenaCopy2D(const void *src, unsigned int count, float su, float sv)
-{
-    unsigned int bytes = count*24;
-    unsigned char *dst;
-
-    // The common sprite case is a power-of-two texture: the UV scale is exactly 1.
-    // Keep the bulk memcpy, only rescale when the logical/padded ratio is not 1.
-    if ((su == 1.0f) && (sv == 1.0f)) return arenaCopy(src, bytes);
-
-    pspguBeginFrame();
-
-    dst = (unsigned char *)pspguArenaAlloc(bytes);
-    while (dst == NULL)
-    {
-        if (!pspguArenaReset()) return NULL;
-        dst = (unsigned char *)pspguArenaAlloc(bytes);
-    }
-
-    for (unsigned int i = 0; i < count; i++)
-    {
-        const unsigned char *s = (const unsigned char *)src + (size_t)i*24;
-        unsigned char *d = dst + (size_t)i*24;
-
-        *(float *)(d + 0) = *(const float *)(s + 0)*su;
-        *(float *)(d + 4) = *(const float *)(s + 4)*sv;
-        memcpy(d + 8, s + 8, 16);       // colour + x,y,z
-    }
-
-    pspguWriteback(dst, bytes);
-    return dst;
-}
-
-// Through mode ignores the matrix, so a non-zero z would be meaningless; the 2D
-// batcher writes z=0. Check it rather than assuming.
-static int verticesAre2D(const unsigned char *src, unsigned int count)
-{
-    for (unsigned int i = 0; i < count; i++)
-    {
-        const float *v = (const float *)(src + (size_t)i*24);
-        if (v[5] != 0.0f) return 0;    // z at byte offset 20
-    }
-    return 1;
-}
-#endif
-
 //------------------------------------------------------------------------------------
 // Sprint 020: textures wider or taller than 512, sampled as full-stride windows.
 // A texture is a single VRAM buffer; the draw is split into primitives whose texture
@@ -1455,29 +1359,12 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 
     if (!pspgu.current || (count <= 0) || (prim == 0)) return;
 
+    pspguUploadMatrices();
+
     fmt = guVertexFormat();
     vertexLayout(fmt, &layout);
 
     if (!arraysSupported()) return;
-
-    int fast2d = 0;
-#if PSPGU_FAST2D
-    fast2d = ((prim == GU_SPRITES) || (prim == GU_TRIANGLES)) &&
-             isBatchedLayout() && pspguCanUseTransform2D() &&
-             verticesAre2D((const unsigned char *)arrTexCoord.ptr + (size_t)first*24, count);
-    if (!fast2d && isBatchedLayout())
-    {
-        static int missLogged;
-        if (!missLogged)
-        {
-            pspguLog("fast2d miss: prim=%d projW=%.1f depth=%d light=%d fog=%d tex=%d vp=%dx%d",
-                     (int)prim, (double)pspguProjectionW(), pspgu.depthTest, pspgu.lighting,
-                     pspgu.fogEnabled, pspgu.texEnabled, pspgu.vpW, pspgu.vpH);
-            missLogged = 1;
-        }
-    }
-#endif
-    if (!fast2d) pspguUploadMatrices();
 
     {
         static int traced = 0;
@@ -1495,40 +1382,6 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
     {
         int tw, th, tpw, tph, tbw, bpp, swz;
         unsigned int toff;
-
-#if PSPGU_FAST2D
-        if (fast2d)
-        {
-            int fw, fh, fpw, fph;
-            float su, sv;
-
-            if (pspguBoundTexture2D(&fw, &fh, &fpw, &fph, &su, &sv) &&
-                (fpw <= 512) && (fph <= 512))
-            {
-                void *v = arenaCopy2D((const unsigned char *)arrTexCoord.ptr + (size_t)first*24,
-                                      (unsigned int)count, (float)fw, (float)fh);
-                if (v != NULL)
-                {
-                    int cull = pspgu.cullEnabled;
-
-                    if (cull) sceGuDisable(GU_CULL_FACE);
-                    sceGuTexScale(1.0f, 1.0f);
-                    sceGuDrawArray(prim, fmt | GU_TRANSFORM_2D, count, NULL, v);
-                    sceGuTexScale(su, sv);
-                    if (cull) sceGuEnable(GU_CULL_FACE);
-
-                    pspgu.fast2dDraws++;
-                    if (pspgu.fast2dDraws <= 3)
-                    {
-                        pspguLog("fast2d draw mode=%d count=%d tex=%dx%d pad=%dx%d scale=%.4f,%.4f",
-                                 (int)prim, (int)count, fw, fh, fpw, fph,
-                                 (double)su, (double)sv);
-                    }
-                    return;
-                }
-            }
-        }
-#endif
 
         // Sprint 020: a texture above 512 in either dimension is sampled through
         // 512-pixel windows. The <=512 path below is unchanged.
@@ -1873,19 +1726,3 @@ int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices
 
     return 1;
 }
-
-#ifdef PSPGU_NO_CLIP
-// Measurement-only build: the clip block is compiled out, but raylib's cull and
-// matrix path still reference these two symbols. Keep the scalar fallback contract.
-int pspguMat4MulVfpu(float *out, const float *a, const float *b)
-{
-    (void)out; (void)a; (void)b;
-    return 0;
-}
-
-int pspguTransformPointsVfpu(const float *m, const float *in, float *out, int count)
-{
-    (void)m; (void)in; (void)out; (void)count;
-    return 0;
-}
-#endif

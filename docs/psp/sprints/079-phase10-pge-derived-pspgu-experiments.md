@@ -402,3 +402,25 @@ after the session. Evidence and logs: `/home/psp/evidence/p10s12/`.
   submission model. This is the expected outcome unless a non-restructuring one-quad path appears.
 - **078 remains independent:** per-call merging is the structural lever for 3D; this sprint must not change its
   baseline or its gates.
+
+**Correction (after the benchmark run, same day).** The `b35` archive breaks `clip_probe EDGE=237 MESH3D=1`:
+**1681 pixels** of the probe triangle turn black against both pspGL and the `b33` driver, reproduced twice. The
+sincos claim is unaffected; the driver is not:
+
+| build | clip_probe vs pspGL |
+|---|---|
+| `52d1b8e5` (pre-079) | 0 |
+| new library + pre-079 driver | 0 |
+| `806cb3d7` (new library + b35 driver) | 1681 |
+| `806cb3d7` driver with `PSPGU_NO_CLIP=1` | 1681 |
+| `806cb3d7` with `gl_draw.c` reverted | 0 |
+
+The state seen at the draw is identical between working and broken builds — same matrices, `fmt=0x180`, stride 12,
+viewport 480×272, scissor 0,0,480,272, cull/depth/light/fog off, one list per frame — so the mechanism inside
+`gl_draw.c` is **not identified**. Every experiment in that file (T1 VFPU clip, T2 fast clear, T4 through mode,
+T5 stubs) was recorded as dropped, so `gl_draw.c` was reverted to the `52d1b8e5` version, keeping the
+`#if PSPGU_VFPU` fix so the new header's `PSPGU_VFPU 0` is not re-enabled through `defined()`.
+
+The adopted sincos stays. Benchmarks after the revert: **33.31 ms of work / 23.9 fps** (3D) and **20.27 / 29.6**
+(2D), against 37.33 / 20.0 and 20.51 before the sprint. The experiments remain in this commit's history, not in the
+driver.
