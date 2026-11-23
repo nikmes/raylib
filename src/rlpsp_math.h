@@ -29,6 +29,10 @@
 #ifndef PSP_VFPU_HELPERS
     #define PSP_VFPU_HELPERS 0
 #endif
+// P10-S12 T3: scoped VFPU sincos only; does not enable the rest of the helper layer.
+#ifndef PSP_VFPU_SINCOS
+    #define PSP_VFPU_SINCOS 0
+#endif
 // GUM vec/mat/quat and the VFPU copy measured slower than the inlined scalar
 // paths at the sizes raylib uses (P11-S12 probe); they stay opt-in for A/B only.
 #ifndef RLPSP_VFPU_GUM
@@ -47,7 +51,14 @@
     #define RLPSP_VFPU 0
 #endif
 
-#if RLPSP_VFPU
+#if defined(PLATFORM_PSP) && (PSP_VFPU_SINCOS == 1)
+    #include <pspvfpu.h>
+    #define RLPSP_VFPU_SINCOS 1
+#else
+    #define RLPSP_VFPU_SINCOS 0
+#endif
+
+#if RLPSP_VFPU || RLPSP_VFPU_SINCOS
 void rlpsp_vfpu_init(void);
 void rlpsp_vfpu_shutdown(void);
 #else
@@ -80,6 +91,18 @@ static inline void rlpsp_sincosf(float x, float *s, float *c)
 {
 #if RLPSP_VFPU
     vfpu_sincos(x, s, c);
+#elif RLPSP_VFPU_SINCOS
+    // Scoped VFPU path: no libpspmath dependency. Matrix 6 is reserved by
+    // rlpsp_vfpu_init(), so C600/S600 cannot clobber GUM's 0-3.
+    float xv = x;
+    __asm__ volatile(
+        "lv.s S000, 0(%2)\n"
+        "vcst.s S001, VFPU_2_PI\n"
+        "vmul.s S000, S000, S001\n"
+        "vrot.p C600, S000, [s, c]\n"
+        "mfv %0, S600\n"
+        "mfv %1, S601\n"
+        : "=r"(*s), "=r"(*c) : "r"(&xv) : "memory");
 #else
     if (s != NULL) *s = sinf(x);
     if (c != NULL) *c = cosf(x);

@@ -34,6 +34,10 @@ build() {
 
     [ -n "$depth" ] && args+=("PSP_GU_DEPTH=${depth}")
     [ -n "${PSP_GU_TEXFMT:-}" ] && args+=("PSP_GU_TEXFMT=${PSP_GU_TEXFMT}")
+    [ -n "${PSPGU_FAST2D:-}" ] && args+=("PSPGU_FAST2D=${PSPGU_FAST2D}")
+    [ -n "${PSPGU_FAST_CLEAR:-}" ] && args+=("PSPGU_FAST_CLEAR=${PSPGU_FAST_CLEAR}")
+    [ -n "${PSPGU_VFPU:-}" ] && args+=("PSPGU_VFPU=${PSPGU_VFPU}")
+    [ -n "${PSPGU_VFPU_CLIP:-}" ] && args+=("PSPGU_VFPU_CLIP=${PSPGU_VFPU_CLIP}")
     [ -n "${PSPGU_TEXSYNC_FIRST:-}" ] && args+=("PSPGU_TEXSYNC_FIRST=${PSPGU_TEXSYNC_FIRST}")
     [ -n "${PSPGU_FB_RESTORE:-}" ] && args+=("PSPGU_FB_RESTORE=${PSPGU_FB_RESTORE}")
 

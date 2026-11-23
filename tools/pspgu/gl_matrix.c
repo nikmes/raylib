@@ -92,6 +92,41 @@ float pspguProjectionW(void)
     return stackProjection[depthProjection].m[11];
 }
 
+// P10-S12 T4: is this a draw that through mode can express without changing the
+// vertices? It needs the exact screen ortho rlOrtho(0,w,h,0,0,1), an identity
+// modelview, the full-screen viewport, a texture, and none of the state through mode
+// ignores (depth/lighting/fog/normals).
+int pspguCanUseTransform2D(void)
+{
+    static const float identity[16] = {
+        1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1
+    };
+    const float *p = stackProjection[depthProjection].m;
+    const float *v = stackModelview[depthModelview].m;
+    const float w = (float)pspgu.width;
+    const float h = (float)pspgu.height;
+    const float expected[16] = {
+        2.0f/w, 0, 0, 0,
+        0, -2.0f/h, 0, 0,
+        0, 0, -2.0f, 0,
+        -1.0f, 1.0f, -1.0f, 1.0f
+    };
+    const float eps = 1e-5f;
+
+    if (!pspgu.texEnabled || (pspgu.boundTexture == 0)) return 0;
+    if (pspgu.lighting || pspgu.fogEnabled || pspgu.depthTest) return 0;
+    if (pspgu.clientBits & PSPGU_CS_NORMAL) return 0;
+    if ((pspgu.vpW != pspgu.width) || (pspgu.vpH != pspgu.height)) return 0;
+    if ((pspgu.vpX != 2048) || (pspgu.vpY != 2048)) return 0;
+
+    for (int i = 0; i < 16; i++)
+        if (fabsf(v[i] - identity[i]) > eps) return 0;
+    for (int i = 0; i < 16; i++)
+        if (fabsf(p[i] - expected[i]) > eps) return 0;
+
+    return 1;
+}
+
 // Called once when the GE comes up: both stacks start as identity, which zeroed statics
 // are not. A zeroed matrix would collapse every vertex onto the origin.
 void pspguResetMatrices(void)

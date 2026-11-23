@@ -9,7 +9,7 @@
 
 #include "../rlpsp_math.h"
 
-#if RLPSP_VFPU
+#if RLPSP_VFPU || RLPSP_VFPU_SINCOS
 static struct pspvfpu_context *rlpspVfpuContext = NULL;
 
 void rlpsp_vfpu_init(void)

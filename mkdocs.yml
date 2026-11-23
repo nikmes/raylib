@@ -131,6 +131,9 @@ nav:
               - P10-S9 — Framebuffer rotation with render targets: psp/sprints/076-phase10-framebuffer-rotation.md
               - P10-S10 — pspgu optimisation after the GU audit: psp/sprints/077-phase10-pspgu-optimisation.md
               - P10-S11 — Per-call cost and draw merging: psp/sprints/078-phase10-per-call-and-merge.md
+              - P10-S12 — PGE-derived pspgu experiments: psp/sprints/079-phase10-pge-derived-pspgu-experiments.md
+              - P10-S13 — 2D state scoping and colour gates: psp/sprints/080-phase10-2d-state-and-colour-gates.md
+              - P10-S14 — Reference ideas, verified and measured: psp/sprints/081-phase10-reference-ideas-verified.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
@@ -170,5 +173,6 @@ nav:
           - psp/templates/recipe.md
       - Recipes:
           - psp/recipes/particle-stream.md
+          - psp/recipes/benchmarking.md
 
 strict: true

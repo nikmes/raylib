@@ -609,6 +609,9 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     # P11-S12: internal VFPU/matrix helpers; 0 keeps the scalar fallback and adds no SDK link.
     PSP_VFPU_HELPERS ?= 0
     CUSTOM_CFLAGS += -DPSP_VFPU_HELPERS=$(PSP_VFPU_HELPERS)
+    # P10-S12 T3: measured 4.703 -> 4.651 ms on bunnymark ROTATE_ODD, 0 pixel diff.
+    PSP_VFPU_SINCOS ?= 1
+    CUSTOM_CFLAGS += -DPSP_VFPU_SINCOS=$(PSP_VFPU_SINCOS)
     # Sprint 041 (P8-S1): the gamepad contract, plus a test-only failure hook.
     PSP_PAD_STRICT ?= 1
     CUSTOM_CFLAGS += -DPSP_PAD_STRICT=$(PSP_PAD_STRICT)
@@ -1012,8 +1015,13 @@ rshapes.o : rshapes.c raylib.h rlgl.h
 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
 
 # Compile textures module
-rtextures.o : rtextures.c raylib.h rlgl.h
+rtextures.o : rtextures.c raylib.h rlgl.h rlpsp_math.h
 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
+
+# P10-S12 T3: platform VFPU lifecycle needs the PSP include paths; the built-in
+# %.o rule used only CFLAGS, so <pspmath.h>/<pspvfpu.h> were not found.
+platforms/rlpsp_math.o : platforms/rlpsp_math.c rlpsp_math.h
+	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS) -o $@
 
 # Compile text module
 rtext.o : rtext.c raylib.h

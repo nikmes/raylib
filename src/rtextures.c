@@ -66,6 +66,10 @@
 
 #include "rlgl.h"               // OpenGL abstraction layer to multiple versions
 
+#if defined(PLATFORM_PSP) && defined(PSP_VFPU_SINCOS) && (PSP_VFPU_SINCOS == 1)
+    #include "rlpsp_math.h"     // P10-S12 T3: scoped VFPU sincos
+#endif
+
 #include <stdlib.h>             // Required for: malloc(), calloc(), free()
 #include <string.h>             // Required for: strlen() [Used in ImageTextEx()], strcmp() [Used in LoadImageFromMemory()/LoadImageAnimFromMemory()/ExportImageToMemory()]
 #include <math.h>               // Required for: fabsf() [Used in DrawTextureRec()]
@@ -4921,8 +4925,14 @@ void DrawTexturePro(Texture2D texture, Rectangle srcrec, Rectangle dstrec, Vecto
         }
         else
         {
+#if defined(PLATFORM_PSP) && defined(PSP_VFPU_SINCOS) && (PSP_VFPU_SINCOS == 1)
+            float sinRotation, cosRotation;
+            rlpsp_vfpu_init();
+            rlpsp_sincosf(rotation*DEG2RAD, &sinRotation, &cosRotation);
+#else
             float sinRotation = sinf(rotation*DEG2RAD);
             float cosRotation = cosf(rotation*DEG2RAD);
+#endif
             float x = dstrec.x;
             float y = dstrec.y;
             float dx = -origin.x;

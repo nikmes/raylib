@@ -427,9 +427,9 @@ static void pspguInitGu(void)
     pspgu.vsync = 1;
     pspgu.current = 1;
 
-    pspguLog("GU up: pspgu %s, %dx%d stride %d, texfmt %s, texsync-order %d, fb-restore %d, fb %u KiB x%d, depth %s (%u KiB), lists 2 x %u KiB, arenas 2 x %u KiB",
+    pspguLog("GU up: pspgu %s, %dx%d stride %d, texfmt %s, fast2d %d, fastclear %d, texsync-order %d, fb-restore %d, fb %u KiB x%d, depth %s (%u KiB), lists 2 x %u KiB, arenas 2 x %u KiB",
                  PSPGU_BUILD, pspgu.width, pspgu.height, pspgu.stride, PSPGU_TEXFMT_NAME,
-                 PSPGU_TEXSYNC_FIRST, PSPGU_FB_RESTORE, pspgu.fbBytes/1024, PSP_GU_FB_COUNT,
+                 PSPGU_FAST2D, PSPGU_FAST_CLEAR, PSPGU_TEXSYNC_FIRST, PSPGU_FB_RESTORE, pspgu.fbBytes/1024, PSP_GU_FB_COUNT,
                  (pspgu.depthOffset != NULL)? "yes":"no",
                  (pspgu.depthOffset != NULL)? (pspgu.fbBytes/1024) : 0,
                  pspgu.listBytes/1024, pspgu.arenaBytes/1024);
