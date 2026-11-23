@@ -298,11 +298,48 @@ static void runScene(void)
     TraceLog(LOG_INFO, "MATRIXPROBE n=%d draws_per_frame=%.1f compose_ms=%.3f mult_ms=%.3f cull_ms=%.3f share_pct=%.1f",
              COUNT, draws, compose, mult, cull,
              (workAvg > 0.0)? ((compose + mult + cull)/workAvg*100.0) : 0.0);
+
+#if defined(PSP_CALL_PROBE)
+    {
+        extern unsigned long long rlpspProbeDrawMeshUs, rlpspProbeDriverUs;
+        extern unsigned long long rlpspProbeTail(int n);
+        extern unsigned int rlpspProbeDraws;
+
+        unsigned long long tail = rlpspProbeTail(1000);
+
+        TraceLog(LOG_INFO, "CALLTAIL pairs=1000 us_per_pair=%.3f", (double)tail/1000.0/1000.0);
+
+        // Denominators differ on purpose: the whole call and the cull run on every
+        // DrawMesh (culled included), while compose/multiply/driver only run on the ones
+        // that reach the per-object path.
+        double calls = (double)COUNT;
+        double sub = (draws > 0.0)? draws : 1.0;
+        double total = (double)rlpspProbeDrawMeshUs/FRAMES/1000.0/calls;
+        double cullCall = cull*1000.0/calls;
+        double driverSub = (double)rlpspProbeDriverUs/FRAMES/1000.0/sub;
+        double composeSub = compose*1000.0/sub;
+        double multSub = mult*1000.0/sub;
+        double state = total - cullCall - composeSub*(sub/calls) - multSub*(sub/calls) - driverSub*(sub/calls);
+
+        TraceLog(LOG_INFO, "CALLPROBE n=%d calls_per_frame=%.1f submitted=%.1f total_ms=%.4f cull_ms=%.4f compose_ms=%.4f mult_ms=%.4f state_ms=%.4f driver_ms=%.4f",
+                 COUNT, calls, sub, total, cullCall, composeSub, multSub, state, driverSub);
+    }
+#endif
 #else
     TraceLog(LOG_INFO, "MATRIXPROBE counters off (build libraylib.a with PSP_MATRIX_PROBE=1)");
 #endif
 
     TraceLog(LOG_INFO, "DONE frames %d count %d", FRAMES, COUNT);
+
+    {
+        extern unsigned int rlpspMergeRuns, rlpspMergeInstances, rlpspMergeReplays;
+        extern unsigned int rlpspClassClean, rlpspClassDirty, rlpspClassCull;
+
+        TraceLog(LOG_INFO, "MERGEPROBE runs=%u instances=%u replays=%u class_clean=%u class_dirty=%u class_cull=%u",
+                 rlpspMergeRuns, rlpspMergeInstances, rlpspMergeReplays,
+                 rlpspClassClean, rlpspClassDirty, rlpspClassCull);
+    }
+
     sceKernelSleepThread();
 }
 #endif

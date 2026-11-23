@@ -31,11 +31,15 @@ endif
 
 # STAT/SPLIT needs the swap timing wrappers, same ones bunnymark uses.
 PROBE ?= 1
+CALLPROBE ?= 0
 
 ifeq ($(MODE),scene)
     CFLAGS += -DWRAP_COUNTERS
     ifeq ($(PROBE),1)
         CFLAGS += -DPSP_MATRIX_PROBE
+    endif
+    ifeq ($(CALLPROBE),1)
+        CFLAGS += -DPSP_CALL_PROBE
     endif
     LDFLAGS += -Wl,--wrap=glBegin -Wl,--wrap=glEnd \
                -Wl,--wrap=glVertex2f -Wl,--wrap=glVertex2i \

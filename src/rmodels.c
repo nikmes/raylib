@@ -57,13 +57,47 @@
 
 // Sprint 070 (P10-S8): measurement-only attribution for matrix_probe MODE=scene.
 // The switch is off in every shipped build; when on it adds two syscalls per segment.
-#if defined(PLATFORM_PSP) && defined(PSP_MATRIX_PROBE)
+// Sprint 078 (P10-S11) adds the call-level pair under PSP_CALL_PROBE: whole DrawMesh and
+// the driver entry, so the rlgl state block is the difference and needs no timer of its own.
+#if defined(PLATFORM_PSP) && (defined(PSP_MATRIX_PROBE) || defined(PSP_CALL_PROBE))
     #include <pspkernel.h>
+    static SceInt64 rlpspProbeNow(void) { return sceKernelGetSystemTimeWide(); }
+#endif
+#if defined(PLATFORM_PSP) && defined(PSP_MATRIX_PROBE)
     unsigned long long rlpspProbeComposeUs;
     unsigned long long rlpspProbeMultUs;
     unsigned long long rlpspProbeCullUs;
     unsigned int rlpspProbeDraws;
-    static SceInt64 rlpspProbeNow(void) { return sceKernelGetSystemTimeWide(); }
+#endif
+#if defined(PLATFORM_PSP) && defined(PSP_CALL_PROBE)
+    unsigned long long rlpspProbeDrawMeshUs;
+    unsigned long long rlpspProbeDriverUs;
+
+    // Cost of one clock pair, so the attribution can subtract it: every measured line is
+    // inflated by the same syscall, and at 500 calls/frame that is milliseconds, not noise.
+    unsigned long long rlpspProbeTail(int n)
+    {
+        SceInt64 t0 = rlpspProbeNow();
+        unsigned long long acc = 0;
+
+        for (int i = 0; i < n; i++)
+        {
+            SceInt64 a = rlpspProbeNow();
+            acc += (unsigned long long)(a & 0);
+        }
+
+        return (unsigned long long)(rlpspProbeNow() - t0) + acc;
+    }
+#endif
+#if defined(PLATFORM_PSP)
+    // Sprint 078 counters: always present so a test build can print them whether or not the
+    // merge engine was compiled in (they stay zero in a merge-off or pspGL build).
+    unsigned int rlpspMergeRuns;        // merged draws emitted
+    unsigned int rlpspMergeInstances;   // instances that went into them
+    unsigned int rlpspMergeReplays;     // runs replayed per object (driver declined)
+    unsigned int rlpspClassClean;
+    unsigned int rlpspClassDirty;
+    unsigned int rlpspClassCull;
 #endif
 
 #if defined(GRAPHICS_API_OPENGL_11)
@@ -1410,19 +1444,89 @@ static float pspCullP[16], pspCullV[16], pspCullPV[16];
 static int pspCullPVValid = 0;
 #endif
 
-// Conservative object cull: the mesh AABB's 8 corners transformed by
-// projection * modelview * model; skip only when all 8 are outside one NDC plane.
-static int pspGeCullMesh(Mesh *mesh, Matrix transform)
+// Margins for the guard-band classification (see pspGeClassifyMesh). The clip-space Z
+// range is compressed by the perspective divide, so the near/far margins are absolute
+// fractions of w, not NDC percentages: at distance 24 with near 0.01, w-z is already
+// 8e-4 w, and a 5 % margin excluded the whole scene (measured: 278 of 278 submitted
+// instances classified dirty before this correction). The constants are needed by every
+// build because the classification runs whether or not merging is compiled in.
+#define PSP_MERGE_CLEAN_XY 7.9f     // inside pspgu's 8.0 guard band, with float slack
+#define PSP_MERGE_CLEAN_NEAR 0.001f // w + z >= 0.1 % of w: only geometry at the eye is out
+#define PSP_MERGE_CLEAN_FAR  0.00001f // w - z >= 1e-5 w: the float-order slack at the far plane
+
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11) && defined(PSP_MERGE_DRAWS) && (PSP_MERGE_DRAWS == 1)
+// The cube scene (and any DrawMesh on a mesh that was never uploaded) has no AABB in the
+// cull table. Merging needs one, and the per-instance test must stay exact, so compute it
+// lazily here, keyed by the vertex array. The cull does not use these entries: pulling
+// un-uploaded meshes into the cull would change the pre-merge baseline this sprint is
+// measured against.
+#define PSP_MERGE_BOUNDS_MAX 128
+static PspGeBounds pspMergeBounds[PSP_MERGE_BOUNDS_MAX];
+static int pspMergeBoundsCount = 0;
+
+static PspGeBounds *pspMergeBoundsFor(Mesh *mesh)
 {
-    if (!rlpspCulling) return 0;
+    unsigned int *key;
+
+    if ((mesh->vertices == NULL) || (mesh->vertexCount <= 0)) return NULL;
+
+    key = (unsigned int *)mesh->vertices;
+    for (int i = 0; i < pspMergeBoundsCount; i++)
+        if (pspMergeBounds[i].key == key) return &pspMergeBounds[i];
+
+    if (pspMergeBoundsCount >= PSP_MERGE_BOUNDS_MAX) return NULL;
+
+    PspGeBounds *b = &pspMergeBounds[pspMergeBoundsCount];
+
+    b->key = key;
+    for (int c = 0; c < 3; c++) { b->bmin[c] = mesh->vertices[c]; b->bmax[c] = mesh->vertices[c]; }
+    for (int i = 1; i < mesh->vertexCount; i++)
+        for (int c = 0; c < 3; c++)
+        {
+            float v = mesh->vertices[i*3 + c];
+            if (v < b->bmin[c]) b->bmin[c] = v;
+            if (v > b->bmax[c]) b->bmax[c] = v;
+        }
+
+    pspMergeBoundsCount++;
+    return b;
+}
+#endif
+
+// Object classification, not just a cull: 0 = all 8 corners outside one NDC plane (skip),
+// 1 = the whole AABB is inside the guard band (its vertices cannot need the clipper),
+// 2 = drawn but crossing a guard-band plane (or no AABB: stay on the per-object path).
+// The six clip planes are linear in clip coordinates, so testing the 8 corners proves the
+// property for every vertex of the mesh -- that is what makes a merged run safe.
+static int pspGeClassifyMesh(Mesh *mesh, Matrix transform)
+{
+    if (!rlpspCulling) return 2;
 
     PspGeBounds *b = pspGeFindBounds(mesh->vboId);
-    if (b == NULL) return 0;
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11) && defined(PSP_MERGE_DRAWS) && (PSP_MERGE_DRAWS == 1)
+    int fromUpload = (b != NULL);
+    if (b == NULL) b = pspMergeBoundsFor(mesh);
+#else
+    int fromUpload = 1;
+#endif
+    if (b == NULL) return 2;
+
+#if defined(PSP_MERGE_DIAG)
+    {
+        static int diag = 0;
+        if (!diag)
+        {
+            diag = 1;
+            TRACELOG(RL_LOG_INFO, "MERGE diag vbo=%p uploadBounds=%d mergeBounds=%d culling=%d",
+                     (void *)mesh->vboId, fromUpload, pspMergeBoundsCount, rlpspCulling);
+        }
+    }
+#endif
 
     GLfloat P[16], V[16];
     glGetFloatv(GL_PROJECTION_MATRIX, P);
     glGetFloatv(GL_MODELVIEW_MATRIX, V);
-    if (P[11] == 0.0f) return 0;                 // ortho/2D: not a 3D frustum
+    if (P[11] == 0.0f) return 2;                 // ortho/2D: not a 3D frustum
 
     float M[16];
     memcpy(M, MatrixToFloat(transform), sizeof(M));
@@ -1453,6 +1557,7 @@ static int pspGeCullMesh(Mesh *mesh, Matrix transform)
                    pspguTransformPointsVfpu(MVP, (const float *)c, transformed, 8);
 
     int allLeft = 1, allRight = 1, allDown = 1, allUp = 1, allNear = 1, allFar = 1;
+    int clean = 1;
     for (int i = 0; i < 8; i++)
     {
         float x, y, z, w;
@@ -1476,18 +1581,305 @@ static int pspGeCullMesh(Mesh *mesh, Matrix transform)
         if (!(y >  w)) allUp = 0;
         if (!(z < -w)) allNear = 0;
         if (!(z >  w)) allFar = 0;
+
+        // Guard-band test, with a margin: the cull composes (P*V)*M and the clipper goes
+        // through modelview and projection separately, so the two float orders disagree by
+        // a hair near the plane. Inside 7.9w / +-0.95w the clipper cannot disagree with us,
+        // and the GE's own band (8.53 NDC) covers the rest.
+        if ((w <= 0.0f) ||
+            !(PSP_MERGE_CLEAN_XY*w + x >= 0.0f) || !(PSP_MERGE_CLEAN_XY*w - x >= 0.0f) ||
+            !(PSP_MERGE_CLEAN_XY*w + y >= 0.0f) || !(PSP_MERGE_CLEAN_XY*w - y >= 0.0f) ||
+            !(z + PSP_MERGE_CLEAN_NEAR*w >= 0.0f) || !((1.0f - PSP_MERGE_CLEAN_FAR)*w - z >= 0.0f))
+        {
+            clean = 0;
+#if defined(PSP_MERGE_DIAG)
+            {
+                static int diagFails = 0;
+                if (diagFails < 3)
+                {
+                    diagFails++;
+                    TRACELOG(RL_LOG_INFO, "MERGE fail corner=%d nx=%.6f ny=%.6f nz=%.6f w=%.4f",
+                             i, (w != 0.0f)? x/w : 0.0f, (w != 0.0f)? y/w : 0.0f,
+                             (w != 0.0f)? z/w : 0.0f, w);
+                }
+            }
+#endif
+        }
     }
 
-    if (allLeft || allRight || allDown || allUp || allNear || allFar)
+    if (fromUpload && (allLeft || allRight || allDown || allUp || allNear || allFar))
     {
         static unsigned int culled = 0;
         culled++;
         if ((culled % 1000) == 1) TRACELOG(RL_LOG_INFO, "CULL total=%u", culled);
-        return 1;
+        rlpspClassCull++;
+        return 0;
     }
 
-    return 0;
+    if (clean) rlpspClassClean++; else rlpspClassDirty++;
+    return clean? 1 : 2;
 }
+
+//------------------------------------------------------------------------------------
+// Sprint 078 (P10-S11): merged clean runs
+//------------------------------------------------------------------------------------
+// DrawMesh appends a clean instance -- its AABB is inside the guard band, so none of its
+// vertices can need the clipper -- to a run with the same mesh, texture and material
+// colour. At flush the run is expanded into world space and drawn with one call. The
+// camera's modelview is not touched (the per-object path multiplies the model on top of
+// it; here the model is already in the vertices), so the GE applies the same view and
+// projection it applies per object. Expansion is float32 where the per-object path lets
+// the GE transform in float24, so pixel parity is measured, not assumed (T4).
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11) && defined(PSP_MERGE_DRAWS) && (PSP_MERGE_DRAWS == 1)
+
+#ifndef GL_VERTEX_ARRAY
+    #define GL_VERTEX_ARRAY         0x8074
+    #define GL_NORMAL_ARRAY         0x8075
+    #define GL_TEXTURE_COORD_ARRAY  0x8078
+#endif
+
+#define PSP_MERGE_MAX_VERTS 8192
+#define PSP_MERGE_MAX_IDX   24576
+#define PSP_MERGE_MAX_INST  1024
+#define PSP_MERGE_STRIDE    32          // uv 0, normal 8, position 20 (GU's order, no colour)
+#define PSP_MERGE_CLEAN     1u
+
+extern int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                                 GLsizei vertexCount, const GLvoid *verts,
+                                 unsigned int flags) __attribute__((weak));
+extern int pspguArenaRoom(void) __attribute__((weak));
+
+typedef struct {
+    Mesh mesh;
+    unsigned int tex;
+    unsigned int color;
+    int valid;
+    int instances;
+    Matrix xf[PSP_MERGE_MAX_INST];
+    float view[16];                     // modelview at the first instance
+} PspMergeRun;
+
+static PspMergeRun pspMergeRun;
+static unsigned char pspMergeVerts[PSP_MERGE_MAX_VERTS*PSP_MERGE_STRIDE];
+static unsigned short pspMergeIdx[PSP_MERGE_MAX_IDX];
+
+static int pspMergeActive(void)
+{
+    static int cached = -1;
+
+    if (cached < 0) cached = (pspguDrawMergedArrays != NULL)? 1 : 0;
+
+    return cached;
+}
+
+static unsigned int pspMergeTex(Material *material)
+{
+    return (unsigned int)material->maps[MATERIAL_MAP_DIFFUSE].texture.id;
+}
+
+static unsigned int pspMergeColor(Material *material)
+{
+    Color c = material->maps[MATERIAL_MAP_DIFFUSE].color;
+
+    return (unsigned int)c.r | ((unsigned int)c.g << 8) | ((unsigned int)c.b << 16) | ((unsigned int)c.a << 24);
+}
+
+// Eligibility for the run, minus the key: the classification already proved the instance
+// clean, which also proves an AABB existed. Everything here is a precondition for
+// reproducing the per-object transform exactly.
+static int pspMergeEligible(Mesh *mesh, Material *material, Matrix transform)
+{
+    const float *f;
+    float sx, sy, sz;
+
+    if (!pspMergeActive() || !rlpspCulling) return 0;
+    if ((mesh->vertices == NULL) || (mesh->indices == NULL)) return 0;
+    if ((mesh->texcoords == NULL) || (mesh->normals == NULL)) return 0;
+    if ((mesh->colors != NULL) || (mesh->animVertices != NULL) || (mesh->animNormals != NULL)) return 0;
+    if ((mesh->vertexCount <= 0) || (mesh->triangleCount <= 0)) return 0;
+    if ((mesh->vertexCount > PSP_MERGE_MAX_VERTS/2) || (mesh->triangleCount*3 > PSP_MERGE_MAX_IDX/2)) return 0;
+
+    // Translation + rotation + uniform scale only: the normal is rotated by the basis
+    // vectors, which is exact only when the three lengths agree.
+    f = MatrixToFloat(transform);
+    sx = f[0]*f[0] + f[1]*f[1] + f[2]*f[2];
+    sy = f[4]*f[4] + f[5]*f[5] + f[6]*f[6];
+    sz = f[8]*f[8] + f[9]*f[9] + f[10]*f[10];
+    if ((sx <= 1e-8f) || (sy <= 1e-8f) || (sz <= 1e-8f)) return 0;
+    if ((fabsf(sx - sy) > 0.01f*sx) || (fabsf(sx - sz) > 0.01f*sx)) return 0;
+    if (fabsf(f[0]*f[4] + f[1]*f[5] + f[2]*f[6]) > 0.01f*sx) return 0;
+    if (fabsf(f[0]*f[8] + f[1]*f[9] + f[2]*f[10]) > 0.01f*sx) return 0;
+    if (fabsf(f[4]*f[8] + f[5]*f[9] + f[6]*f[10]) > 0.01f*sx) return 0;
+
+    (void)material;
+    return 1;
+}
+
+static int pspMergeKeyMatches(Mesh *mesh, unsigned int tex, unsigned int color)
+{
+    PspMergeRun *r = &pspMergeRun;
+
+    return r->valid && (r->mesh.vertices == mesh->vertices) && (r->mesh.indices == mesh->indices) &&
+           (r->tex == tex) && (r->color == color);
+}
+
+// One more instance must fit both our buffers and the driver's arena: the extension copies
+// the run into the per-list arena, and a run that does not fit is replayed per object.
+static int pspMergeRoom(Mesh *mesh)
+{
+    PspMergeRun *r = &pspMergeRun;
+    int vc = mesh->vertexCount, ic = mesh->triangleCount*3;
+    unsigned int need = (unsigned int)vc*PSP_MERGE_STRIDE + (unsigned int)ic*2 + 128;
+
+    if (r->instances >= PSP_MERGE_MAX_INST) return 0;
+    if (((r->instances + 1)*vc) > PSP_MERGE_MAX_VERTS) return 0;
+    if (((r->instances + 1)*ic) > PSP_MERGE_MAX_IDX) return 0;
+    if ((pspguArenaRoom != NULL) && (pspguArenaRoom() < (int)need)) return 0;
+
+    return 1;
+}
+
+void rlpspMergeFlush(void);     // defined below; declared in rlgl.h for the flush hooks
+
+static void pspMergeAppend(Mesh *mesh, Material *material, Matrix transform)
+{
+    PspMergeRun *r = &pspMergeRun;
+    unsigned int tex = pspMergeTex(material), color = pspMergeColor(material);
+
+    if (!pspMergeKeyMatches(mesh, tex, color))
+    {
+        rlpspMergeFlush();
+        r->valid = 1;
+        r->instances = 0;
+        r->mesh = *mesh;
+        r->tex = tex;
+        r->color = color;
+        glGetFloatv(GL_MODELVIEW_MATRIX, r->view);
+    }
+
+    r->xf[r->instances++] = transform;
+}
+
+static void pspMergeBuild(Mesh *mesh, int vc, int ic)
+{
+    PspMergeRun *r = &pspMergeRun;
+    unsigned char *v = pspMergeVerts;
+
+    for (int k = 0; k < r->instances; k++)
+    {
+        const float *f = MatrixToFloat(r->xf[k]);
+        const float *p = mesh->vertices, *n = mesh->normals, *uv = mesh->texcoords;
+
+        for (int j = 0; j < vc; j++, v += PSP_MERGE_STRIDE)
+        {
+            float nx = n[j*3 + 0], ny = n[j*3 + 1], nz = n[j*3 + 2];
+            float wx = nx*f[0] + ny*f[4] + nz*f[8];
+            float wy = nx*f[1] + ny*f[5] + nz*f[9];
+            float wz = nx*f[2] + ny*f[6] + nz*f[10];
+            float len = sqrtf(wx*wx + wy*wy + wz*wz);
+            float *o = (float *)v;
+
+            if (len > 1e-8f) { len = 1.0f/len; wx *= len; wy *= len; wz *= len; }
+
+            o[0] = uv[j*2 + 0];
+            o[1] = uv[j*2 + 1];
+            o[2] = wx; o[3] = wy; o[4] = wz;
+            o[5] = p[j*3 + 0]*f[0] + p[j*3 + 1]*f[4] + p[j*3 + 2]*f[8] + f[12];
+            o[6] = p[j*3 + 0]*f[1] + p[j*3 + 1]*f[5] + p[j*3 + 2]*f[9] + f[13];
+            o[7] = p[j*3 + 0]*f[2] + p[j*3 + 1]*f[6] + p[j*3 + 2]*f[10] + f[14];
+        }
+
+        for (int j = 0; j < ic; j++) pspMergeIdx[k*ic + j] = (unsigned short)(mesh->indices[j] + k*vc);
+    }
+}
+
+// Replay for the case the extension declines (arena full, older driver): the same generic
+// path DrawMesh would have taken, one instance at a time.
+static void pspMergeReplay(Mesh *mesh, int vc, int ic)
+{
+    PspMergeRun *r = &pspMergeRun;
+
+    if (r->tex > 0) rlEnableTexture(r->tex); else rlDisableTexture();
+    rlColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
+               (unsigned char)((r->color >> 16) & 0xFF), (unsigned char)((r->color >> 24) & 0xFF));
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glVertexPointer(3, GL_FLOAT, 0, mesh->vertices);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glTexCoordPointer(2, GL_FLOAT, 0, mesh->texcoords);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glNormalPointer(GL_FLOAT, 0, mesh->normals);
+
+    for (int k = 0; k < r->instances; k++)
+    {
+        rlPushMatrix();
+        rlMultMatrixf(MatrixToFloat(r->xf[k]));
+        if (mesh->indices != NULL) rlDrawVertexArrayElements(0, ic, mesh->indices);
+        else rlDrawVertexArray(0, vc);
+        rlPopMatrix();
+    }
+
+    rlDisableStatePointer(GL_VERTEX_ARRAY);
+    rlDisableStatePointer(GL_TEXTURE_COORD_ARRAY);
+    rlDisableStatePointer(GL_NORMAL_ARRAY);
+    rlDisableTexture();
+}
+
+void rlpspMergeFlush(void)
+{
+    PspMergeRun *r = &pspMergeRun;
+    int vc, ic, merged = 0;
+    float mv[16];
+
+    if (!r->valid || (r->instances <= 0)) { r->valid = 0; r->instances = 0; return; }
+
+    vc = (int)r->mesh.vertexCount;
+    ic = r->mesh.triangleCount*3;
+
+    // The run's vertices are world space; drawing them under a different modelview than the
+    // one the instances were submitted under would move every instance in the run.
+    glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+
+    if ((memcmp(mv, r->view, sizeof(mv)) == 0) && (pspguDrawMergedArrays != NULL))
+    {
+        pspMergeBuild(&r->mesh, vc, ic);
+
+        if (r->tex > 0) rlEnableTexture(r->tex); else rlDisableTexture();
+        rlColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
+                   (unsigned char)((r->color >> 16) & 0xFF), (unsigned char)((r->color >> 24) & 0xFF));
+
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glVertexPointer(3, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 20);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glTexCoordPointer(2, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 0);
+        glEnableClientState(GL_NORMAL_ARRAY);
+        glNormalPointer(GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 8);
+
+#if defined(PSP_MERGE_NO_HINT)
+        merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx,
+                                       r->instances*vc, pspMergeVerts, 0);
+#else
+        merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx,
+                                       r->instances*vc, pspMergeVerts, PSP_MERGE_CLEAN);
+#endif
+
+        rlDisableStatePointer(GL_VERTEX_ARRAY);
+        rlDisableStatePointer(GL_TEXTURE_COORD_ARRAY);
+        rlDisableStatePointer(GL_NORMAL_ARRAY);
+        rlDisableTexture();
+    }
+
+    if (!merged)
+    {
+        pspMergeReplay(&r->mesh, vc, ic);
+        rlpspMergeReplays++;
+    }
+    else { rlpspMergeRuns++; rlpspMergeInstances += (unsigned int)r->instances; }
+
+    r->valid = 0;
+    r->instances = 0;
+}
+#endif
 
 static void pspGePack(Mesh *mesh, bool dynamic)
 {
@@ -1738,26 +2130,48 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     #define GL_COLOR_ARRAY          0x8076
     #define GL_TEXTURE_COORD_ARRAY  0x8078
 
-    if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
+#if defined(PLATFORM_PSP) && defined(PSP_CALL_PROBE)
+    SceInt64 _dm0 = rlpspProbeNow();
+    #define PSP_CALL_DONE() rlpspProbeDrawMeshUs += (unsigned long long)(rlpspProbeNow() - _dm0)
+#else
+    #define PSP_CALL_DONE()
+#endif
 
 #if defined(PLATFORM_PSP)
+    int pspClass;
 #if defined(PSP_MATRIX_PROBE)
     {
         SceInt64 _c0 = rlpspProbeNow();
-        int culled = pspGeCullMesh(&mesh, transform);
+        pspClass = pspGeClassifyMesh(&mesh, transform);
         rlpspProbeCullUs += (unsigned long long)(rlpspProbeNow() - _c0);
-        if (culled) { rlDisableTexture(); return; }
     }
 #else
-    if (pspGeCullMesh(&mesh, transform))
+    pspClass = pspGeClassifyMesh(&mesh, transform);
+#endif
+
+#if defined(PSP_MERGE_DRAWS) && (PSP_MERGE_DRAWS == 1)
+    // A culled instance emits nothing, so it does not end the run; a clean one joins it.
+    // The texture is touched only by the per-object path, so a run pays one bind, not one
+    // per instance.
+    if (pspClass == 0) { PSP_CALL_DONE(); rlDisableTexture(); return; }
+    if ((pspClass == 1) && pspMergeEligible(&mesh, &material, transform) && pspMergeRoom(&mesh))
     {
-        rlDisableTexture();
+        pspMergeAppend(&mesh, &material, transform);
+        PSP_CALL_DONE();
         return;
     }
+    rlpspMergeFlush();
+#else
+    if (pspClass == 0) { PSP_CALL_DONE(); rlDisableTexture(); return; }
 #endif
+
+    if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
+
     // A colour array added after upload (a bake) must reach the generic path.
     PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(mesh.vboId) : NULL;
 #else
+    if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
+
     void *pg = NULL;
 #endif
 
@@ -1825,13 +2239,27 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
             glEnableClientState(GL_NORMAL_ARRAY);
             glNormalPointer(GL_FLOAT, (GLsizei)pg->stride, pg->verts + 8);
 
+#if defined(PSP_CALL_PROBE)
+            SceInt64 _d0 = rlpspProbeNow();
+#endif
             if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
             else rlDrawVertexArray(0, mesh.vertexCount);
+#if defined(PSP_CALL_PROBE)
+            rlpspProbeDriverUs += (unsigned long long)(rlpspProbeNow() - _d0);
+#endif
         }
         else
 #endif
+        {
+#if defined(PSP_CALL_PROBE)
+        SceInt64 _d1 = rlpspProbeNow();
+#endif
         if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
         else rlDrawVertexArray(0, mesh.vertexCount);
+#if defined(PSP_CALL_PROBE)
+        rlpspProbeDriverUs += (unsigned long long)(rlpspProbeNow() - _d1);
+#endif
+        }
     rlPopMatrix();
 
     rlDisableStatePointer(GL_VERTEX_ARRAY);
@@ -1840,6 +2268,9 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     rlDisableStatePointer(GL_COLOR_ARRAY);
 
     rlDisableTexture();
+
+    PSP_CALL_DONE();
+    #undef PSP_CALL_DONE
 #endif
 
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)

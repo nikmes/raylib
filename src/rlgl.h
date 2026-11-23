@@ -1440,6 +1440,16 @@ static Matrix rlMatrixInvert(Matrix mat);                   // Invert provided m
 #define RLPSP_FRAME_END()
 #endif
 
+// Sprint 078 (P10-S11): a merged 3D run must be emitted before anything else can draw,
+// because its instances have been removed from the per-object stream. The definition
+// lives in rmodels.c (it needs the mesh arrays); every ordering hook below calls it.
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11) && defined(PSP_MERGE_DRAWS) && (PSP_MERGE_DRAWS == 1)
+void rlpspMergeFlush(void);
+#define RLPSP_MERGE_FLUSH() rlpspMergeFlush()
+#else
+#define RLPSP_MERGE_FLUSH()
+#endif
+
 //----------------------------------------------------------------------------------
 // Module Functions Definition - Matrix operations
 //----------------------------------------------------------------------------------
@@ -1722,6 +1732,8 @@ float rlGetCullDistanceFar(void)
 // Immediate mode: one GL call per primitive
 void rlBegin(int mode)
 {
+    RLPSP_MERGE_FLUSH();
+
     switch (mode)
     {
         case RL_LINES: glBegin(GL_LINES); break;
@@ -2282,10 +2294,10 @@ void rlEnableColorBlend(void) { RLPSP_FLUSH(); glEnable(GL_BLEND); }
 void rlDisableColorBlend(void) { RLPSP_FLUSH(); glDisable(GL_BLEND); }
 
 // Enable depth test
-void rlEnableDepthTest(void) { RLPSP_FLUSH(); glEnable(GL_DEPTH_TEST); }
+void rlEnableDepthTest(void) { RLPSP_MERGE_FLUSH(); RLPSP_FLUSH(); glEnable(GL_DEPTH_TEST); }
 
 // Disable depth test
-void rlDisableDepthTest(void) { RLPSP_FLUSH(); glDisable(GL_DEPTH_TEST); }
+void rlDisableDepthTest(void) { RLPSP_MERGE_FLUSH(); RLPSP_FLUSH(); glDisable(GL_DEPTH_TEST); }
 
 // Enable depth write
 void rlEnableDepthMask(void) { RLPSP_FLUSH(); glDepthMask(GL_TRUE); }
@@ -2579,6 +2591,8 @@ void rlCheckErrors(void)
 // Set blend mode
 void rlSetBlendMode(int mode)
 {
+    RLPSP_MERGE_FLUSH();
+
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
     if ((RLGL.State.currentBlendMode != mode) || ((mode == RL_BLEND_CUSTOM || mode == RL_BLEND_CUSTOM_SEPARATE) && RLGL.State.glCustomBlendModeModified))
     {
@@ -3662,6 +3676,7 @@ void rlSetRenderBatchActive(rlRenderBatch *batch)
 void rlDrawRenderBatchActive(void)
 {
     RLPSP_FRAME_END();
+    RLPSP_MERGE_FLUSH();            // EndMode3D and EndDrawing both come through here
 
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
     rlDrawRenderBatch(RLGL.currentBatch);    // NOTE: Stereo rendering is checked inside

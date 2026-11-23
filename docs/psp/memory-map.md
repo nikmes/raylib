@@ -591,8 +591,9 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   `glGetFloatv` and keep per-mesh bounds keyed by `vboId`. At 1,000 objects the per-call test costs ~50 µs
   `[measured: sprint 066]`.
 - **The clip pass is expensive on tessellated geometry.** It emits clean triangles through the float clip path too;
-  a 16×16 ground plus 50 cubes overflows the 128 KiB arena once per frame, forcing a full sync (sample median
-  50 ms) `[measured: sprint 067]`.
+  a 16×16 ground plus 50 cubes overflows the then-128 KiB arena once per frame, forcing a full sync (sample median
+  50 ms) `[measured: sprint 067]`. (Sprint 078 raised the arena to 512 KiB per list; the 067 figure stands as the
+  measurement of that build.)
 - **The phase-10 sample baseline is 19.8 ms at N=0** (ground + torus + RTT + clip) and 35.5 ms work at N=50; its
   60 fps target is not met `[measured: sprint 067]`.
 - **Lit parity regressed after 062.** With the same scene, pspgu renders 128 where pspGL and the 062 record are 64;
@@ -957,8 +958,12 @@ comment in `pspgu.h` is explicit that `sceGuDrawArray` does *not* apply the affi
   error on the PSP FAT** — our PSP-1000. So the "upper 2 MB" the blueprint mentions as opt-in is not available
   to us at all; 2 MB is the budget, of which the pspgu display (three framebuffers) and depth take **1,088 KiB**.
 - **The command lists and vertex arenas are host RAM, not EDRAM.** pspgu keeps two 240 KiB display lists and
-  two 128 KiB per-list vertex arenas in main memory; only framebuffers, depth and textures belong in the 2 MiB
-  sum. A budget that adds the lists to VRAM double-counts memory in the wrong partition.
+  two per-list vertex arenas in main memory; only framebuffers, depth and textures belong in the 2 MiB sum. A
+  budget that adds the lists to VRAM double-counts memory in the wrong partition. The arenas were 128 KiB each
+  through sprint 077 and are **512 KiB each since sprint 078**, because one merged clean run of the N=500 cube
+  scene expands to 12,000 vertices × 32 B = 384,000 B plus 20,304 B of indices in a single list; two lists now
+  cost 1 MiB of main RAM (was 256 KiB). A run that does not fit returns 0 and is replayed per object, so the
+  size is headroom, not a correctness requirement.
 - Per-draw vertex allocations are **64-byte aligned** because the GE reads them after a D-cache writeback. With
   16-byte starts a draw could share a dirty cache line with its neighbour; `basic_shapes` then differed from
   pspGL by 26–71 edge pixels. The alignment made it byte-identical (sprint 014 T7).

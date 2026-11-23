@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b32"
+#define PSPGU_BUILD "b33"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -96,9 +96,15 @@
 #ifndef PSP_GU_ARENA_BYTES
     // Per-list vertex arena. One batcher flush at RLPSP_BATCH_CAP (4,096) vertices is
     // 96 KiB; 128 KiB also holds the converted path's 32-byte vertices and the text runs
-    // that share the same frame. Two lists therefore cost 256 KiB of main RAM. Measured
-    // worst case at the 60 fps ceiling: 1,895 sprites = 3,790 vertices = 91.0 KiB.
-    #define PSP_GU_ARENA_BYTES (128*1024)
+    // that share the same frame. Measured worst case at the 60 fps ceiling: 1,895 sprites =
+    // 3,790 vertices = 91.0 KiB.
+    //
+    // Sprint 078 raises it to 512 KiB for merged 3D runs: the N=500 cube scene expands to
+    // 12,000 vertices x 32 B = 384,000 B plus 20,304 B of indices, 410 KiB in one list,
+    // against 128 KiB before. Two lists therefore cost 1 MiB of main RAM (was 256 KiB);
+    // VRAM is untouched. A run that would not fit returns 0 and is replayed per object, so
+    // this is headroom, not a correctness requirement.
+    #define PSP_GU_ARENA_BYTES (512*1024)
 #endif
 
 // libpspgu exposes the queue id of the last direct list it enqueued. sceGuStart()
@@ -263,6 +269,16 @@ void pspguWindowStats(unsigned int *draws, unsigned int *switches);
 // to GU, so a list queued two frames ago never points at memory this frame writes.
 void *pspguArenaAlloc(unsigned int bytes);  // 16-byte aligned, NULL when exhausted
 int pspguArenaReset(void);                  // rare fallback: finish+wait, empty the arena
+int pspguArenaRoom(void);                   // bytes left in the list being filled
+
+// Sprint 078 (P10-S11): one merged run of clean instances. The caller has already proven
+// every instance inside the guard band, so the clip scan is skipped when the flag is set;
+// the driver still scans without it, which is the A/B arm. Both arrays are copied into
+// this list's arena (the caller's buffer is reused next frame). Returns 0 when the run
+// does not fit, and the caller replays it per object.
+#define PSPGU_MERGED_CLEAN 1u
+int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                          GLsizei vertexCount, const GLvoid *verts, unsigned int flags);
 
 // The GE reads vertices and indices straight out of main RAM, through its own path, so
 // anything the CPU wrote has to be written back first. Without this the GE reads stale

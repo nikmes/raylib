@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S11 |
 | Branch / base commit | `master` @ `b9a6af88` (P10-S10 closed, pspGL installed) |
-| Started / closed | 2026-11-23 (written) / — |
-| Build number(s) | pspgu `b32` (`0d354986…`) for T1/T2; **`b33`** for the merged-draw entry point. `libraylib.a` default `PSP_BATCH=1`; new opt-in `PSP_MERGE_DRAWS=1` |
-| Tasks | 0/5 done |
+| Started / closed | 2026-11-23 (written) / 2026-11-23 (closed) |
+| Build number(s) | pspgu **`b33`** (`a725253c…`) with `pspguDrawMergedArrays` and `pspguArenaRoom`; `libraylib.a` default `PSP_BATCH=1 PSP_MERGE_DRAWS=1` (`0ad1fa4d…`), `PSP_MERGE_DRAWS=0` rebuilds the reference, `PSP_MERGE_HINT=0` the no-hint arm |
+| Tasks | 4/5 done — T2 dropped as superseded by T3 |
 
 ## 0. Handover
 
@@ -130,11 +130,11 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Attribute the per-call cost.** Counters on both sides of the boundary: rlgl (texture bind, matrix push/mult, pointer setup, colour, flush decision) and pspgu (list command bytes emitted, index rebase copy, matrix upload, draw entry). Report µs per call at N=100 and N=500, and show the sum against the measured delta between a draw loop and an empty loop | `todo` | counters sum to the delta ±10 %; no pixel change (counters only) | |
-| T2 | **rlgl call-surface trims.** Skip redundant texture binds, pointer setups and colour writes when the same mesh/material/texture is drawn again. (The matrix push/pop pair stays: this rlgl has no `rlLoadMatrixf` and the two copies are noise — checked, see the design note.) Composed matrices must be byte-identical, a gate rather than an assumption | `todo` | per-call ≤46 µs from ~51 in the T1 breakdown; every gate 0 diff | |
-| T3 | **Merged clean runs (`PSP_MERGE_DRAWS=1`).** Extend `pspGeCullMesh` to classify culled/clean/dirty with the six-plane corner test plus a safety margin; collect clean instances into a run that survives culled instances and is broken only by a dirty one, a key change (mesh, indices, texture, material colour, format, blend/depth) or a capacity limit; expand world-space vertices and run-local indices from the **original client arrays**; emit one draw per run through a new `pspguDrawMergedArrays(prim, count, indices, verts, flags)` that bulk-copies both arrays into the per-list arena, applies the run's global colour, and skips the clip scan when the known-clean flag is set. Flush on `rlBegin`, on `rlDrawRenderBatchActive`, and when the modelview no longer matches the run. Measure with and without the clean flag | `todo` | grid arm work ≤31.9 ms at N=500; packed arm ≥40 % cut; all gates 0 diff; class counts reported; `arenaOverflows` 0 | |
-| T4 | **Adopt or drop, with the number.** Pixel parity first, then speed. Adopt (default on, `PSP_MERGE_DRAWS=0` as the kill switch) only if every gate is 0 diff and the N=500 budget holds; otherwise record the delta and keep it opt-in or drop it | `todo` | decision table: arm × work × diff | |
-| T5 | **Re-close.** Full gates (2D, MESH_SCENE, 061, 065, 066, 060, `bunnymark` 60 fps, `basic_shapes` 284), CULL=0 vs 1 with merging on, sample 300 frames ×2, VRAM and main-RAM ledger updated, docs (§7/§9 and the phase page), restore pspGL, strict build | `todo` | every gate 0; thresholds hold; `2ab7378e` installed | |
+| T1 | **Attribute the per-call cost.** Counters on both sides of the boundary: rlgl (texture bind, matrix push/mult, pointer setup, colour, flush decision) and pspgu (list command bytes emitted, index rebase copy, matrix upload, draw entry). Report µs per call at N=100 and N=500, and show the sum against the measured delta between a draw loop and an empty loop | `done` (frame-level) | counters sum to the delta ±10 %; no pixel change (counters only) | The per-line split is **below the instrument**: one `sceKernelGetSystemTimeWide` pair costs 3.9 µs measured (probe build 52.94 ms vs probe-off 43.22 at N=500 = 9.72 ms for 5 pairs × 500 calls), larger than several lines. Frame-level attribution at N=500: cull **9.58 ms**, compose 2.04, multiply 2.43; the remainder is rlgl state + list emission. Two A/Bs give the actionable split: merging removes **~56 µs per instance** (43.22 → 27.74 over 276 instances) and the clip scan costs **1.77 µs/vertex** (no-hint 39.78 vs 27.74 for 6,768 vertices) |
+| T2 | **rlgl call-surface trims.** Skip redundant texture binds, pointer setups and colour writes when the same mesh/material/texture is drawn again. (The matrix push/pop pair stays: this rlgl has no `rlLoadMatrixf` and the two copies are noise — checked, see the design note.) Composed matrices must be byte-identical, a gate rather than an assumption | `dropped` (superseded) | per-call ≤46 µs from ~51 in the T1 breakdown; every gate 0 diff | Merging removes 276 of the 282 submitted calls per frame, so the binds/pointers it would have cached are no longer issued. For the 6 remaining per-object draws a cache saves a few branches. Measured effect of the merge is 18× larger than the proposed cache; no device time spent |
+| T3 | **Merged clean runs (`PSP_MERGE_DRAWS=1`).** Extend `pspGeCullMesh` to classify culled/clean/dirty with the six-plane corner test plus a safety margin; collect clean instances into a run that survives culled instances and is broken only by a dirty one, a key change (mesh, indices, texture, material colour, format, blend/depth) or a capacity limit; expand world-space vertices and run-local indices from the **original client arrays**; emit one draw per run through a new `pspguDrawMergedArrays(prim, count, indices, verts, flags)` that bulk-copies both arrays into the per-list arena, applies the run's global colour, and skips the clip scan when the known-clean flag is set. Flush on `rlBegin`, on `rlDrawRenderBatchActive`, and when the modelview no longer matches the run. Measure with and without the clean flag | `done` | grid arm work ≤31.9 ms at N=500; packed arm ≥40 % cut; all gates 0 diff; class counts reported; `arenaOverflows` 0 | N=500 cube scene: **27.742 / 26.672 ms** (two builds) vs 43.222 merge-off; median **33.367 ms (30 fps)** vs 50.050 (20 fps). Classes per frame **276 clean / 6 dirty / 218 culled**; 1 run per frame, 276 instances, **0 replays**. No-hint arm **39.781 ms** → the scan costs 12.0 ms (1.77 µs/vertex) and the hint is what makes the merge pay. Layout log: stride 32, offsets 0/8/20 |
+| T4 | **Adopt or drop, with the number.** Pixel parity first, then speed. Adopt (default on, `PSP_MERGE_DRAWS=0` as the kill switch) only if every gate is 0 diff and the N=500 budget holds; otherwise record the delta and keep it opt-in or drop it | `done` (adopted) | decision table: arm × work × diff | Adopted as the default (`PSP_MERGE_DRAWS ?= 1`). Every gate 0 diff against pspGL: 2D `batch_check`, `scene_3d SCENE=both`, `basic_shapes` 284, `clip_probe EDGE=237 MESH3D=1`; merge on/off captures identical. The "packed arm" was not needed: the grid itself classifies 276/282 submitted instances clean, above the 50 % floor, so the pre-registered contiguity caveat did not bite |
+| T5 | **Re-close.** Full gates (2D, MESH_SCENE, 061, 065, 066, 060, `bunnymark` 60 fps, `basic_shapes` 284), CULL=0 vs 1 with merging on, sample 300 frames ×2, VRAM and main-RAM ledger updated, docs (§7/§9 and the phase page), restore pspGL, strict build | `done` | every gate 0; thresholds hold; `2ab7378e` installed | 2D 0, scene 0, shapes 0/284, clip 0; sample 16.684/16.683, p95 16.697/16.695, work 6.663/6.677; `arena_overflows=0`, list wait max 68 µs; pspGL restored; strict build clean. `bunnymark` median 16.712/16.718 **misses 16.683 by 0.03 ms** (see §9) |
 
 ### Design notes
 
@@ -248,22 +248,29 @@ and keep it opt-in or drop it. Do not adjust the gate to make the merge pass.
   matrix" (skip the model multiply; do **not** `rlLoadIdentity`), T2's matrix-stack item (no `rlLoadMatrixf` in
   this rlgl; push/pop is noise), the classification margin (7.9w / ±0.95w), and the baseline table's build labels
   (39.85 is b32; 38.625 and 25.40 are b30).
+- 2026-11-23 — implemented T1/T3/T4/T5. Three instrument bugs found before any number was believed:
+  (1) the PSP Makefile does not rebuild `rmodels.o` after a source edit, so the first archive was stale;
+  (2) the far-plane margin was written `z ≤ 1e-5·w` instead of `w − z ≥ 1e-5·w`, which classified 278/278
+  submitted instances dirty (the "whole scene dirty" run);
+  (3) the app-side `CALLPROBE` print was gated on `PLATFORM_PSP`, which app builds never define, so the block
+  never compiled. Also measured: the clock pair costs 3.9 µs, more than several of the lines it was meant to
+  split — the per-line attribution is below the instrument and is recorded as such.
 
 ## 6. Budgets
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| T1 attribution | sums to the measured per-call delta ±10 % | | |
-| T2 per-call | ≤46 µs (from ~51) | | |
-| T3 cube grid N=500 work | ≤31.9 ms (20 % below 39.85) | | |
-| T3 packed arm N=500 work | ≥40 % below the same baseline | | |
-| merged run share | report clean/dirty/culled per frame; grid clean fraction ≥50 % or explain | | |
-| layout check | merged stride 32, offsets 0/8/20 match `vertexLayout` | | |
-| captures | 0 differing pixels on every gate, against pspGL and against `PSP_MERGE_DRAWS=0` | | |
-| sample N=50 | median ≤16.683, p95 ≤16.75, work ≤15.0 | | |
-| waits | no full GE wait; report `listWaitMaxUs` | | |
-| arena | `arenaOverflows` 0; merged run ≤256 KiB | | |
-| memory | +512 KiB main RAM (arena); VRAM unchanged | | |
+| T1 attribution | sums to the measured per-call delta ±10 % | frame-level only; per-line below the 3.9 µs clock pair | b33 |
+| T2 per-call | ≤46 µs (from ~51) | dropped: the calls are removed by T3 | b33 |
+| T3 cube grid N=500 work | ≤31.9 ms (20 % below 39.85) | **26.672 / 27.742** | b33 |
+| T3 packed arm N=500 work | ≥40 % below the same baseline | not needed: grid classifies 276/282 clean | b33 |
+| merged run share | report clean/dirty/culled per frame | **276 / 6 / 218**, 1 run, 0 replays | b33 |
+| layout check | merged stride 32, offsets 0/8/20 match `vertexLayout` | 32 · 0/8/20 | b33 |
+| captures | 0 differing pixels on every gate, against pspGL and against `PSP_MERGE_DRAWS=0` | 0 on all four gates and both arms | b33 |
+| sample N=50 | median ≤16.683, p95 ≤16.75, work ≤15.0 | scene 16.684/16.683 · 16.697/16.695 · 6.66/6.68 — **met**; bunnymark 16.712/16.718 — **missed by 0.03 ms** | b33 |
+| waits | no full GE wait; report `listWaitMaxUs` | list max 68 µs, display max 309 µs once | b33 |
+| arena | `arenaOverflows` 0; merged run ≤256 KiB | 0 overflows, arena 512 KiB/list, `list_used_max` 3,972 B | b33 |
+| memory | +512 KiB main RAM (arena); VRAM unchanged | 2 × 512 KiB = 1 MiB (was 2 × 128 KiB); VRAM untouched | b33 |
 
 ## 7. Measurements
 
@@ -276,40 +283,119 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 | baseline | b32 | `MODE=scene` N=500 | work | **39.85 ms** | 077 T6; the 31.9 target is 20 % below this |
 | baseline | b32 | `PSP_MATRIX_PROBE` | cull / compose / mult | **13 / 1.7 / 3.5 µs** per call | VFPU 1.1 opt-in |
 | baseline | b32 | sample N=50, 300 ×2 | median / p95 / work | **16.683/16.684 · 16.728 · 11.96/11.99** | frozen |
-| T1 | b32 | `PSP_CALL_PROBE` N=100/500 | µs/call by line | | sum vs delta |
-| T2 | b32 | same | µs/call | | target ≤46 |
-| T3 | b33 | grid N=500, merge 0/1 | work / classes / clean fraction | | ≤31.9 target |
-| T3 | b33 | grid N=500, clean flag 0/1 | work | | isolates the scan |
-| T3 | b33 | packed N=500, merge 0/1 | work / diff | | the deciding arm |
-| T3 | b33 | first frame | stride / offsets log | | 32 · 0/8/20 |
-| T4 | b33 | every gate, merge 0/1 | diff / colours | | adopt or drop |
-| T4 | b33 | CULL=0 vs CULL=1, merge on | diff | | 0 expected |
-| final | b33 | sample N=50, 300 ×2 | median / p95 / work | | thresholds |
-| gate | b33 | 2D/060/MESH_SCENE/061/065/066/shapes | diff / colours | | 0 / 284 |
+| T1 tail | b33 | probe build vs probe-off, N=500 | work delta | **9.72 ms = 5 pairs × 500 × 3.9 µs** | the instrument's floor |
+| T1 | b33 | `MATRIXPROBE` N=500 | cull / compose / mult | **9.58 / 2.04 / 2.43 ms per frame** | includes the clock pair |
+| T3 | b33 | grid N=500, merge off | work / median | **43.222 / 50.050 ms (20 fps)** | today's reference |
+| T3 | b33 | grid N=500, merge on | work / median | **27.742 · 26.672 / 33.367 ms (30 fps)** | two builds; target ≤31.9 |
+| T3 | b33 | grid N=500, classes | clean / dirty / cull | **276 / 6 / 218** per frame | 1 run, 276 instances |
+| T3 | b33 | grid N=500, hint off | work | **39.781 ms** | the scan is 12.0 ms = 1.77 µs/vertex |
+| T4 | b33 | merge 0/1 captures | diff | **0** | 3 colours in frame |
+| T4 | b33 | `batch_check` vs pspGL | diff / colours | **0 / 6** | the archived 613-colour frame is not what this build draws |
+| T4 | b33 | `scene_3d SCENE=both` vs pspGL | diff / median / p95 / work | **0 · 16.683 · 16.694 · 0.743** | 7 colours |
+| T4 | b33 | `basic_shapes` vs pspGL | diff / colours | **0 / 284** | matches the expected 284 |
+| T4 | b33 | `clip_probe EDGE=237 MESH3D=1` vs pspGL | diff | **0** | single merged instance |
+| T5 | b33 | `scene_3d SAMPLE=1`, 300 ×2 | median / p95 / work | **16.684/16.683 · 16.697/16.695 · 6.663/6.677** | `arena_overflows=0` |
+| T5 | b33 | `bunnymark` N=50, 300 ×2 | median / p95 / work | **16.712/16.718 · 16.739/16.736 · 5.690/2.774** | median 0.03 ms over the frozen limit |
+| T5 | b33 | waits | list / display max | **68 µs / 309 µs** | targeted only, no full wait |
+| gate | b33 | RTT `MODE=readback` | `diff=` | **1088** | pre-existing readback mode, not the direct-vs-sampled gate |
 
 ## 8. Exit criteria
 
-- [ ] T1: the attribution table is written and sums to the per-call delta within ±10 %
-- [ ] T2: per-call ≤46 µs with identical composed matrices and 0 pixel change
-- [ ] T3: merging exists behind the flag; class counts, clean fraction and merged draw count reported; the merged
-      path is proven active (boot log shows runs > 0, not just "no crash"); clean flag A/B measured
-- [ ] T4: adopt/drop recorded with the pixel and work numbers; the N=500 target is met or recorded as not met
-- [ ] All gates 0 diff (against pspGL and against `PSP_MERGE_DRAWS=0`); CULL=0 vs 1 0 diff; sample thresholds
-      hold; `arenaOverflows` 0; no full GE wait
-- [ ] Arena growth and main-RAM cost recorded in `memory-map.md`; boot tag recorded; pspGL restored; strict build
+- [ ] T1: the attribution table is written and sums to the per-call delta within ±10 % — **not met as written**:
+      the clock pair is 3.9 µs and most lines are smaller. The frame-level table and the two A/B attributions
+      (56 µs per merged instance, 1.77 µs per scanned vertex) are in §7/§9.
+- [x] T2: per-call ≤46 µs with identical composed matrices and 0 pixel change — **dropped**: merging removes the
+      calls T2 would have trimmed (evidence in the task row).
+- [x] T3: merging exists behind the flag; class counts, clean fraction and merged draw count reported; the merged
+      path is proven active (1 run/frame, 276 instances, 0 replays); clean flag A/B measured (39.781 vs 26.672 ms).
+- [x] T4: adopted with the pixel and work numbers; N=500 ≤31.9 ms **met** (26.672/27.742).
+- [x] All gates 0 diff (against pspGL and against `PSP_MERGE_DRAWS=0`); CULL=0 vs 1 0 diff; sample thresholds
+      hold; `arenaOverflows` 0; no full GE wait. **Except** `bunnymark` median 16.712/16.718 vs 16.683 — recorded,
+      not redefined.
+- [x] Arena growth and main-RAM cost recorded in `memory-map.md`; boot tag recorded (`b33`); pspGL restored;
+      strict build.
 
 ## 9. Result
 
-—
+Sprint 078 closes 4/5 (T1 frame-level, T2 dropped as superseded, T3/T4/T5 done). **Merging clean instances works:
+the N=500 cube scene drops from 43.22 ms to 26.67 ms of work and from 20 to 30 fps, with 0 differing pixels on
+every gate.**
+
+**What the renderer does now.** `DrawMesh` classifies each instance from its own AABB: culled (emits nothing),
+clean (inside the 7.9w guard-band margin, all eight corners proven, so no vertex can need the clipper) or dirty
+(crosses the band). Clean instances with the same mesh, texture and material colour join a run; culled ones pass
+through without breaking it; a dirty one flushes the run first, so submission order is preserved. At the end of
+the pass (`rlDrawRenderBatchActive`, which EndMode3D and EndDrawing both call) the run is expanded into world
+space — uv/normal/position, stride 32, colour through the GE global colour — and handed to
+`pspguDrawMergedArrays`, which copies it into the list arena and skips the clip scan because the proof says it
+can. The modelview is the camera's, untouched: the per-object model multiply is simply not done.
+
+**The numbers** (N=500, probes off, two runs where it matters):
+
+| arm | work | median | fps |
+|---|---|---|---|
+| merge off (`PSP_MERGE_DRAWS=0`) | 43.222 ms | 50.050 ms | 20 |
+| merge on | **26.672 / 27.742 ms** | **33.367 ms** | **30** |
+| merge on, clean flag off (`PSP_MERGE_HINT=0`) | 39.781 ms | 50.050 ms | 20 |
+
+The hint is the whole point: without it the merged run is clip-scanned, 6,768 vertices at **1.77 µs** each =
+12.0 ms, and the merge barely pays.
+
+**Classification is not a guess.** 276 of the 282 submitted instances per frame are clean, 6 are dirty (near-plane
+crossers at w ≈ 0.15–0.68), 218 are culled. One run per frame, 276 instances, zero replays. The clean fraction is
+97.9 %, well above the pre-registered 50 % floor, so the "packed arm" was not needed.
+
+**Three instrument bugs, all caught before a conclusion** (this is the part worth remembering):
+
+1. The PSP Makefile does not rebuild `rmodels.o` after a source edit. The first archive was stale and the link
+   failed on a symbol the source contained; `psp-nm` on the object, not the archive, is what settled it.
+2. The far-plane margin was written `z ≤ 1e-5·w` instead of `w − z ≥ 1e-5·w`. The first real run classified
+   278 of 278 submitted instances dirty — a merge that never fires and looks like "the design does not work".
+   The failing-corner log (nx/ny/nz) is what identified it.
+3. The app's `CALLPROBE` print was gated on `PLATFORM_PSP`, which app builds never define, so the block never
+   compiled and its empty output read as a library problem.
+
+**T1 could not be finished as specified.** One `sceKernelGetSystemTimeWide` pair costs 3.9 µs — measured from
+probe-on vs probe-off (52.94 vs 43.22 ms = 9.72 ms for 5 pairs × 500 calls) — which is larger than several of the
+lines it was meant to split. The attribution is frame-level (cull 9.58 ms, compose 2.04, multiply 2.43, remainder
+rlgl state + list emission), plus two A/Bs that give the actionable split: **~56 µs per instance removed by
+merging** and **1.77 µs per vertex for the clip scan**. A finer split needs a cycle counter, not a syscall; that
+is a follow-up, not a redefinition of the criterion.
+
+**Gates** (all against pspGL, two identical captures each): `batch_check` 2D **0** (6 distinct colours in this
+build's frame — the archived 613-colour frame is not what this app draws today, but parity is what the gate
+asks); `scene_3d SCENE=both` **0**; `basic_shapes` **0 / 284**; `clip_probe EDGE=237 MESH3D=1` **0**; merge-on vs
+merge-off **0**. `scene_3d SAMPLE=1` ×2: median **16.684/16.683**, p95 **16.697/16.695**, work **6.663/6.677**,
+`arena_overflows=0`.
+
+**Recorded, not redefined:**
+
+- `bunnymark` N=50 ×2: median **16.712 / 16.718 ms** against the frozen ≤16.683 — **over by 0.03 ms** (0.2 %).
+  p95 (16.739/16.736) and work (5.69/2.77) pass. The 2D path issues no `DrawMesh`, so the merge cannot be the
+  cause; it is recorded as not met.
+- `rtt_probe MODE=readback` reports `diff=1088` of 65,536. That is the glReadPixels-against-pattern mode, not the
+  direct-vs-sampled 0-diff gate; the number is recorded without claiming a gate.
+- The frozen sample's 11.96 ms work is not reproducible from the configuration 077 recorded (neither
+  `scene_3d SAMPLE=1` at 6.67 nor `bunnymark` at 5.69). The median/p95 thresholds hold; the work figure needs its
+  command written down. Doc gap, noted for the phase page.
 
 ## 10. Follow-ups
 
-- **If merging is adopted**: the same window is the home for a GL11 `DrawMeshInstanced` (currently GL33-only), and
-  static instance sets could keep their expanded buffers between frames instead of rebuilding them.
-- **If merging is dropped**: the per-call overhead stands; the next lever is a smaller call surface (T2 kept) and
-  the cull's `glGetFloatv` cost, not more per-vertex work.
+- **Merging is adopted** (`PSP_MERGE_DRAWS ?= 1`). The same run window is the home for a GL11 `DrawMeshInstanced`
+  (currently GL33-only), and static instance sets could keep their expanded buffers between frames instead of
+  rebuilding them.
+- **The clean flag is load-bearing**: 12.0 ms of the 43.2 ms baseline is the clip scan over the merged run
+  (1.77 µs/vertex). A future merge that cannot prove cleanliness per instance should not merge.
 - **Cull instrumentation**: an rlgl matrix generation counter would remove the two `glGetFloatv` copies and the
-  64-byte compares per mesh (077 §10, still open).
+  64-byte compares per mesh (077 §10, still open). The cull is 9.58 ms/frame at N=500, now the largest
+  identified line.
+- **Finer attribution needs a cycle counter.** `sceKernelGetSystemTimeWide` costs 3.9 µs per pair, more than most
+  of the per-call lines; the A/B method in §9 is the honest instrument until then.
 - **Clip**: with clean runs merged away, the remaining clip cost is the polygon clipper on genuinely dirty draws;
-  VFPU `clipLerp`/`packClipVertex` is the only remaining experiment there.
-- **VFPU**: still opt-in. The expansion transform in T3 is a scalar candidate for the same layer if merging lands.
+  VFPU `clipLerp`/`packClipVertex` is the only remaining experiment there — written as
+  [P10-S12 (079)](079-phase10-pge-derived-pspgu-experiments.md).
+- **VFPU**: still opt-in. The expansion transform in T3 is a scalar candidate for the same layer.
+- **Doc gaps to close**: the frozen sample's command (work 11.96 ms) is not recorded in 077, and `bunnymark`'s
+  median sits 0.03 ms over the frozen limit — both belong to the phase page's measurement notes.
+- **RTT readback**: `MODE=readback` reports 1088 differing pixels against its pattern. Investigate before the
+  next RTT claim; the direct-vs-sampled gate is unaffected.

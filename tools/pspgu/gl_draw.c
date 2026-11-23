@@ -1668,3 +1668,61 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
         }
     }
 }
+
+//------------------------------------------------------------------------------------
+// Sprint 078 (P10-S11): merged clean runs
+//------------------------------------------------------------------------------------
+// The caller expands a run of instances that share mesh, texture and material colour into
+// world space, in GU's field order without a colour field: uv (8), normal (12), position
+// (12), stride 32. The modelview is the camera's, so the GE applies the same view and
+// projection it applies per object. Both arrays are copied into this list's arena: the
+// run buffer belongs to the caller and is rewritten next frame.
+int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                          GLsizei vertexCount, const GLvoid *verts, unsigned int flags)
+{
+    unsigned int prim = guPrimitive(mode);
+    unsigned int fmt, drawFmt;
+    PspGuLayout layout;
+    unsigned int vb, ib;
+    unsigned char *blk;
+
+    if (!pspgu.current || (prim != GU_TRIANGLES) || (indexCount <= 0) || (vertexCount <= 0)) return 0;
+    if ((indices == NULL) || (verts == NULL)) return 0;
+    if (!arraysSupported()) return 0;
+
+    pspguUploadMatrices();
+    fmt = guVertexFormat();
+    vertexLayout(fmt, &layout);
+
+    // Contract: uv, normal, position, 32 bytes, no per-vertex colour (the run shares one
+    // material colour, delivered through the GE global colour like the per-object path).
+    if ((fmt & GU_COLOR_BITS) || layout.vshort || (layout.stride != 32)) return 0;
+
+#ifndef PSPGU_NO_CLIP
+    if (!(flags & PSPGU_MERGED_CLEAN) &&
+        clipNeeds((const unsigned short *)indices, indexCount, 0))
+    {
+        drawClipped(prim, fmt, indexCount, 0, (const unsigned short *)indices);
+        return 1;
+    }
+#else
+    (void)flags;
+#endif
+
+    vb = (unsigned int)vertexCount*layout.stride;
+    ib = (unsigned int)indexCount*2;
+
+    pspguBeginFrame();
+    blk = (unsigned char *)pspguArenaAlloc(vb + ib);
+    if (blk == NULL) return 0;
+
+    memcpy(blk, verts, vb);
+    memcpy(blk + vb, indices, ib);
+    pspguWriteback(blk, vb + ib);
+    applyGlobalColor(fmt);
+
+    drawFmt = fmt | GU_INDEX_16BIT;
+    sceGuDrawArray(prim, drawFmt, indexCount, blk + vb, blk);
+
+    return 1;
+}

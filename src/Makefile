@@ -586,6 +586,26 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     ifdef PSP_MATRIX_PROBE
         CUSTOM_CFLAGS += -DPSP_MATRIX_PROBE
     endif
+    # Sprint 078 (P10-S11): call-level attribution (whole DrawMesh and the driver entry)
+    # and the merged-clean-runs engine. Both off by default; matrix_probe reads the
+    # counters, and the merge is adopted only if its pixel gate is exact.
+    ifdef PSP_CALL_PROBE
+        CUSTOM_CFLAGS += -DPSP_CALL_PROBE
+    endif
+    # Adopted by sprint 078 T4: every gate is 0 differing pixels and the cube scene drops
+    # from 43.2 to 27.7 ms. PSP_MERGE_DRAWS=0 rebuilds the per-object reference.
+    PSP_MERGE_DRAWS ?= 1
+    CUSTOM_CFLAGS += -DPSP_MERGE_DRAWS=$(PSP_MERGE_DRAWS)
+    # PSP_MERGE_HINT=0 makes the driver clip-scan the merged run instead of trusting the
+    # per-instance AABB proof: the A/B arm for the known-clean flag (sprint 078 T3).
+    PSP_MERGE_HINT ?= 1
+    ifeq ($(PSP_MERGE_HINT),0)
+        CUSTOM_CFLAGS += -DPSP_MERGE_NO_HINT
+    endif
+    # PSP_MERGE_DIAG=1 prints the classification diagnostics once per boot.
+    ifdef PSP_MERGE_DIAG
+        CUSTOM_CFLAGS += -DPSP_MERGE_DIAG
+    endif
     # P11-S12: internal VFPU/matrix helpers; 0 keeps the scalar fallback and adds no SDK link.
     PSP_VFPU_HELPERS ?= 0
     CUSTOM_CFLAGS += -DPSP_VFPU_HELPERS=$(PSP_VFPU_HELPERS)

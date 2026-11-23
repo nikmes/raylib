@@ -607,6 +607,16 @@ void *pspguArenaAlloc(unsigned int bytes)
     return (unsigned char *)pspgu.arenaMem[i] + off;
 }
 
+int pspguArenaRoom(void)
+{
+    int i = pspgu.listIndex;
+
+    if ((i < 0) || !pspgu.listOpen) return 0;
+    if (pspgu.arenaUsed[i] >= pspgu.arenaBytes) return 0;
+
+    return (int)(pspgu.arenaBytes - pspgu.arenaUsed[i]);
+}
+
 // A frame larger than the arena cannot be rotated without overwriting vertices the GE
 // may still read. The safe fallback is a full wait on the list just finished, then a
 // fresh list on the same memory. It is counted, and it should stay zero for the measured
