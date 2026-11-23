@@ -129,6 +129,7 @@ nav:
               - P10-S7 — Clip cost, lit parity and re-close: psp/sprints/069-phase10-clip-cost-and-lit-parity.md
               - P10-S8 — Camera and matrix CPU cost: psp/sprints/070-phase10-camera-matrix-cost.md
               - P10-S9 — Framebuffer rotation with render targets: psp/sprints/076-phase10-framebuffer-rotation.md
+              - P10-S10 — pspgu optimisation after the SDK audit: psp/sprints/077-phase10-pspgu-optimisation.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
