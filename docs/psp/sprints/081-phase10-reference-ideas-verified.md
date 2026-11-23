@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S14 |
 | Branch / base commit | `master` @ `1dd95cf9` (benchmark runner; showcase pair) |
-| Started / closed | 2026-11-23 (written) / — |
+| Started / closed | 2026-11-23 (written) / 2026-11-23 (closed) |
 | Build number(s) | pspgu `b33` + one experimental flag per task; `libraylib.a` unchanged; benchmarks from `tools/psp-bench.sh` |
-| Tasks | 0/4 done |
+| Tasks | 4/4 done — both arms measured, both recorded, nothing adopted |
 
 ## 0. Handover
 
@@ -36,8 +36,13 @@ frame-indexed animation, work/draws/binds/runs recorded, `--baseline` for deltas
 
 | demo | avg | fps | work | draws | binds | runs |
 |---|---|---|---|---|---|---|
-| `psp_showcase` (3D) | 50.08 ms | 20.0 | **34.88 ms** | 4.0 | 5.0 | 2.00 |
-| `psp_2d_showcase` (2D) | 33.80 ms | 29.6 | **26.58 ms** | 6.0 | 4.0 | — |
+| `psp_showcase` (3D) | 50.08 ms | 20.0 | **37.33 ms** | 4.0 | 5.0 | 2.00 |
+| `psp_2d_showcase` (2D) | 33.80 ms | 29.6 | **20.51 ms** | 6.0 | 4.0 | — |
+
+These were taken from a **clean worktree at HEAD** (`git worktree add /tmp/pspgu-clean HEAD`), because the main
+tree's `tools/pspgu/` still carries uncommitted sprint-079 work. Earlier runner rows taken against that tree read
+34.9 / 26.6 ms of work — a 6 ms difference on the 2D demo — which is why the precondition below exists: a baseline
+on someone else's half-finished driver is a baseline of their build.
 
 **Read before acting:** `tools/pspgu/egl.c` (framebuffer allocation, clear, depth range), `tools/pspgu/gl_state.c`
 (`glClearDepth`, `glDepthFunc`, `glFogfv`), `tools/psp-bench.sh`, `docs/psp/recipes/benchmarking.md`, and the two
@@ -88,10 +93,10 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Baseline and method.** Run `psp-bench.sh --label baseline-081 --runs 2`; capture every gate; record the driver hash, git rev and both demo rows in §7. Re-run to confirm the repeatability band before trusting later deltas | `todo` | two baselines agree within ~0.01 ms | |
-| T2 | **Depth equivalence (`PSP_GU_DEPTH_REF`).** Add the reference form as a compile switch: clear the depth buffer to the far value with `sceGuClearDepth(0)`, keep `sceGuDepthRange(65535, 0)` and `GU_GEQUAL`, and leave `glDepthFunc`'s mapping untouched. Run both demos and every gate | `todo` | 0 differing pixels on every gate; \|Δwork\| < 1 % on both demos | |
-| T3 | **Framebuffer format (`PSP_GU_FB_FMT=5551`).** Switch the three framebuffers to `GU_PSM_5551`, keep size and stride, and run both demos and every gate. Quantify the colour delta against 5650 (max channel error, share of differing pixels) and re-check the RTT readback path, where framebuffer alpha now exists | `todo` | \|Δwork\| < 2 % on both demos, or the win recorded; colour delta quantified; RTT readback behaviour recorded | |
-| T4 | **Decide and close.** Adopt or drop each arm against §1; if adopted, flip the default, re-baseline with the runner and update the phase page. Remove the switch that did not win, or keep it documented as a measurement-only build. Re-run the gates and the sample | `todo` | decision table in §9; every gate at its recorded value; pspGL restored | |
+| T1 | **Baseline and method.** Run `psp-bench.sh --label baseline-081 --runs 2`; capture every gate; record the driver hash, git rev and both demo rows in §7. Re-run to confirm the repeatability band before trusting later deltas | `done` | two baselines agree within ~0.01 ms | clean worktree; 37.331 / 20.508 ms |
+| T2 | **Depth equivalence (`PSP_GU_DEPTH_REF`).** Add the reference form as a compile switch: clear the depth buffer to the far value with `sceGuClearDepth(0)`, keep `sceGuDepthRange(65535, 0)` and `GU_GEQUAL`, and leave `glDepthFunc`'s mapping untouched. Run both demos and every gate | `done` (already adopted) | 0 differing pixels on every gate; \|Δwork\| < 1 % on both demos | **0/0/0/0 diff; Δ +0.001 / −0.003 ms** |
+| T3 | **Framebuffer format (`PSP_GU_FB_FMT=5551`).** Switch the three framebuffers to `GU_PSM_5551`, keep size and stride, and run both demos and every gate. Quantify the colour delta against 5650 (max channel error, share of differing pixels) and re-check the RTT readback path, where framebuffer alpha now exists | `done` (dropped) | \|Δwork\| < 2 % on both demos, or the win recorded; colour delta quantified; RTT readback behaviour recorded | **Δ −0.005 / 0.000 ms; 49.9 % px ≤4/255 (shapes), 10.3 % (3D); readback unchanged** |
+| T4 | **Decide and close.** Adopt or drop each arm against §1; if adopted, flip the default, re-baseline with the runner and update the phase page. Remove the switch that did not win, or keep it documented as a measurement-only build. Re-run the gates and the sample | `done` | decision table in §9; every gate at its recorded value; pspGL restored | no default changed; worktree removed; pspGL `2ab7378e` |
 
 ### Design notes
 
@@ -136,23 +141,47 @@ hand-run build.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline | b33 | runner, both demos | avg / work / fps | | driver hash: |
-| T2 | b33 + switch | runner, both demos | avg / work | | ≤1 % expected |
-| T2 | b33 + switch | gates | diff | | 0 expected |
-| T3 | b33 + switch | runner, both demos | avg / work | | ≤2 % expected |
-| T3 | b33 + switch | `basic_shapes` vs 5650 | colour delta | | |
-| T3 | b33 + switch | RTT readback | alpha / diff | | |
+| baseline | b33 `a725253c` | runner, both demos | avg / work / fps | **50.084 / 37.331 · 33.801 / 20.508** | 3D / 2D; two runs |
+| baseline | b33 | 2D, 3D, shapes, clip vs pspGL | diff | **0 / 0 / 0 / 0** | |
+| T2 | + `PSPGU_DEPTH_REF` | runner | work | **37.332 / 20.505** | Δ +0.001 / −0.003 ms |
+| T2 | + `PSPGU_DEPTH_REF` | 2D, 3D, shapes, clip vs pspGL | diff | **0 / 0 / 0 / 0** | pipelined clear is equivalent |
+| T3 | + `PSP_GU_FB_FMT=5551` | runner | work | **37.326 / 20.508** | Δ −0.005 / 0.000 ms: same bandwidth |
+| T3 | + 5551 | `basic_shapes` vs 5650 | colour delta | **49.9 % pixels, max 4/255** | green LSB |
+| T3 | + 5551 | `scene_3d` vs 5650 | colour delta | **10.3 % pixels, max 4/255** | fog gradients |
+| T3 | + 5551 | RTT `MODE=readback` | alpha / diff | **alpha 0, diff 1088** | unchanged from 5650 |
 
 ## 8. Exit criteria
 
-- [ ] T1: a baseline with its driver hash and repeatability is recorded
-- [ ] T2: 0 diff and <1 % work, or the arm is recorded as a finding with the pixel that moved
-- [ ] T3: work delta and colour delta recorded; adopt/drop decision recorded
-- [ ] T4: defaults and docs match the decision; every gate at its recorded value; pspGL restored
+- [x] T1: baseline recorded from a clean worktree, with the driver hash and two runs
+- [x] T2: **0 diff and <0.01 % work** — the reference depth form is arithmetically identical to ours
+- [x] T3: work delta (≤0.03 %) and colour delta (≤4/255 on up to 50 % of pixels) recorded; **dropped**
+- [x] T4: no default changes; the switches stayed in the experimental worktree, which was removed; pspGL restored
 
 ## 9. Result
 
-—
+Both ideas were **already present**, and the measurement says so rather than the survey.
+
+**T2 — the depth convention is the reference's.** Clearing with the reference's literal (`sceGuClearDepth(0)`,
+`GU_GEQUAL`) instead of our conversion moved work by **+0.001 ms (3D) and −0.003 ms (2D)** and changed **zero
+pixels** on all four gates. The reason is arithmetic: our clear converts `glClearDepth(1.0)` to 0 in the GE's
+reversed range, which is the reference's constant. Nothing to adopt; the switch was a measurement artifact and is
+not shipped.
+
+**T3 — 5551 is a colour cost with no speed gain.** Same 16-bit width, so fill bandwidth is unchanged: work moved by
+**−0.005 ms (3D) and 0.000 ms (2D)**. What it does change is the channel split — on `basic_shapes` **49.9 % of
+pixels differ by up to 4/255** (the green LSB) and on `scene_3d` **10.3 %**, with the RTT readback unchanged
+(alpha still 0). Dropped: no benchmark gain, a measurable parity cost, and framebuffer alpha is not needed by any
+feature in the tree.
+
+**The baseline itself was a finding.** The sprint's first §0 table (34.9 / 26.6 ms) came from a runner pass against
+the main tree while another session's sprint-079 edits were in `tools/pspgu/`. On a clean worktree the same build
+reads **37.33 / 20.51 ms** — the 2D demo's work differs by 6 ms between the two drivers in the tree. The sprint's
+precondition ("`git status --short tools/pspgu` empty") earned its place; every number above is from the clean
+worktree, and the 5551 arm changes nothing there.
+
+**Instrument note.** `tools/pspgu-build.sh --check`'s "content hash" is a **symbol** hash (`psp-nm | sed | sort`),
+so it cannot tell whether a `-D` flag reached the code — the 5551 build reported the baseline's hash. The arm was
+verified by pixels instead. That is worth fixing in the script: hash the object bytes, not the symbol table.
 
 ## 10. Follow-ups
 
