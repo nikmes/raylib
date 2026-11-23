@@ -6,7 +6,7 @@
 | Sprint | P10-S11 |
 | Branch / base commit | `master` @ `b9a6af88` (P10-S10 closed, pspGL installed) |
 | Started / closed | 2026-11-23 (written) / 2026-11-23 (closed) |
-| Build number(s) | pspgu **`b33`** (`a725253c…`) with `pspguDrawMergedArrays` and `pspguArenaRoom`; `libraylib.a` default `PSP_BATCH=1 PSP_MERGE_DRAWS=1` (`0ad1fa4d…`), `PSP_MERGE_DRAWS=0` rebuilds the reference, `PSP_MERGE_HINT=0` the no-hint arm |
+| Build number(s) | pspgu **`b33`** (`a725253c…`) with `pspguDrawMergedArrays` and `pspguArenaRoom`; `libraylib.a` default `PSP_BATCH=1 PSP_MERGE_DRAWS=1`, `PSP_MERGE_DRAWS=0` rebuilds the reference, `PSP_MERGE_HINT=0` the no-hint arm. The library archive hash is **not reproducible** across rebuilds (object timestamps land in the archive: two builds of identical source gave `0ad1fa4d…` and `81393264…`), so the build is identified by flags and date, not by hash |
 | Tasks | 4/5 done — T2 dropped as superseded by T3 |
 
 ## 0. Handover
@@ -297,6 +297,9 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 | T5 | b33 | `scene_3d SAMPLE=1`, 300 ×2 | median / p95 / work | **16.684/16.683 · 16.697/16.695 · 6.663/6.677** | `arena_overflows=0` |
 | T5 | b33 | `bunnymark` N=50, 300 ×2 | median / p95 / work | **16.712/16.718 · 16.739/16.736 · 5.690/2.774** | median 0.03 ms over the frozen limit |
 | T5 | b33 | waits | list / display max | **68 µs / 309 µs** | targeted only, no full wait |
+| ceiling | b33 | merge off, N sweep (200 frames) | median | **150 passes (16.683, work 15.726 on 300 frames) · 160 fails (33.370, work 17.962)** | 140 medians 16.684 but p95 33.365: it drops frames |
+| ceiling | b33 | merge on, N sweep (200 frames) | median | **270 passes (16.683, work 15.245 on 300 frames) · 271 fails (33.352, work 16.578)** | 200/250/260/265/268 pass; 272/275/300/350 fail |
+| ceiling | b33 | both arms | 60 fps instances | **150 → 270 (+80 %)** | the same scene, one flag |
 | gate | b33 | RTT `MODE=readback` | `diff=` | **1088** | pre-existing readback mode, not the direct-vs-sampled gate |
 
 ## 8. Exit criteria
@@ -318,8 +321,8 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 ## 9. Result
 
 Sprint 078 closes 4/5 (T1 frame-level, T2 dropped as superseded, T3/T4/T5 done). **Merging clean instances works:
-the N=500 cube scene drops from 43.22 ms to 26.67 ms of work and from 20 to 30 fps, with 0 differing pixels on
-every gate.**
+the N=500 cube scene drops from 43.22 ms to 26.67 ms of work and from 20 to 30 fps, the 60 fps ceiling moves
+from 150 to 270 instances, and every gate is 0 differing pixels.**
 
 **What the renderer does now.** `DrawMesh` classifies each instance from its own AABB: culled (emits nothing),
 clean (inside the 7.9w guard-band margin, all eight corners proven, so no vertex can need the clipper) or dirty
@@ -367,6 +370,20 @@ build's frame — the archived 613-colour frame is not what this app draws today
 asks); `scene_3d SCENE=both` **0**; `basic_shapes` **0 / 284**; `clip_probe EDGE=237 MESH3D=1` **0**; merge-on vs
 merge-off **0**. `scene_3d SAMPLE=1` ×2: median **16.684/16.683**, p95 **16.697/16.695**, work **6.663/6.677**,
 `arena_overflows=0`.
+
+**The ceiling moved 150 → 270.** `matrix_probe MODE=scene`, probes off, both arms swept to the adjacent
+last-passing/first-failing N:
+
+| arm | last N at 60 fps | work there | first N that drops | work there |
+|---|---|---|---|---|
+| merge off | **150** | 15.726 ms | 160 | 17.962 ms |
+| merge on | **270** | 15.245 ms | 271 | 16.578 ms |
+
+That is **+80 % instances at 60 fps**, and at N=500 the scene went from 20 to 30 fps. The boundary is sharp and
+reproduced (270 twice, 300 frames each); one instance over and the median doubles to 33.35, which is the vsync
+quantum, not a measurement artefact. Two honest caveats: the grid reshapes as N grows (`rows = ceil(N/10)`), so
+work is not monotonic at every step (N=190 costs less than N=180), and N=140 passes on the median while dropping
+frames in p95 — it is listed as borderline, not as a pass.
 
 **Recorded, not redefined:**
 
