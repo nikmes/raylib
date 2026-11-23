@@ -12,6 +12,7 @@ Samples written for this port rather than ported from upstream raylib.
 | Sample | Screenshot |
 |---|---|
 | `psp_showcase` | ![psp_showcase](images/psp_showcase.png) |
+| `psp_2d_showcase` | ![psp_2d_showcase](images/psp_2d_showcase.png) |
 
 **`psp_showcase`** — a stress demo for the 3D path as it stands after sprint 078. 400 lit, textured cubes ride a
 sine wave under an orbiting camera, split into two merged colour runs (cool/warm), over a fogged checker ground,
@@ -20,6 +21,15 @@ one per-object draw for the ground; the HUD reports the live count and frame rat
 
 Source: `psp-tests/samples/psp/psp_showcase/`. Build with `make` (runs until power-off) or `make FRAMES=600`
 (stops after 600 frames, prints statistics and sleeps, which is what the capture workflow needs).
+
+**`psp_2d_showcase`** — the 2D counterpart and the other half of the benchmark pair. 1,300 additive glow
+particles in three arms, a 250-star field, a 160-particle hot core and 16 ring sprites, over a 40-band gradient:
+about **1,566 sprites** drawn in **6 draws / 4 texture runs** per frame at **29.6 fps** (33.8 ms). The animation is
+driven by the **frame index**, so frame N draws exactly the same scene on every build; the counters come from the
+link-time `--wrap` harness (`draws`, `binds`, vertices), which is what makes a before/after comparison meaningful.
+
+Source: `psp-tests/samples/psp/psp_2d_showcase/`. `make FRAMES=300` for the capture build, `make SPRITES=3000
+STARS=0` to sweep the load.
 
 ## Core
 

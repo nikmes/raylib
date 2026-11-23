@@ -33,8 +33,10 @@ holes in the backend's state contract, plus an instrument that cost this session
 materials is missing and is task T2.
 
 **The capture instrument was wrong and undocumented.** `scrshot` writes a 54-byte header followed by
-480×272 **B,G,R** pixels, **top-down**, quantised to 5-6-5. Reading that as RGB swaps red and blue; every colour
-judgement made before the layout was known was inverted. The reference project in `/home/psp/ref/PSPRuntime`
+480×272 **B,G,R** pixels, **bottom-up** (raw row 0 is the last display line), quantised to 5-6-5. Reading that as
+RGB swaps red and blue and reading it top-down turns every image upside down; both mistakes were made before the
+layout was known. The gradient in `psp_2d_showcase` settles the row order: band 0, the top of the screen, appears in
+the raw's last rows. The reference project in `/home/psp/ref/PSPRuntime`
 confirms the GE's 8888 order is `0xAABBGGRR` (its 5551 packer is `((a>>7)<<15)|((b>>3)<<10)|((g>>3)<<5)|(r>>3)`).
 This costs no device time to fix and is task T3.
 
@@ -91,7 +93,7 @@ docs.
 
 - [ ] `master` @ `21f586cf`; pspGL `2ab7378e` available for the A/B; pspgu `b33` builds
 - [ ] `psp_showcase` builds and runs (`make FRAMES=600`), capture workflow known
-- [ ] The `scrshot` layout recorded once by hand (header 54, BGR, top-down) — T3 formalises it
+- [ ] The `scrshot` layout recorded once by hand (header 54, BGR, bottom-up) — T3 formalises it
 - [ ] The user has authorised the device session
 
 ## 5. Tasks
@@ -102,7 +104,7 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 |---|---|---|---|---|
 | T1 | **Scope lighting and fog to the 3D mode.** `rlpspEnableLighting` / `rlpspEnableFog` record the requested state; `BeginMode3D` applies it, `EndMode3D` turns both off for the 2D pass and restores the request at the next `BeginMode3D`. Keep the rlgl names and semantics, add no app-side calls. If the driver turns out to be the only place that can do it (state is emitted per draw), do it there behind `pspguProjectionW() == 0` and say why | `todo` | HUD-over-3D with lighting/fog requested: text pixels present; 3D region 0 diff; no per-draw state cost | |
 | T2 | **Colour gate.** `psp-tests/colour_gate`: three cubes with red/green/blue materials, unlit; then the same lit; then a textured one. Capture and assert exact pixel colours, on pspgu (merge 0/1) and pspGL. This is the gate that would have caught `rlColor4ub` | `todo` | every colour exact on both drivers and both merge builds | |
-| T3 | **Capture tool and layout doc.** `tools/scrshot2png.py <raw> <out.png>` with the layout in its header comment (54-byte header, 480×272, B,G,R, top-down, 565-quantised), plus a `--probe x,y` option that prints the colour of a pixel. Document the layout in the docs once (sprint note or recipe) and reference it from the sample page | `todo` | the tool reproduces the showcase capture; the three cube colours read correctly | |
+| T3 | **Capture tool and layout doc.** `tools/scrshot2png.py <raw> <out.png>` with the layout in its header comment (54-byte header, 480×272, B,G,R, bottom-up, 565-quantised), plus a `--probe x,y` option that prints the colour of a pixel. Document the layout in the docs once (sprint note or recipe) and reference it from the sample page | `todo` | the tool reproduces the showcase capture; the three cube colours read correctly | |
 | T4 | **Re-close.** Drop the demo's manual lighting/fog toggles and the redundant flush; re-run every gate; sample ×2; record the boot tag; restore pspGL | `todo` | all gates 0; sample thresholds; `2ab7378e` installed | |
 
 ### Design notes
@@ -130,7 +132,8 @@ sprint 078, which until now had no non-white coverage.
 **T3 — the layout, with the evidence.** Clear colour `(10,14,28)` appears in the raw as `(24,16,8)`: blue in the
 low byte, 5-bit quantisation. The 2D red rectangle of the colour probe appears as `(0,0,248)` while a red material
 cube appears as `(0,0,248)` too; the green cube is `(0,252,0)` in both interpretations. That is B,G,R. Rows are
-top-down (the HUD drawn at y = 8 lands in the first rows). The tool should detect the header by
+bottom-up (a gradient drawn from the top of the screen ends in the raw's last rows; the first analysis of both
+demo captures got this wrong and read the HUD as missing). The tool should detect the header by
 `len − 480×272×3` so a differently sized capture fails loudly instead of silently shifting.
 
 **T4 — remove the workarounds only after T1 is measured.** The demo's `rlpspEnableLighting(0/1)` around the HUD and
