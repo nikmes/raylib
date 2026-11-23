@@ -6,7 +6,7 @@
 | Sprint | P14-S1 |
 | Branch / base commit | `master` @ `7d495d16` |
 | Started / closed | 2026-11-23 (written) / — |
-| Build number(s) | first port build `galaga-b1`; driver from T1 (pspgu `b36` expected) |
+| Build number(s) | first port build `galaga-b1`; driver from T1 (current pspgu b37 expected) |
 | Tasks | 0/8 done |
 
 ## 0. Handover
@@ -17,6 +17,12 @@
 deleted by the first action. The game's platform seam is six Renderer methods, a game entry point, six audio
 functions and two keyboard functions. This sprint supplies a raylib implementation of the rendering, input and
 loop parts and gets the title scene plus one stage frame onto the device; audio waits for P14-S2.
+
+**Build recipe and memory are already verified.** A `/tmp` app using `std::string`, `std::map`, `std::list`,
+`std::shared_ptr` and `std::function` built to a 2.64 MB PRX with an explicit `%.o: %.cpp` rule and
+`-lstdc++ -lm`; PSPSDK's `build.mak` supplies no C++ rule and links with `psp-gcc`. The same test used
+`PSP_HEAP_SIZE_KB(4096);` in the source, which is the macro that works — the Make variable of the same name is
+not wired by `build.mak`. The auto heap leaves only ~768 KB, so T2 declares a heap before any asset load.
 
 **Read before acting**, in this order:
 
@@ -53,6 +59,9 @@ Then write the Makefile and `raylib_impl/{Game,Renderer}.cpp`. Do not edit the u
   the logical→physical mapping changes underneath them.
 - Do not change raylib's public API or `tools/pspgu/` in this sprint. If the port exposes a library defect,
   stop and write a separate sprint; the port then links the fixed library.
+- Build the driver from a **clean worktree** at the chosen commit. The main tree currently carries uncommitted
+  `tools/pspgu/` content and local edits to `tools/pspgu-build.sh`; building there measures that content, not
+  b37. Record the driver hash from the boot line.
 - `PSP_LARGE_MEMORY=0` and `BUILD_PRX=1` in every build. The PSPSDK default asks for a 40 MB partition on a
   32 MB console.
 - Device only for timing and memory. PPSSPP is for "does it draw" only.
@@ -87,10 +96,10 @@ The app must log `DONE` and call `sceKernelSleepThread()`; it must not call `sce
 
 ## 1. Objective
 
-A `galaga.prx` launches on the PSP-1000, loads every asset the title scene needs, draws the title screen and a
-stage frame with correct sprite positions and 8-pixel text, accepts LEFT/RIGHT/FIRE from the pad and nub, and
-runs 600 frames without a crash. Two captures of the same stopped frame are byte-identical and archived with
-the build number. Audio is silent on purpose.
+A `galaga.prx` launches on the PSP-1000 within a declared heap, loads every asset the title scene needs, draws
+the title screen and a stage frame with correct sprite positions and 8-pixel text, accepts LEFT/RIGHT/FIRE
+from the pad and nub, and runs 600 frames without a crash. Two captures of the same stopped frame are
+byte-identical and archived with the build number. Audio is silent on purpose.
 
 ## 2. Why now
 
@@ -114,6 +123,8 @@ persistence (the upstream does not persist it).
 - [ ] `pspsh` answers, USB device is `054c:01c9`; `reset` done and partition 2 free reads 25,149,440 B
 - [ ] `tools/pspgu-build.sh --check` recorded; T1 has chosen the driver
 - [ ] `psp-gcc --version` is 15.2.0; the installed `libraylib.a` is the one the port will link
+- [ ] The C++ recipe is available: explicit `%.o: %.cpp` rule and `-lstdc++` in `LIBS`
+- [ ] `PSP_HEAP_SIZE_KB(n);` is declared in the port's main source (not only in the Makefile)
 - [ ] `PSP_LARGE_MEMORY=0`; a build number is printed at boot and in every log line
 - [ ] Two identical captures of a stopped frame are the acceptance rule (memory map §6)
 - [ ] The user has authorised a device session
@@ -124,44 +135,67 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Decide display and driver.** Choose A (logical height 272, 1:1, centred at x=128) or C (tate); choose pspgu `b36` (install and verify) or pspGL (repack every texture ≤512). Record both with the reason | `todo` | decision table in §9; `pspgu-build.sh --check` output or a written pspGL constraint list | — |
-| T2 | **Scaffold and build.** Copy the core, add a C++ rule and Makefile, produce `galaga.elf`/`.prx` | `todo` | `make` completes; `psp-nm`/size logged; no errors from port code | — |
-| T3 | **Renderer.** Implement `setTranslation`, `drawPoint`, `drawRectangle`, `drawSprite(Sprite,dst,src,size)`, including the 540-wide `title_shine` path | `todo` | title screen + stage frame show every expected sprite; sprite positions match the checklist in §7 | — |
-| T4 | **Text.** Load PressStart2P at 8 px (or a pre-baked atlas) and emit each glyph at `x + 8*i`; never fall back to raylib's 10 px font | `todo` | HUD and message positions match the checklist; no "atlas exceeds 512" log; two identical captures | — |
-| T5 | **Input.** Map D-pad and nub to LEFT/RIGHT, CROSS to FIRE, and keep `isKeyPressedOnce` semantics; add a non-gameplay exit (SELECT/START) that logs `DONE` and sleeps | `todo` | button-by-button device test; edge detection fires once per press; no press is lost while held | — |
-| T6 | **Loop and runtime.** Fixed 1/60 s accumulator, `EndDrawing` pacing, no 3 ms sleep; replace `getchar(); exit()` in `ol::error`; route logs to `TraceLog` with a build number | `todo` | 600 frames logged, frame counter and `DONE`; a forced asset miss logs an error and exits cleanly, not a hang | — |
+| T1 | **Decide display and driver.** Choose A (logical height 272, 1:1, centred at x=128) or C (tate); choose the current pspgu (b37 on `master`; build from a clean worktree and verify) or pspGL (repack every texture ≤512). Record both with the reason | `todo` | decision table in §9; `pspgu-build.sh --check` output, driver hash, and a clean-worktree note | — |
+| T2 | **Scaffold and build.** Copy the core, add a C++ rule and Makefile, declare `PSP_HEAP_SIZE_KB(n);` in the port's main source, and produce `galaga.elf`/`.prx` | `todo` | `make` completes; PRX size and `psp-nm` logged; boot log shows the declared heap and free bytes; no errors from port code | — |
+| T3 | **Renderer.** Implement `setTranslation`, `drawPoint`, `drawRectangle`, `drawSprite(Sprite,dst,src,size)`, including the 540-wide `title_shine` path; convert the game's `0x00BBGGRR` integers to raylib `Color {r,g,b,255}` | `todo` | title screen + stage frame show every expected sprite; a colour test (red/blue/green) matches the enum; sprite positions match the checklist in §7 | — |
+| T4 | **Text.** Load PressStart2P at 8 px (or a pre-baked atlas) and emit each glyph at `x + 8*i` using `GetGlyphIndex`/`GetGlyphAtlasRec`; never fall back to raylib's 10 px font | `todo` | HUD and message positions match the checklist; no "atlas exceeds 512" log; two identical captures | — |
+| T5 | **Input.** Map D-pad and nub (`IsGamepadButtonDown`, `GetGamepadAxisMovement`) to LEFT/RIGHT, CROSS to FIRE, and keep `isKeyPressedOnce` semantics; add a non-gameplay exit (SELECT/START) that logs `DONE` and sleeps | `todo` | button-by-button device test; edge detection fires once per press; no press is lost while held | — |
+| T6 | **Loop and runtime.** Fixed 1/60 s accumulator, `EndDrawing` pacing, no 3 ms sleep; replace `getchar(); exit()` in `ol::error`; route logs to `TraceLog` with a build number; count logical draws/text/points and read pspgu's `pspguVramStats`/`pspguResidencyStats` | `todo` | 600 frames logged, frame counter and `DONE`; a forced asset miss logs an error and exits cleanly; the stats line prints | — |
 | T7 | **Assets.** Load all title/stage PNGs from a staged root; report any missing file; keep the upstream `res/graphic` layout | `todo` | zero load errors; every sprite used by the title and stage is present | — |
-| T8 | **Device run and close.** Title → stage, 600 frames, two identical captures, counters (draws, binds, vertices, VRAM), reset; write the result back | `todo` | two identical captures; no crash; §7 row filled; §9 result written | — |
+| T8 | **Device run and close.** Title → stage, 600 frames, two identical captures, the T6 counters (logical draw/text/point calls, `pspguVramStats`/`pspguResidencyStats`, frame time), reset; write the result back | `todo` | two identical captures; no crash; §7 rows filled; §9 result written | — |
 
 ### Design notes
 
 **T1 — the display math.** Physical screen is 480×272. Option A sets `SCREEN_HEIGHT = 272`, leaves
 `SCREEN_WIDTH = 224`, calls `InitWindow(480, 272, "Galaga")`, and makes the backend add `(128, 0)` to every
-logical coordinate. Fixed positions that encode 288 must move: the lives text at `Hud.cpp:145` (`y = 278`), the
-bottom symbol row at `StageSymbols.cpp:71`, `Fighter.cpp:141`, and the `Path.cpp` cell height. Option C rotates
-all four primitive types about the screen centre and requires the player to turn the console; it is not in
-scope for this sprint beyond recording the decision.
+logical coordinate. The constant change is not the whole change: the HUD's scale centre is hardcoded as
+`(112.0f, 144.0f)` in `Hud.cpp:getScaledPosition` and must become `(112.0f, 136.0f)`; the lives text at
+`Hud.cpp:145` (`y = 278`) must become `SCREEN_HEIGHT - 10`; the bottom symbol row at `StageSymbols.cpp:71` and
+`Fighter.cpp:141` follow `SCREEN_HEIGHT`; `Path.cpp:156-157` recomputes the cell height. `Title.cpp`'s credits
+end at y = 272 exactly (264 + 8), so the title screen has no bottom margin. Option C rotates all four primitive
+types about the screen centre and requires the player to turn the console; it is not in scope for this sprint
+beyond recording the decision.
 
-**T2 — the Makefile needs C++ rules.** PSPSDK's `build.mak` defines `CXX = psp-g++` but supplies no `.cpp`
-pattern rule and links with `$(LINK.c)` (psp-gcc). Add an explicit `%.o: %.cpp` rule using `$(CXX) $(CXXFLAGS)`
-and link with `$(CXX)` or add `-lstdc++` to `LIBS`. Model the rest on `psp-tests/basic_shapes/Makefile`:
-`BUILD_PRX = 1`, `PSP_LARGE_MEMORY = 0`, `EXTRA_TARGETS = EBOOT.PBP`, and
-`LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu`. The upstream also carries
+**T1 — the driver build trap.** The installed `libGL.a` is currently pspGL, and the main tree has uncommitted
+`tools/pspgu/` content plus local edits to `tools/pspgu-build.sh` (b33-era versus b37). Running the script in
+that tree would build the local content, not the commit under test. Use a clean worktree at the chosen revision
+(for example the existing `b37-gates` worktree or `git worktree add /tmp/pspgu-clean origin/master`), run
+`tools/pspgu-build.sh --check` and the build there, and record the driver hash. This is the sprint-081 lesson:
+a baseline on someone else's half-finished driver measures their build.
+
+**T2 — the Makefile needs C++ rules, and the tested recipe is specific.** PSPSDK's `build.mak` defines
+`CXX = psp-g++` but supplies no `.cpp` pattern rule and links with `$(LINK.c)` (psp-gcc). The verified recipe
+adds an explicit `%.o: %.cpp` rule using `$(CXX) $(CXXFLAGS)` and appends `-lstdc++ -lm` to `LIBS`; linking
+with `$(CXX)` instead is not wired into `build.mak`'s PRX rules. Add `-G0` to match the library's build (the
+PSP crt0 sets gp for its own) and `-O2 -std=gnu++14`. `-fno-exceptions -fno-rtti` linked in the `/tmp` test
+(the game uses neither), but confirm on the device before adopting them. Model the rest on
+`psp-tests/basic_shapes/Makefile`: `BUILD_PRX = 1`, `PSP_LARGE_MEMORY = 0`, `EXTRA_TARGETS = EBOOT.PBP`, and
+`LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu -lstdc++ -lm`. The upstream also carries
 `src/infra/Game.cpp`, an obsolete pre-split entry point that includes `infra/Display.hpp`, `infra/Renderer.hpp`
 and `infra/AudioPlayer.hpp` (none exist); delete it from the port or exclude it, or the build fails on headers
 that are not part of v3.
 
-**T3 — the sprite call.** `drawSprite(sprite, dest, srcPosition, srcSize)` maps to
+**T2 — the heap is a source macro.** Add `PSP_HEAP_SIZE_KB(n);` next to `PSP_MODULE_INFO` in the port's main
+source, and include `<pspmoduleinfo.h>` (the `/tmp` test did both). The PSPSDK Make variable of the same name is
+not consumed by `build.mak`; a Makefile-only setting is silently ignored. Start at 8192 KB for a port without
+audio and raise it in P14-S2 from the measured audio budget. Log `entry free` after `main` starts and confirm it
+matches the declaration.
+
+**T3 — sprite calls and colour order.** `drawSprite(sprite, dest, srcPosition, srcSize)` maps to
 `DrawTextureRec(tex, (Rectangle){src.x, src.y, size.x, size.y}, (Vector2){dest.x + offX, dest.y}, WHITE)`.
 The game always draws at 1:1, so no rotation or scaling is needed. `drawRectangle` is an outline:
 `DrawRectangleLines`. `drawPoint` is a 1×1 quad through the shapes texture and batches with its neighbours.
 `title_shine` is 540 wide; if pspgu is installed the 512-window path handles it, otherwise split the sheet
-into two textures and select by frame.
+into two textures and select by frame. The game stores colours as `0x00BBGGRR` (red in the low byte:
+`RED = 255`, `BLUE = 16711680`); convert with `r = c & 255`, `g = (c >> 8) & 255`, `b = (c >> 16) & 255`,
+alpha 255, matching `sdl2_impl/Renderer.cpp`. Do not feed the integer to raylib's `Color` or swap red/blue.
 
-**T4 — the 8-pixel grid is contractual.** Every text coordinate in `Hud.cpp`, `Title.cpp` and
-`GameController.cpp` assumes 8-pixel cells. Do not call `DrawTextEx` with its natural advance; iterate the
-characters and draw each glyph's source rectangle at `x + 8*i`, with the glyph's own width and height. This
-also makes `drawText2` a one-line alias, as it is upstream.
+**T4 — the fixed advance, not the font's advance.** `GetGlyphIndex(font, c)` and `GetGlyphAtlasRec(font, c)`
+are public; draw each glyph's source rectangle at `x + 8*i` with its own width/height. Every text coordinate in
+`Hud.cpp`, `Title.cpp` and `GameController.cpp` assumes 8-pixel cells, so this is the layout contract, not a
+style choice. `LoadFontEx` already sets `TEXTURE_FILTER_POINT`, so no filter change is needed. If the runtime
+atlas is not crisp, pre-render the same 8 px atlas on the host. Do not call `DrawTextEx` with its natural
+advance; `drawText2` is a one-line alias, as it is upstream.
 
 **T5 — edge semantics.** The game owns `keysDown` and `keysDownConsumed`; the backend only writes `keysDown`
 and clears `keysDownConsumed` on release. Read `IsGamepadButtonDown` and the nub once per frame in
@@ -170,7 +204,11 @@ raw 128-centre test.
 
 **T6 — fixed step, no sleep.** Accumulate `GetFrameTime()` and run `sceneManager.update()` in 1/60 s steps,
 then draw once. `EndDrawing` waits for vblank; the SDL backend's `sleep_for(3 ms)` is removed. A frame that
-falls behind must catch up by bounded iterations, not spiral.
+falls behind must catch up by bounded iterations, not spiral. Counters are split: the backend counts logical
+`drawSprite`/`drawText`/`drawPoint`/`drawRectangle` calls; GPU state and VRAM come from pspgu's exported
+`pspguVramStats`/`pspguResidencyStats` (declare them locally; a pspGL install lacks the symbols, so guard the
+calls with the T1 driver choice). Do not add the `-Wl,--wrap` counter harness to a shipped app; that belongs
+to `psp-tests`.
 
 **T7 — asset root.** For PSPLink, serve the port directory as `host0:` and load `res/graphic/...`. For an
 EBOOT, resolve the same relative paths from `ms0:/PSP/GAME/GALAGA/`. Put the root behind one constant so P14-S2
@@ -183,7 +221,7 @@ can change it without touching the game.
 | frame time | ≤ 16.7 ms at 60 fps | | |
 | frame work | ≤ 8 ms first target, revised after the baseline | | |
 | draw submissions | title and stage reported; no per-star or per-glyph submission | | |
-| heap | stable across 600 frames; no per-frame allocation growth | | |
+| heap | declared, not auto; 8192 KB first target; stable across 600 frames | | |
 | VRAM | must fit the 8888 set or the chosen 16-bit/repacked variant | | |
 | build | 0 errors, 0 warnings from port code | | |
 
@@ -196,6 +234,7 @@ number. A screenshot without a build number is not evidence.
 |---|---|---|---|---|---|
 | baseline | | title, 600 frames | frame median / p95 | | |
 | baseline | | title, 600 frames | draws / binds / vertices | | |
+| baseline | | boot | declared heap / entry free | | |
 | baseline | | boot | VRAM used / free / largest | | |
 | baseline | | title + stage | load time, open count | | |
 

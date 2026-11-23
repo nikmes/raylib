@@ -105,8 +105,8 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **Deterministic run.** Add a `GALAGA_AUTOPLAY` build that replays a fixed left/right/fire tape by frame index; log the tape and a final state hash | `todo` | two runs produce identical captures and the same final state hash | — |
-| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, heap, VRAM, audio dropouts, entity counts | `todo` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | — |
-| T3 | **Frame attribution.** Split work into update, draw submission and GE/vblank; count draws, binds and vertices; identify the largest cost at 60 fps | `todo` | a table that sums to the measured frame work, not a single number | — |
+| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, the declared heap high-water, VRAM, audio dropouts, entity counts | `todo` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | — |
+| T3 | **Frame attribution.** Split work into update, draw submission and GE/vblank; use the backend's logical counters plus pspgu's `pspguVramStats`/`pspguResidencyStats`; identify the largest cost at 60 fps | `todo` | a table that sums to the measured frame work, not a single number | — |
 | T4 | **Memory.** Record heap high-water and largest free block over the soak; check entity spawn/destroy churn; if growth is found, pool the offending type and record the delta | `todo` | high-water and fragmentation figures; no monotonic growth | — |
 | T5 | **Input feel.** Verify D-pad and nub control, deadzone, repeat-fire (`isKeyPressedOnce` semantics) and the non-gameplay exit; record the nub's raw range on this unit | `todo` | a numbered button checklist on the device; no lost press, no stuck key | — |
 | T6 | **Packaging and README.** EBOOT, asset directory, build and run instructions, the local-only licensing note | `todo` | a clean copy of the EBOOT + assets launches from the Memory Stick; README reproduces the build | — |
@@ -121,14 +121,15 @@ hash can be as small as `(score, stage, lives, entity count, gameElapsedTime qua
 divergence.
 
 **T2 — what "stable" means.** Heap high-water may rise during the first stage as entities spawn, then must
-plateau. Record the plateau, not the peak. VRAM must show 0 allocation failures and no eviction/reload storm
-in a steady frame; the pspgu log already reports these. Audio dropouts are counted by the port's own callback
-gap counter, not by ear.
+plateau. Record the plateau, not the peak, against the declared `PSP_HEAP_SIZE_KB` and the `entry free` figure.
+VRAM must show 0 allocation failures and no eviction/reload storm in a steady frame; the pspgu log already
+reports these. Audio dropouts are counted by the port's own callback gap counter, not by ear.
 
 **T3 — attribute before optimising.** The Phase 9 pattern applies: main-thread audio cost, update cost and
-submission cost are separate numbers. If the frame is already inside 16.7 ms with headroom, the correct result
-is "no optimisation" with the table attached. Do not chase a change that is under the 0.1 % repeatability
-floor.
+submission cost are separate numbers. Logical draw calls come from the backend's own counters; GPU state and
+VRAM come from pspgu's exported `pspguVramStats`/`pspguResidencyStats`. Do not add the `-Wl,--wrap` harness to
+the app. If the frame is already inside 16.7 ms with headroom, the correct result is "no optimisation" with
+the table attached. Do not chase a change that is under the 0.1 % repeatability floor.
 
 **T4 — allocation churn is the likely finding.** The game uses `std::list<std::shared_ptr<Entity>>`, creates
 and destroys bullets and explosions every second, and constructs a `std::map`-keyed resource layer once. If
@@ -150,7 +151,7 @@ modifications in a short, dated note.
 |---|---|---|---|
 | frame time | p95 ≤ 16.7 ms at 60 fps | | |
 | soak | 10 minutes, no crash | | |
-| heap | plateau; no monotonic growth | | |
+| heap | declared heap plateau; no monotonic growth | | |
 | VRAM | stable; 0 allocation failures, 0 eviction storms | | |
 | audio | 0 dropouts | | |
 | determinism | two runs, identical captures and state hash | | |
@@ -161,6 +162,7 @@ modifications in a short, dated note.
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
 | baseline | | autoplay, title→game over | frame p50 / p95 / work | | |
+| baseline | | boot | declared heap / entry free | | |
 | baseline | | autoplay, 10 min | heap high-water / largest | | |
 | baseline | | autoplay, 10 min | VRAM used / free / failures | | |
 | baseline | | autoplay, 10 min | draws / binds / vertices | | |

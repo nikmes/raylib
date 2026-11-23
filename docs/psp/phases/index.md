@@ -26,7 +26,7 @@ label used in titles, the nav and cross-links. Example: `P6-S2` is sprint 015.
 | [11 — General optimisation](11-general-optimisation.md) | compiler, libc, allocator, I/O, startup — not the renderer | not started — reviewed; 8 sprints written (052–059); blocked on 7–10 |
 | [12 — Release gate](12-release-gate/index.md) | four configurations, one report | not started |
 | [13 — Samples porting](13-samples-porting/index.md) | the whole upstream example corpus (227 samples, 8 categories) as a gated regression suite | in progress — core/shapes/textures audited (68 ported); audio 9; text/models/shaders/others unaudited; P13-S7 T1b gate blocked |
-| [14 — PSP Raylib Games](14-raylib-games/index.md) | complete third-party games as integration tests; first target CppGalaga v3 (224×288, 2D, audio) | **written** — three sprints (082–084); not started; port code stays outside this repo |
+| [14 — PSP Raylib Games](14-raylib-games/index.md) | complete third-party games as integration tests; first target CppGalaga v3 (224×288, 2D, audio) | **written** — three sprints (082–084), readiness-reviewed 2026-11-23; not started; port code stays outside this repo |
 
 Notes on ordering that are easy to get wrong:
 

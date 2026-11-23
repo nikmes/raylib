@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **written, not started** — three sprints (082–084); first target CppGalaga v3 |
+| State | **written, not started** — readiness-reviewed 2026-11-23; three sprints (082–084); first target CppGalaga v3 |
 | Depends on | Phases 5–10 closed (renderer, textures/VRAM, input, audio, 3D); Phase 13 for the text and input paths it validated |
 | Exit criterion | one complete third-party game runs on a PSP-1000 at 60 fps from a cold launch to game over, with stable input, all sprites and text, audio without dropouts, two identical captures, and no crash in a 10-minute soak — without a change to raylib's public API; any library change is its own sprint |
 
@@ -37,7 +37,8 @@ read-only. Three variants exist; v3 is the only one with the media-layer split.
 | Input used by gameplay | `LEFT`, `RIGHT`, `FIRE` only; `PAUSE` and `EXIT` exist in the enum but are never read | `[measured: grep, 2026-11-23]` |
 | Logical screen | 224×288, fixed 60 Hz step (`TIME_STEP` 16,667 µs) | `[public: include/infra/Util.hpp, src/infra/*_impl/Game.cpp]` |
 | Graphics | 27 PNGs; animation sheets are 384×16 (24 frames of 16×16); `title_shine` is 540×36; `enemy_beam` is 138×80 | `[measured: PNG headers, 2026-11-23]` |
-| Audio | 23 mono 44.1 kHz 16-bit WAVs, 7.0 MB; 17 sounds + 6 music tracks | `[measured: WAV headers, 2026-11-23]` |
+| Audio | 23 mono 44.1 kHz 16-bit WAVs, 7.0 MB on disk; decoded to the device's **f32 stereo** format they are **27.5 MiB** (SFX 11.8, music 15.7), so music and long clips must stream | `[derived: src/raudio.c f32/stereo conversion + WAV headers, 2026-11-23]` |
+| Heap | the auto heap leaves ~768 KB free; an asset-heavy port must declare `PSP_HEAP_SIZE_KB` in its main source | `[measured: PSP-1000, environment.md]` |
 | Text | PressStart2P at 8 px, fixed 8-pixel advance; two text calls alias to the same renderer path | `[public: res/font/, src/infra/*_impl/Renderer.cpp]` |
 | Core build | 23 of the 24 non-backend files pass `psp-gcc 15.2.0 -std=gnu++14 -fsyntax-only`; the 24th, `src/infra/Game.cpp`, is an obsolete pre-split entry point that includes headers that no longer exist and is deleted by the port | `[measured: psp-gcc 15.2.0, 2026-11-23]` |
 | Licence | no `LICENSE` in the repository; art and audio are Namco material | `[measured: repository scan, 2026-11-23]` |
@@ -68,14 +69,23 @@ The port needs nothing new from the library; every row below is a measured path 
 
 - **Screen geometry.** The game is 224×288 portrait; the PSP displays 480×272 landscape. There is no integer
   scale that fits. The recommended v1 is **logical height 272**, drawn 1:1 and centred at x = 128: pixel-perfect,
-  224×272 visible, 16 logical rows shorter. The alternative is a rotated **tate** mode (288×224), deferred until
-  the straight port runs.
+  224×272 visible, 16 logical rows shorter. The layout change is more than the constant: the HUD's scale centre
+  `(112,144)` must become `(112,136)`, the lives text at `Hud.cpp:145` (`y = 278`) must move to
+  `SCREEN_HEIGHT - 10`, and `Path.cpp`'s cell height changes. The alternative is a rotated **tate** mode
+  (288×224), deferred until the straight port runs.
 - **The installed `libGL.a` is not pspgu.** `tools/pspgu-build.sh --check` currently reports a pspGL build. The
   512-window, residency and 16-bit-format facilities the port relies on are pspgu features. S1 settles the target:
-  install pspgu `b36` (recommended) or repack every texture to ≤512 and accept pspGL's 2022 path.
+  install the current pspgu (b37 on `master`; build it from a **clean worktree**, because the main tree carries
+  uncommitted b33-era `tools/pspgu/` content) or repack every texture to ≤512 and accept pspGL's 2022 path.
 - **`PlaySound` restarts a buffer; it does not allocate a voice.** Overlapping repeats of the same SFX cut each
   other off. Galaga repeats `fighter_shot` and explosion sounds, so the backend keeps a small `LoadSoundAlias`
   pool and round-robins it.
+- **Audio memory is the second budget.** `LoadSound` converts every file to f32 stereo at the device rate, so the
+  7.0 MB WAV set costs 27.5 MiB as Sounds. Music must be streamed; the long SFX (over ~2 s: `fighter_captured`,
+  `formation_scaled`, `fighter_explosion`, `enemy_beam`, `enemy_beam_fighter_captured`, `fighter_rescued`) need a
+  streaming or trimming decision before loading all 17 as Sounds.
+- **Heap must be declared.** The auto heap leaves ~768 KB. Declare `PSP_HEAP_SIZE_KB(n);` in the port's main
+  source (the PSPSDK Make variable of the same name is not wired by `build.mak`) and verify the boot free figure.
 - **Music semantics.** SDL_mixer plays one music stream at a time; raylib starts a stream per call and does not
   stop the previous one. The backend must stop the current stream before starting the next, and pump
   `UpdateMusicStream` once per frame.
@@ -83,6 +93,24 @@ The port needs nothing new from the library; every row below is a measured path 
   expected and must be measured, not hidden behind a black screen.
 - **128-pixel side bars.** At 1:1, 224 of 480 columns are occupied. This is a scope decision, not a defect; the
   tate option is the only way to use the panel's long axis for the game's long axis.
+
+## Readiness review (2026-11-23)
+
+The three sprints were re-read against the source and the toolchain after they were written. Six findings changed
+the plan; all are now in the task tables.
+
+| finding | evidence | fixed in |
+|---|---|---|
+| **The C++ build recipe works, but `build.mak` does not provide it.** | A `/tmp` app using `std::string`, `std::map`, `std::list`, `std::shared_ptr` and `std::function` linked to a 2.64 MB PRX with an explicit `%.o: %.cpp` rule and `-lstdc++`. PSPSDK's `build.mak` supplies no `.cpp` rule and links with `psp-gcc`. | P14-S1 T2 |
+| **The heap cannot be left on auto.** | Auto heap leaves ~768 KB (`environment.md`); the STL and `LoadSound` need more. `PSP_HEAP_SIZE_KB(n);` is a source macro, not a `build.mak` variable. | P14-S1 T2, P14-S2 T5 |
+| **Audio does not fit as decoded Sounds.** | `LoadSound` converts to f32 stereo at the device rate: the 7.0 MB WAV set becomes **27.5 MiB** (SFX 11.8, music 15.7). Music must stream; long SFX must stream or be shortened. | P14-S2 T4 |
+| **The 8-pixel text path has public accessors.** | `GetGlyphIndex()` and `GetGlyphAtlasRec()` are exported; `LoadFontEx` already sets `TEXTURE_FILTER_POINT`. The port must still force an 8-pixel advance. | P14-S1 T4 |
+| **Submission counters need a source.** | pspgu exports `pspguVramStats`, `pspguResidencyStats` and `pspguWindowStats`; raylib exposes no public draw counter. Logical draw counts must be counted in the backend. | P14-S1 T6/T8 |
+| **The installed driver is pspGL, not pspgu.** | `tools/pspgu-build.sh --check` reports a pspGL build; pspgu b37 is on `master`. The main tree's `tools/pspgu/` is b33-era and locally edited, so the driver must be built from a clean worktree. | P14-S1 T1 |
+
+The review did **not** change the display recommendation (272-high, 1:1, centred), the local-only licensing rule,
+or the sprint order. It did add an explicit heap decision to S1, an audio streaming decision to S2, and the
+counter-source split to S1.
 
 ## Sprints
 
@@ -111,8 +139,8 @@ it measures a build that is no longer moving.
 ## Open decisions
 
 1. **Display mode** — A (272, 1:1, centred; recommended) or C (tate, rotated). Settled in P14-S1 T1.
-2. **Driver target** — pspgu `b36` with `--texfmt=auto` (recommended) or the currently installed pspGL with all
-   textures repacked to ≤512. Settled in P14-S1 T1.
+2. **Driver target** — the current pspgu (b37 on `master`) with `--texfmt=auto` (recommended) or the currently
+   installed pspGL with all textures repacked to ≤512. Settled in P14-S1 T1.
 3. **Port home** — `/home/psp/galaga-psp` (outside this repository), keeping upstream pristine. Settled in
    P14-S1 T2.
 4. **Distribution** — local only until the upstream licence and asset rights are resolved. Recorded here as the

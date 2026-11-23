@@ -109,6 +109,8 @@ Interface gap: the 5.5 `rcore_psp.c` implements **46 of 6.2's 49** platform func
 | Audio backend measured | one regular channel (unit 7/6), 1024-frame blocks, internal 44100 Hz s16 stereo; 43 callbacks/s; rest 960–1024, errors 0 | `[measured: PSP-1000, P9-S5]` |
 | Audio memory measured | free **782,336** / max free **524,288** constant across 50 init/close cycles; worker stack 128 KiB, decoder stack 64 KiB, decoder PCM 4 KiB per track | `[measured: PSP-1000, P9-S5]` |
 | Audio CPU measured | audio worker `runClocks` 35,686,545 over 305.7 s ≈ **0.009 ms/frame**; main-thread `UpdateMusicStream` p95 0.028 ms | `[measured: PSP-1000, P9-S5]` |
+| `Sound` decode cost | decoded to the device's **f32 stereo** at 44.1 kHz = 8 B per source frame; a 7.0 MB mono 44.1 kHz WAV set is **27.5 MiB** as `Sound` (music must stream) | `[derived: src/raudio.c LoadSoundFromWave + WAV headers, 2026-11-23]` |
+| Auto heap | ~**768 KB** free even on a fresh console; asset-heavy apps declare `PSP_HEAP_SIZE_KB(n);` in source (the PSPSDK Make variable is not wired) | `[measured: PSP-1000, environment.md]` |
 | Input hardware | one nub (2 axes, raw 0–255), D-pad, 4 face buttons, 2 shoulder buttons, SELECT/START/HOME/HOLD/NOTE. **No analog triggers, no rumble** | `[public: pspctrl.h]` |
 | Nub on this unit | centre raw **(133, 112)**; half-ranges right 122 / left 133 / down 143 / up 112; radial deadzone **0.18**; the neutral has two resting states ~19 counts apart, so `dz` covers 0.154 normalised | `[measured: PSP-1000, sprint 043]` |
 | Idle-cancel on this unit | firmware default **−1/−1**; adopted **`0x38/0x38`**; a 360 s nub-only run stayed awake (max frame gap 17.9 ms, no dim) | `[measured: PSP-1000, sprint 043]` |
@@ -459,9 +461,12 @@ non-backend translation units compile with `psp-gcc 15.2.0 -std=gnu++14` (the 24
 stale and the port deletes it) `[measured: 2026-11-23]`. Three sprints: 082
 backend and first frame, 083 assets/VRAM/audio, 084 gameplay validation and close. The padded 8888 texture set
 is **908,544 B** against **913,344 B free**, so 16-bit formats or a repack is mandatory `[derived: PNG
-dimensions + pspgu padding]`. Port code, assets and EBOOT stay outside this repository: the upstream has no
-licence and the art/audio are Namco material. Full audit, capability map and exit criteria:
-[Phase 14](phases/14-raylib-games/index.md).
+dimensions + pspgu padding]`. Audio is the second budget: `LoadSound` decodes to f32 stereo, so the 7.0 MB WAV
+set would be **27.5 MiB**; music and long clips stream, and the app declares `PSP_HEAP_SIZE_KB` because the auto
+heap leaves ~768 KB `[derived: src/raudio.c; measured: environment.md]`. The C++ link recipe was verified with an
+explicit `%.o: %.cpp` rule and `-lstdc++`. Port code, assets and EBOOT stay outside this repository: the upstream
+has no licence and the art/audio are Namco material. Full audit, capability map, readiness review and exit
+criteria: [Phase 14](phases/14-raylib-games/index.md).
 
 ---
 
@@ -552,6 +557,7 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
 | 2026-11-23 | **P10-S9: adopt FBO restore candidate (b); run the RTT gate at 8 frames** | `saved.draw = fbOffset[frames % 3]` fixes the 3-frame checker flicker. The earlier 624-800 px "RTT regression" was a 2-frame display-lag measurement: at 8 frames direct vs sampled is **0 diff**, `fb0=fb1=fb2`, `FLICK 0`; sample 16.683/16.684 ms median, 11.98-12.13 ms work. pspgu `b31`; `TexSync`→`TexFlush` order tested and rejected |
 | 2026-11-21 | Track the upstream `core`/`shapes`/`textures` corpus as **Phase 13**, gated by capability | Static audit of 127 samples: 13 drop-in, 61 input-gated, 49 blocked, 4 ported. Each wave names the phase whose capability it consumes; wave 0 needs none. Findings, gates and sprints 024–034 in [Phase 13](phases/13-samples-porting/index.md) |
 | 2026-11-23 | **Open Phase 14 (PSP Raylib Games) with CppGalaga v3 as the first target; port code stays outside this repo** | The game core is engine-agnostic: 23 of its 24 non-backend `.cpp` files compile under `psp-gcc 15.2.0 -std=gnu++14`; the 24th, `src/infra/Game.cpp`, is an obsolete pre-split entry point and is deleted by the port. The platform seam is six Renderer calls, six audio functions and two input functions; only `LEFT`/`RIGHT`/`FIRE` are read. Assets: 27 PNG, 23 mono 44.1 kHz WAV (7.0 MB); padded 8888 textures are **908,544 B** against **913,344 B free**, so 16-bit or a repack is mandatory. The upstream has no licence and the art/audio are Namco material, so the port and assets stay in `/home/psp/galaga-psp`. Sprints 082–084 in [Phase 14](phases/14-raylib-games/index.md) |
+| 2026-11-23 | **P14 readiness review: stream music/long SFX, declare the heap, and use the verified C++ recipe** | `LoadSound` decodes to f32 stereo (8 B/frame): the 7.0 MB WAV set is **27.5 MiB** as Sounds, so six music tracks (15.7 MiB decoded) and the seven >2 s SFX (9.5 MiB) stream or are trimmed; short SFX stay Sounds (2.3 MiB). The auto heap leaves ~768 KB, so `PSP_HEAP_SIZE_KB(n);` goes in source. A `/tmp` C++ app using STL containers linked to a 2.64 MB PRX with an explicit `%.o: %.cpp` rule and `-lstdc++`; `build.mak` provides neither. Text uses public `GetGlyphIndex`/`GetGlyphAtlasRec`; pspgu exports the VRAM/residency counters. The installed `libGL.a` is still pspGL; P14-S1 T1 decides |
 
 ---
 
@@ -628,6 +634,11 @@ the techniques clean-room if they are to enter this tree. `3D-PSP-Tutorials` has
   in the frame loop and the frame time becomes the audio buffer length. Audio gets its own thread.
 - **Music has two loaders.** `LoadMusicStream(path)` and `LoadMusicStreamFromMemory()` are separate
   implementations; a PSP decoder hook added to one is silently absent from the other. Wire both.
+- **`Sound` is decoded; `Music` is streamed.** `LoadSound` converts to the device's f32 stereo, so a 7.0 MB
+  mono 44.1 kHz WAV set costs **27.5 MiB** in RAM. Stream music and long clips; use `LoadSoundAlias` for
+  overlapping repeats. `LoadMusicStream` sets `looping = true` by default — clear it for jingles.
+- **The auto heap is ~768 KB.** An asset-heavy app must declare `PSP_HEAP_SIZE_KB(n);` in its source. The
+  Make variable of the same name is not consumed by `build.mak`; a Makefile-only setting is silently ignored.
 - **Keep the music decoder below the USB thread.** At priority `0x2E` the decoder competed with
   PSPLink's USB thread and console output stopped mid-run. `0x30` fixed it without missing deadlines.
 - **The audio worker must outrank a slow frame loop.** miniaudio's worker at PSP priority 60 sits below the
