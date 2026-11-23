@@ -4,7 +4,7 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S15 |
-| Branch / base commit | `master` @ `65012409` (pspgu `b37`; docs commit on top of the b37 driver) |
+| Branch / base commit | `master` @ `21f6ac50` (pspgu `b37`; docs commits on top of the b37 driver) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; `libraylib.a` `9a1d97210d7a1df6` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`); new probes opt-in |
 | Tasks | 0/8 done |
