@@ -132,6 +132,58 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] vertex formats and their byte costs documented in the feature page — 060/061 tables
 - [x] what the GE cannot do is listed, with the fallback the engine takes — S3/S4/S5 limits tables
 
+## Audit against the official SDK (2026-11-23)
+
+Re-read the libgu reference and the shipped `gu/` samples, then A/B the current driver and reuse the 069/070
+measurements. All numbers are device-only; the SDK claims carry a public source (`psp_sdk_660` HTML) or the sample
+that uses the feature.
+
+**What is already at or above the samples' level.** Three framebuffers with two rotating direct lists, a per-list
+vertex arena and targeted waits (13-19 µs, no full GE wait at 60 fps); GE-native packed meshes on the direct path;
+guard-band clipping instead of the screen edge; VFPU projection in the clipper; texture shadow/residency; RTT over
+the GU draw buffer. The official `doublelist` sample is the closest reference and does less.
+
+**SDK features we do not use, and why.**
+
+| feature (public source) | why not |
+|---|---|
+| `sceGuBeginObject`/`EndObject` — hardware object culling (`gu/beginobject`) | It skips *rasterisation*, not submission. Our CPU cull removes the whole `DrawMesh` (submission **and** clip classification): at N=500, 218 of 500 calls never reach the driver. Replacing it with a GE-side box would submit all 500 at ~51 µs/call — about +11 ms before the GE does anything. Not recommended as a replacement. |
+| `GU_TRANSFORM_2D` with 16-bit vertices and 16-bit textures (`gu/blit`, `gu/blend`, `gu/doublelist`, `gu/font`) | The official 2D vertex is ~12 B with no 3D T&L; ours is 24 B (f32 uv/pos, 8888 colour) with a 2D ortho. The 2D pixel gate is exact (613 colours); the 061 s16-UV trial cost 37 px, and 5551 colour would move every shaded pixel. The 2D ceiling is CPU-bound in the batcher, not vertex-bound, so this is an opt-in experiment, not a default. |
+| `GU_NORMAL_8BIT`, `GU_COLOR_5551` | Bandwidth/quality trade on the packed meshes; the pack is one-time and the GE is not the bottleneck. Parity risk on the lit path. Low priority. |
+| `sceGuCopyImage` (libgu reference) | VRAM-to-VRAM only (the sample passes EDRAM pointers). It cannot DMA a main-RAM upload, so the 8-row band upload stands. |
+| `GU_CLIP_PLANES` (enabled by `gu/celshading`, `gu/envmap`) | This SDK documents no plane setter (`pspgu.h` exposes only the enable bit), so it cannot replace the software near-plane clip. |
+
+**Where the time actually goes (measured).**
+
+| finding | number | source |
+|---|---|---|
+| clip pass share of the cube scene | **37 % at N=100** (11.07 vs 6.93 ms), **34 % at N=500** (38.63 vs 25.40) | `PSPGU_NO_CLIP=1` A/B, `matrix_probe MODE=scene` |
+| clip cost per submitted draw | **~47-52 µs** (~1.4 µs/vertex) | same, 80 and 282 drawn draws |
+| per-`DrawMesh` baseline (clip off) | **~51 µs/call** (25.4 ms / 500) | same |
+| CPU cull | **12 µs/call bracketed**, ~8-12 after the 3.94 µs clock tail | 070 T3 |
+| per-object compose + `rlMultMatrixf` | ~3 µs + ~3.5 µs | 070 T3 |
+| 3D scene at N=500 | 38.6 ms work ≈ 500 calls × 77 µs | 070 §7 |
+
+So the 3D path is **draw-call bound**, not matrix-bound: the matrix work GUM could touch is a few percent, which is
+why 070 dropped it. The clip pass is the largest *driver-side* share and the per-call path the largest overall.
+
+**The attacks, in order.**
+
+- **P1 — clip classification (~47 µs/submitted draw).** Deduplicate unique vertices for indexed draws (a cube's 36
+  indices reference 24 vertices; a torus shares far more), fuse the s16 fetch with the VFPU transform, and keep the
+  per-object AABB shortcut — it is why most cubes are cheap. Target: halve the per-draw clip cost; measure with the
+  `NO_CLIP` A/B.
+- **P2 — per-call overhead (~51 µs/call).** The structural fix is instancing or merging draws, but it trades the
+  per-call cost for CPU vertex expansion and *loses the per-object clip shortcut* (a merged 10k-vertex batch cannot
+  be skipped by an AABB and would be classified whole). Prototype and measure; do not assume the 2D batcher's win
+  transfers.
+- **P3 — the cull (~12 µs/call).** Cache the MVP once per frame (two `glGetFloatv` per mesh today) and transform the
+  eight corners with the VFPU transform already in the tree (8 × ~0.35 µs vs ~8 µs scalar). Estimated: the 6 ms cull
+  at N=500 → ~2 ms.
+- **P4 — compose/multiply (~6.5 µs/call).** Same VFPU transform; not GUM (070 T4: default GUM slower, VFPU GUM
+  wins only the multiply and needs a VFPU/FPU fence — it raised FPU Exception (IV) in the probe).
+- **P5 — official-format experiments** (2D s16/5551, s8 normals) only behind flags and the pixel gates.
+
 ## Guidelines from the renderer blueprint
 
 Source: `/home/psp/psp_sdk_660/AI_MEMORY_MAP.md` §16.5–16.8 (AI-written blueprint inside the Sony SDK reference
