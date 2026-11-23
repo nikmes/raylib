@@ -12,6 +12,7 @@
  */
 
 #include <pspkernel.h>
+#include <pspgum.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,18 +23,22 @@
 #include "psp_counters.h"
 
 PSP_MODULE_INFO("matrix_probe", 0, 1, 1);
+#if defined(PSP_GUM_VFPU)
+PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
+#else
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
+#endif
 
 #define ITERS 10000
 #define BLOCKS 20
 
 static volatile float sink;
 
-#if defined(MODE_API) || defined(MODE_CALLS)
+#if defined(MODE_API) || defined(MODE_CALLS) || defined(MODE_GUM)
 static SceInt64 probeNow(void) { return sceKernelGetSystemTimeWide(); }
 #endif
 
-#if defined(MODE_API)
+#if defined(MODE_API) || defined(MODE_GUM)
 // Every measured expression must depend on this, or GCC hoists the inline raymath
 // helpers out of the loop and the "cost" becomes the clock call (measured 0.068 us).
 static float jit[16] = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f,
@@ -46,6 +51,7 @@ static int cmpDouble(const void *a, const void *b)
     return (x < y)? -1 : (x > y);
 }
 
+#if defined(MODE_API)
 static float MeasureUpdateCamera(void)
 {
     static Camera c;
@@ -59,6 +65,7 @@ static float MeasureUpdateCamera(void)
 
     return c.position.x;
 }
+#endif
 
 #define MEASURE(label, expr) do { \
     for (int i = 0; i < 100; i++) sink += (float)(expr); \
@@ -187,6 +194,45 @@ static void runCalls(void)
 }
 #endif
 
+#if defined(MODE_GUM)
+static void runGum(void)
+{
+#if defined(GUM_SKIP_MULT)
+    ScePspFMatrix4 m1, m2, mr;
+#else
+    ScePspFMatrix4 m1, m2, mm, mr;
+#endif
+    ScePspFVector3 eye = { 0.0f, 1.0f, 4.0f }, ctr = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+    ScePspFVector3 one = { 1.0f, 1.0f, 1.0f };
+    Matrix scale = MatrixScale(0.5f, 0.5f, 0.5f);
+    Matrix trans = MatrixTranslate(1.0f, 2.0f, 3.0f);
+    Matrix xf = MatrixIdentity();
+
+    ScePspFQuaternion qq = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+    gumInit();
+    gumNormalizeQuaternion(&qq);
+    gumLoadIdentity(&m1);
+    gumLoadIdentity(&m2);
+
+#if !defined(GUM_SKIP_MULT)
+    MEASURE("gumMultMatrix", (gumMultMatrix(&mr, &m1, &m2), mr.x.x));
+#endif
+    MEASURE("gumLookAt", (eye.x = jit[i & 15], gumLookAt(&mr, &eye, &ctr, &up), mr.x.x));
+    MEASURE("gumPerspective", (gumPerspective(&mr, 45.0f*DEG2RAD, 480.0f/272.0f, 0.01f, 1000.0f), mr.x.x));
+    MEASURE("gumOrtho", (gumOrtho(&mr, -1.0f, 1.0f, -1.0f, 1.0f, 0.01f, 1000.0f), mr.x.x));
+    MEASURE("gumTranslate", (gumTranslate(&mr, &eye), mr.x.x));
+    MEASURE("gumScale", (gumScale(&mr, &one), mr.x.x));
+    MEASURE("compose_raymath", MatrixMultiply(MatrixMultiply(scale, trans), xf).m0);
+#if !defined(GUM_SKIP_MULT)
+    MEASURE("compose_gum2x", (gumMultMatrix(&mm, &m1, &m2), gumMultMatrix(&mr, &mm, &m2), mr.x.x));
+#endif
+    MEASURE("gumRotateVector", (gumRotateVector(&up, &qq, &eye), up.x));
+
+    TraceLog(LOG_INFO, "CHECK sink=%f", (double)sink);
+}
+#endif
+
 #if defined(MODE_SCENE)
 #if defined(PSP_MATRIX_PROBE)
 extern unsigned long long rlpspProbeComposeUs, rlpspProbeMultUs, rlpspProbeCullUs;
@@ -274,6 +320,15 @@ int main(void)
 #elif defined(MODE_CALLS)
     TraceLog(LOG_INFO, "MODE calls");
     runCalls();
+    TraceLog(LOG_INFO, "DONE");
+    sceKernelSleepThread();
+#elif defined(MODE_GUM)
+#if defined(PSP_GUM_VFPU)
+    TraceLog(LOG_INFO, "MODE gum vfpu");
+#else
+    TraceLog(LOG_INFO, "MODE gum default");
+#endif
+    runGum();
     TraceLog(LOG_INFO, "DONE");
     sceKernelSleepThread();
 #elif defined(MODE_SCENE)

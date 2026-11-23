@@ -223,10 +223,35 @@ the frame**. The instrumentation costs 1.59 ms at N=100 and 5.56 ms at N=500, wh
 not the raw brackets, are quoted. The frame slope (0.069-0.113 ms/cube) matches sprint 069's 0.084 ms/cube.
 
 **T4 — GUM dropped.** The three builders total **1.48 µs per frame** (one call each), **0.009 %** of a 16.68 ms
-frame against a 0.1 ms / 1 % threshold. GUM has no vector transform, so it cannot touch the cull (the dominant
-matrix-shaped cost) or the three divides inside `GetWorldToScreenEx`; a non-VFPU GUM dependency would buy
-microseconds and add a library, a layout conversion and an A/B surface. `libpspgum_vfpu` stays opt-in and is not
-justified by these numbers either.
+frame against a 0.1 ms / 1 % threshold. GUM has no matrix-vector transform, so it cannot touch the cull (the
+dominant matrix-shaped cost) or the three divides inside `GetWorldToScreenEx`.
+
+The archive-level check against the official SDK settles where GUM *could* help. `libpspgum.a` is scalar
+throughout; only `libpspgum_vfpu.a` replaces `gumMultMatrix`, `gumScale`, `gumTranslate`, `gumRotate*` and
+`gumFastInverse` (verified by disassembly — the builders `gumLookAt`/`gumPerspective`/`gumOrtho` are the same
+scalar objects in both archives). Measured with `matrix_probe MODE=gum` (µs/call, 20 x 10k):
+
+| function | raymath | GUM default | GUM VFPU |
+|---|---|---|---|
+| 4x4 multiply | 1.67 | 5.39 | **0.75** |
+| look-at | 0.91 | 14.0 | 3.68 |
+| perspective | 0.33 | — | 3.06 |
+| ortho | 0.24 | — | 2.27 |
+| translate / scale | ~0.3 | — | 0.48 / 0.62 |
+| rotate vector | 0.17 | — | 3.01 |
+
+So the default GUM is slower than raymath everywhere; the VFPU build is **2.2x faster on the 4x4 multiply only**.
+That multiply is used twice per `DrawMesh` compose and once in pspgu's `glMultMatrixf`: at N=500 (282 drawn) the
+saving would be about 0.5-0.8 ms of 38.6 ms, **1.5-2 %**, for a VFPU thread attribute, a matrix-layout conversion
+and a VFPU/FPU fence contract across the engine.
+
+The fence is not theoretical: the VFPU probe raised **FPU Exception (IV)** when ordinary FPU arithmetic followed a
+VFPU `gumMultMatrix` call, and without a fence the FPU read of the VFPU-written matrix was stale (the measured
+`sum` stayed 0). Removing the VFPU multiply made the same probe complete cleanly. That is exactly the
+thread-attribute/context risk the memory map warned about, now reproduced.
+
+**Conclusion:** GUM is not adopted, in either build. The wins are the app-side cache (T2, 13x) and a cheaper cull
+(T3, ~12 µs/call, 20 % of the frame), which is our own VFPU transform's territory (P11-S12 / sprint 074), not GUM.
 
 **T5 — decision.** Keep raymath. The cache pattern is the guidance for per-entity projections; the next lever is the
 conservative cull's eight-corner test (~12 µs/call), which belongs to `rmodels`, not to a matrix library. Phase page

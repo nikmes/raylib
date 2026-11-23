@@ -16,11 +16,13 @@ MODE ?= api
 COUNT ?= 100
 FRAMES ?= 120
 
-CFLAGS = -Wall -O2 -I../bunnymark -DCOUNT=$(COUNT) -DFRAMES=$(FRAMES)
+CFLAGS = -Wall -O2 -I../bunnymark $(EXTRA_CFLAGS) -DCOUNT=$(COUNT) -DFRAMES=$(FRAMES)
 ifeq ($(MODE),api)
     CFLAGS += -DMODE_API
 else ifeq ($(MODE),calls)
     CFLAGS += -DMODE_CALLS
+else ifeq ($(MODE),gum)
+    CFLAGS += -DMODE_GUM
 else ifeq ($(MODE),scene)
     CFLAGS += -DMODE_SCENE
 else
@@ -42,7 +44,17 @@ ifeq ($(MODE),scene)
                -Wl,--wrap=eglSwapBuffers
 endif
 
+GUM ?= default
+
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
+ifeq ($(MODE),gum)
+    ifeq ($(GUM),vfpu)
+        CFLAGS += -DPSP_GUM_VFPU
+        LIBS += -L$(PSPSDK)/lib -l:libpspgum_vfpu.a
+    else
+        LIBS += -lpspgum
+    endif
+endif
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = matrix probe (raylib 6.5-dev)

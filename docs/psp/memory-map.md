@@ -912,13 +912,21 @@ Checked against the toolchain we link, not against documentation. Paths are unde
 A GU program links `-lpspgum -lpspgu` (that is the samples' line). GUM usually needs `-lm`-equivalent helpers
 from `libpspmath` only if it is called directly.
 
-**GUM measured, not adopted (sprint 070).** `gumLookAt`/`gumPerspective`/`gumOrtho` would replace builders that
-cost 0.24-0.91 µs and run once per frame (1.48 µs/frame, 0.009 % of a 16.68 ms frame). The scene's matrix-shaped
-cost is elsewhere: the conservative cull in `DrawMesh` transforms eight corners in soft float at **~12 µs per
-call** (20 % of a frame at 500 cubes), and GUM has no vector transform. The cache pattern for per-entity
-projections (compose `P*V` once, `QuaternionTransform`, divide by `w`) is 13x cheaper than `GetWorldToScreenEx`
-per call (6.31 vs 0.49 µs at N=1000) and needs no library. `libpspgum_vfpu` stays opt-in. Calibration: one
-`sceKernelGetSystemTimeWide` call costs **3.94 µs**, so spans below that must be timed as loops.
+**GUM measured, not adopted (sprint 070).** `libpspgum.a` is scalar throughout; only `libpspgum_vfpu.a` replaces
+`gumMultMatrix`, `gumScale`, `gumTranslate`, `gumRotate*` and `gumFastInverse` — `gumLookAt`/`gumPerspective`/
+`gumOrtho` are the same scalar objects in both archives. Measured (µs/call): 4x4 multiply 1.67 raymath vs 5.39
+default GUM vs **0.75 VFPU GUM**; look-at 0.91 vs 14.0 vs 3.68. So the default GUM is slower than raymath, and the
+VFPU build wins only on the multiply (2.2x) — twice per `DrawMesh` compose and once in pspgu's `glMultMatrixf`,
+about 0.5-0.8 ms of a 38.6 ms frame at 500 cubes (1.5-2 %). That would need the VFPU thread attribute, a layout
+conversion and a VFPU/FPU fence: in the probe, ordinary FPU arithmetic after a VFPU `gumMultMatrix` raised **FPU
+Exception (IV)** and a VFPU-written matrix read stale without a fence. Not adopted.
+
+The scene's matrix-shaped cost is elsewhere: the conservative cull in `DrawMesh` transforms eight corners in soft
+float at **~12 µs per call** (20 % of a frame at 500 cubes), and GUM has no vector transform — our own VFPU
+transform (P11-S12 / sprint 074) is the right tool. The cache pattern for per-entity projections (compose `P*V`
+once, `QuaternionTransform`, divide by `w`) is 13x cheaper than `GetWorldToScreenEx` per call (6.31 vs 0.49 µs at
+N=1000) and needs no library. Calibration: one `sceKernelGetSystemTimeWide` call costs **3.94 µs**, so spans
+below that must be timed as loops.
 
 ### GU: what exists, verified by signature
 
