@@ -146,7 +146,8 @@ void glBindFramebuffer(GLenum target, GLuint id)
             // Offset 0 is a legal framebuffer (screen buffer 0); do not treat it as NULL.
             sceGuDrawBufferList(saved.psm? saved.psm : GU_PSM_5650, saved.draw, saved.stride);
             if (saved.depth != NULL) sceGuDepthBuffer(saved.depth, saved.stride);
-            if (saved.dither) sceGuEnable(GU_DITHER); else sceGuDisable(GU_DITHER);
+            pspgu.ditherEnabled = saved.dither;
+            pspguApplyDither();
             sceGuOffset(2048 - (saved.width/2), 2048 - (saved.height/2));
             sceGuViewport(saved.vpX, saved.vpY, saved.vpW, saved.vpH);
             sceGuScissor(saved.scX, saved.scY, saved.scW, saved.scH);

@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b36"
+#define PSPGU_BUILD "b37"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -51,6 +51,21 @@
     #define PSPGU_TEXFMT_AUTO 0
 #endif
 #define PSPGU_TEXFMT_NAME (PSPGU_TEXFMT_AUTO? "auto" : "8888")
+
+// Guide: keep GU_CLIP_PLANES on in transform mode. pspsdk's sceGuInit sends
+// DEPTH_CLIP_ENABLE=0; with the reversed depth range a primitive crossing the far plane
+// is then discarded instead of clamped. The CPU pass clips triangles only, so lines,
+// points, fans and strips depend on this state. =0 is the A/B arm.
+#ifndef PSPGU_CLIP_PLANES
+    #define PSPGU_CLIP_PLANES 1
+#endif
+
+// Guide: disable dither around additive passes on a 5650 target (low-alpha gradients
+// speckle). Additive blend turns GU_DITHER off and restores it when the blend changes;
+// the GL_DITHER request is preserved. =0 is the A/B arm.
+#ifndef PSPGU_DITHER_ADDITIVE
+    #define PSPGU_DITHER_ADDITIVE 1
+#endif
 
 // P10-S9 T1: TexSync (block frame-buffer read-out) before TexFlush (drop the
 // texture cache), the order used by the reference billboard/monochrome samples.
@@ -151,7 +166,8 @@ typedef struct {
 
     void *drawOffset;                       // current draw buffer, as GU wants it
     int drawPsm;                            // GU_PSM_* of the current draw buffer
-    int ditherEnabled;                      // GL_DITHER, default on
+    int ditherEnabled;                      // GL_DITHER request, default on
+    int ditherScoped;                       // additive blend suppresses GU_DITHER
     void *dispOffset;
     void *depthOffset;                      // NULL when PSP_GU_DEPTH is 0
     void *readOffset;                       // buffer holding the last completed frame
@@ -209,6 +225,7 @@ extern PspGuContext pspgu;
 
 // Framebuffer / list plumbing, used by egl.c and by every gl_*.c that needs to emit
 void pspguBeginFrame(void);                 // start a list if one is not open
+void pspguApplyDither(void);                // GL_DITHER request minus the additive override
 void pspguEndFrame(void);                   // finish the open list, no GE wait
 void pspguFinishAndWait(void);              // finish, then wait for it (readback/boot only)
 

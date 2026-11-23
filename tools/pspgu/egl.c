@@ -345,12 +345,21 @@ static void pspguInitGu(void)
     pspgu.drawPsm = GU_PSM_5650;
     sceGuEnable(GU_SCISSOR_TEST);
 
+#if PSPGU_CLIP_PLANES
+    // pspsdk's sceGuInit leaves DEPTH_CLIP_ENABLE at 0 (GU_CLIP_PLANES off). With
+    // sceGuDepthRange(65535, 0) the far plane maps outside the clip volume: clipping on
+    // clamps the primitive, off discards it whole. gl_draw.c's CPU pass clips triangles;
+    // this state is what covers lines, points, fans and strips.
+    sceGuEnable(GU_CLIP_PLANES);
+#endif
+
     // Dithering: pspGL's captures show the background alternating (240,240,240) and
     // (248,248,248) pixel by pixel, i.e. a 5650 buffer being dithered to hide banding.
     // Ours was flat, which is 50 % of the frame's pixels differing for no visible reason.
     // daedalus' memory map (AI_MEMORY_MAP §12.4, "Fast clear + dither") is the reference.
     pspgu.ditherEnabled = 1;
-    sceGuEnable(GU_DITHER);
+    pspgu.ditherScoped = 0;
+    pspguApplyDither();
 
 #if PSP_GU_DEPTH
     sceGuDepthBuffer(pspgu.depthOffset, pspgu.stride);

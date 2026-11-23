@@ -317,3 +317,20 @@ void pspguGetMVP(float out[16])
 {
     multiply((PspGuMatrix *)out, stackProjection[depthProjection].m, stackModelview[depthModelview].m);
 }
+
+// PSPGU_NO_CLIP omits the clip section that carries the VFPU helpers. glMultMatrixf
+// calls the matrix helper directly and raylib's cull calls both weakly; a zero return
+// selects the scalar paths. Without these the no-clip archive does not link at all.
+#ifdef PSPGU_NO_CLIP
+int pspguMat4MulVfpu(float *out, const float *a, const float *b)
+{
+    (void)out; (void)a; (void)b;
+    return 0;
+}
+
+int pspguTransformPointsVfpu(const float *m, const float *in, float *out, int count)
+{
+    (void)m; (void)in; (void)out; (void)count;
+    return 0;
+}
+#endif

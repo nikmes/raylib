@@ -27,6 +27,14 @@ ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif
 
+# Guide: keep GU_CLIP_PLANES on in transform mode; =0 is the A/B arm.
+PSPGU_CLIP_PLANES ?= 1
+CFLAGS += -DPSPGU_CLIP_PLANES=$(PSPGU_CLIP_PLANES)
+
+# Guide: drop dither while an additive blend is bound; =0 is the A/B arm.
+PSPGU_DITHER_ADDITIVE ?= 1
+CFLAGS += -DPSPGU_DITHER_ADDITIVE=$(PSPGU_DITHER_ADDITIVE)
+
 # P10-S9 T1: the reference samples (local notes §5) put the read-out barrier before the cache
 # flush. T1 measured it: it did not clear the band (656 vs 528 px), so the default
 # stays 0 (the pre-P10-S9 order); =1 remains the measured arm.

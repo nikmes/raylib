@@ -84,6 +84,17 @@ static void emitMaterial(void)
     sceGuSpecular(pspgu.matShininess);
 }
 
+// GL_DITHER is a request; additive blending can override the state without changing the
+// request. On a 5650 target a low-alpha additive gradient dithers into dark speckles,
+// which is imperceptible as banding if the dither is dropped for that pass.
+void pspguApplyDither(void)
+{
+    if (!pspgu.current || !pspgu.listOpen) return;
+
+    if (pspgu.ditherEnabled && !pspgu.ditherScoped) sceGuEnable(GU_DITHER);
+    else sceGuDisable(GU_DITHER);
+}
+
 void glEnable(GLenum cap)
 {
     if (!pspgu.current) return;
@@ -107,7 +118,7 @@ void glEnable(GLenum cap)
             emitLight(n);
             sceGuEnable(GU_LIGHT0 + n);
         } break;
-        case GL_DITHER:         pspgu.ditherEnabled = 1; sceGuEnable(GU_DITHER); break;
+        case GL_DITHER:         pspgu.ditherEnabled = 1; pspguApplyDither(); break;
         case GL_FOG:
             pspgu.fogEnabled = 1;
             sceGuFog(pspgu.fogStart, pspgu.fogEnd, pspgu.fogColor);
@@ -141,7 +152,7 @@ void glDisable(GLenum cap)
             sceGuDisable(GU_LIGHT0 + n);
         } break;
         case GL_FOG:            pspgu.fogEnabled = 0; sceGuDisable(GU_FOG); break;
-        case GL_DITHER:         pspgu.ditherEnabled = 0; sceGuDisable(GU_DITHER); break;
+        case GL_DITHER:         pspgu.ditherEnabled = 0; pspguApplyDither(); break;
         default: break;
     }
 }
@@ -150,17 +161,35 @@ void glBlendFunc(GLenum sfactor, GLenum dfactor)
 {
     int src = GU_SRC_ALPHA;
     int dst = GU_ONE_MINUS_SRC_ALPHA;
+    unsigned int srcfix = 0;
+    unsigned int dstfix = 0;
+    int additive = 0;
 
     if (!pspgu.current) return;
 
     // The library only ever asks for the alpha pair (rlSetBlendMode is a GL33 no-op, so
     // GL11 gets the single glBlendFunc in rlglInit) plus whatever an app sets itself.
     if ((sfactor == GL_SRC_ALPHA) && (dfactor == GL_ONE_MINUS_SRC_ALPHA)) { src = GU_SRC_ALPHA; dst = GU_ONE_MINUS_SRC_ALPHA; }
-    else if ((sfactor == GL_SRC_ALPHA) && (dfactor == GL_ONE))          { src = GU_SRC_ALPHA; dst = GU_FIX; }
-    else if ((sfactor == GL_ONE) && (dfactor == GL_ONE))                { src = GU_FIX;      dst = GU_FIX; }
+    else if ((sfactor == GL_SRC_ALPHA) && (dfactor == GL_ONE))
+    {
+        // GL_ONE has no GU factor of its own. GU_FIX with fixed 1.0 is the accepted
+        // encoding (PGE pgeGfx.c:423); the old (GU_FIX, 0) pair multiplied the
+        // destination by zero, so additive draws added nothing at all.
+        src = GU_SRC_ALPHA; dst = GU_FIX; dstfix = 0xFFFFFFFF; additive = 1;
+    }
+    else if ((sfactor == GL_ONE) && (dfactor == GL_ONE))
+    {
+        src = GU_FIX; dst = GU_FIX; srcfix = 0xFFFFFFFF; dstfix = 0xFFFFFFFF; additive = 1;
+    }
 
     pspguBeginFrame();
-    sceGuBlendFunc(GU_ADD, src, dst, 0, 0);
+#if PSPGU_DITHER_ADDITIVE
+    pspgu.ditherScoped = additive;
+    pspguApplyDither();
+#else
+    (void)additive;
+#endif
+    sceGuBlendFunc(GU_ADD, src, dst, srcfix, dstfix);
 }
 
 void glDepthFunc(GLenum func)
@@ -195,7 +224,10 @@ void glDepthMask(GLboolean flag)
 {
     if (!pspgu.current) return;
     pspguBeginFrame();
-    sceGuDepthMask((flag == GL_TRUE)? GU_TRUE : GU_FALSE);
+    // GU's mask is inverted relative to GL's: sceGuDepthMask(GU_TRUE) DISABLES Z writes.
+    // Mapping GL_TRUE straight to GU_TRUE turned every rlDisableDepthMask() pass into a
+    // depth-writing one and every rlEnableDepthMask() into a read-only pass.
+    sceGuDepthMask((flag == GL_TRUE)? GU_FALSE : GU_TRUE);
 }
 
 void glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a)
