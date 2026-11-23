@@ -61,9 +61,6 @@ void glClear(GLbitfield mask)
     if (bits != 0)
     {
         pspguBeginFrame();
-#if PSPGU_FAST_CLEAR
-        bits |= GU_FAST_CLEAR_BIT;
-#endif
         sceGuClear(bits);
     }
 }
@@ -95,8 +92,8 @@ void glEnable(GLenum cap)
     switch (cap)
     {
         case GL_BLEND:          sceGuEnable(GU_BLEND); break;
-        case GL_DEPTH_TEST:     if (pspgu.depthOffset) { pspgu.depthTest = 1; sceGuEnable(GU_DEPTH_TEST); } break;
-        case GL_CULL_FACE:      pspgu.cullEnabled = 1; sceGuEnable(GU_CULL_FACE); break;
+        case GL_DEPTH_TEST:     if (pspgu.depthOffset) sceGuEnable(GU_DEPTH_TEST); break;
+        case GL_CULL_FACE:      sceGuEnable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuEnable(GU_SCISSOR_TEST); break;
         case GL_TEXTURE_2D:     pspgu.texEnabled = 1; sceGuEnable(GU_TEXTURE_2D); break;
         case GL_LIGHTING:       pspgu.lighting = 1; sceGuEnable(GU_LIGHTING); break;
@@ -129,8 +126,8 @@ void glDisable(GLenum cap)
     switch (cap)
     {
         case GL_BLEND:          sceGuDisable(GU_BLEND); break;
-        case GL_DEPTH_TEST:     pspgu.depthTest = 0; sceGuDisable(GU_DEPTH_TEST); break;
-        case GL_CULL_FACE:      pspgu.cullEnabled = 0; sceGuDisable(GU_CULL_FACE); break;
+        case GL_DEPTH_TEST:     sceGuDisable(GU_DEPTH_TEST); break;
+        case GL_CULL_FACE:      sceGuDisable(GU_CULL_FACE); break;
         case GL_SCISSOR_TEST:   sceGuDisable(GU_SCISSOR_TEST); break;
         case GL_TEXTURE_2D:     pspgu.texEnabled = 0; sceGuDisable(GU_TEXTURE_2D); break;
         case GL_LIGHTING:       pspgu.lighting = 0; sceGuDisable(GU_LIGHTING); break;

@@ -43,34 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b35"
-
-// P10-S12 T4: pure GU_TRANSFORM_2D through-mode path for simple screen-space 2D.
-// Default off; the A/B builds with PSPGU_FAST2D=1. It is only used when the
-// projection is the known screen ortho, the modelview is identity, depth/lighting/
-// fog/normals are off and the texture is <=512 in both dimensions.
-// Measured b34: pixel-exact but slower (0.972 vs 0.942 ms one quad; 9.531 vs
-// 8.583 ms at 1,600 sprites), so it is not adopted. Opt-in only.
-#ifndef PSPGU_FAST2D
-    #define PSPGU_FAST2D 0
-#endif
-
-// P10-S12 T2: add GU_FAST_CLEAR_BIT to glClear. Default off; measured b35:
-// clear probe 0.268 vs 0.265 ms and bunnymark 4.702 vs 4.706 ms, 0 pixel diff.
-// Not adopted.
-#ifndef PSPGU_FAST_CLEAR
-    #define PSPGU_FAST_CLEAR 0
-#endif
-
-// P10-S12 T1: VFPU projection/matrix multiply and the 4-wide clip lerp. Both
-// default off; clip lerp requires PSPGU_VFPU. Measured b35 clip-attributable:
-// 2.045 ms scalar, 2.464 ms VFPU projection, 2.748 ms VFPU lerp; not adopted.
-#ifndef PSPGU_VFPU
-    #define PSPGU_VFPU 0
-#endif
-#ifndef PSPGU_VFPU_CLIP
-    #define PSPGU_VFPU_CLIP 0
-#endif
+#define PSPGU_BUILD "b36"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -207,9 +180,6 @@ typedef struct {
     unsigned char cr, cg, cb, ca;           // Current colour: what GL11 uses when GL_COLOR_ARRAY is off
     int texEnabled;                         // GL_TEXTURE_2D enable state (GU has no query)
     unsigned int boundTexture;              // texture id currently bound
-    int depthTest;                          // GL_DEPTH_TEST state, for the 2D fast path
-    int cullEnabled;                        // GL_CULL_FACE state, for the 2D fast path
-    unsigned int fast2dDraws;               // draws actually emitted through GU_TRANSFORM_2D
 
     // Lighting/fog/texture environment (sprint 062). GU has no queries, so the driver
     // mirrors what GL last set; the draw path needs the lighting flag and model colours.
@@ -293,11 +263,6 @@ void pspguSetTextureLog(int on);             // probes time uploads without the 
 // the default texture (or no texture) is bound.
 int pspguBoundTextureInfo(int *width, int *height, int *padW, int *padH, int *tbw,
                           int *bpp, int *swizzled, unsigned int *offset);
-
-// Bound texture's logical/padded geometry and the scale `applyTexture` installed.
-// Used by the P10-S12 T4 through-mode path to convert normalised UVs to texel units.
-int pspguBoundTexture2D(int *width, int *height, int *padW, int *padH,
-                        float *scaleU, float *scaleV);
 void pspguWindowStats(unsigned int *draws, unsigned int *switches);
 
 // Per-list vertex memory. Every draw copies its vertices here before handing the pointer
@@ -335,7 +300,6 @@ void pspguUploadMatrices(void);
 void glGetFloatvMatrices(GLenum pname, GLfloat *params);
 void pspguGetMVP(float out[16]);      // projection * modelview, column-major
 int  pspguMat4MulVfpu(float *out, const float *a, const float *b);  // 0 = no VFPU, use scalar
-int  pspguCanUseTransform2D(void);    // P10-S12 T4: screen ortho + identity modelview + 2D state
 int  pspguTransformPointsVfpu(const float *m, const float *in, float *out, int count);
 float pspguProjectionW(void);       // m[11]: 0 for ortho, -1 for a frustum
 

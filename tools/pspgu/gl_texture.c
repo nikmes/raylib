@@ -888,22 +888,6 @@ void pspguSetTextureLog(int on)
     textureLogEnabled = on? 1 : 0;
 }
 
-int pspguBoundTexture2D(int *width, int *height, int *padW, int *padH,
-                        float *scaleU, float *scaleV)
-{
-    PspGuTexture *t = lookup(pspgu.boundTexture);
-
-    if ((t == NULL) || (t->padW <= 0) || (t->padH <= 0)) return 0;
-
-    if (width != NULL) *width = t->width;
-    if (height != NULL) *height = t->height;
-    if (padW != NULL) *padW = t->padW;
-    if (padH != NULL) *padH = t->padH;
-    if (scaleU != NULL) *scaleU = t->scaleU;
-    if (scaleV != NULL) *scaleV = t->scaleV;
-    return 1;
-}
-
 int pspguBoundTextureInfo(int *width, int *height, int *padW, int *padH, int *tbw,
                           int *bpp, int *swizzled, unsigned int *offset)
 {

@@ -27,16 +27,6 @@ ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif
 
-# P10-S12 T4: pure GU_TRANSFORM_2D through-mode path for screen-space 2D.
-PSPGU_FAST2D ?= 0
-CFLAGS += -DPSPGU_FAST2D=$(PSPGU_FAST2D)
-PSPGU_FAST_CLEAR ?= 0
-CFLAGS += -DPSPGU_FAST_CLEAR=$(PSPGU_FAST_CLEAR)
-PSPGU_VFPU ?= 0
-CFLAGS += -DPSPGU_VFPU=$(PSPGU_VFPU)
-PSPGU_VFPU_CLIP ?= 0
-CFLAGS += -DPSPGU_VFPU_CLIP=$(PSPGU_VFPU_CLIP)
-
 # P10-S9 T1: the reference samples (local notes §5) put the read-out barrier before the cache
 # flush. T1 measured it: it did not clear the band (656 vs 528 px), so the default
 # stays 0 (the pre-P10-S9 order); =1 remains the measured arm.

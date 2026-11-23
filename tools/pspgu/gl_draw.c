@@ -225,7 +225,7 @@ static int clipVfpuReady = -1;
 
 static int clipVfpuInit(void)
 {
-#if PSPGU_VFPU
+#if defined(PSPGU_VFPU)
     if (clipVfpuReady < 0)
     {
         pspvfpu_initcontext();

@@ -403,24 +403,37 @@ after the session. Evidence and logs: `/home/psp/evidence/p10s12/`.
 - **078 remains independent:** per-call merging is the structural lever for 3D; this sprint must not change its
   baseline or its gates.
 
-**Correction (after the benchmark run, same day).** The `b35` archive breaks `clip_probe EDGE=237 MESH3D=1`:
-**1681 pixels** of the probe triangle turn black against both pspGL and the `b33` driver, reproduced twice. The
-sincos claim is unaffected; the driver is not:
+**Correction (after the benchmark run, same day).** The `b35` driver breaks `clip_probe EDGE=237 MESH3D=1`:
+**1681 pixels** of the probe triangle come out black against pspGL and against `b33`, reproduced twice. The
+adopted sincos is not involved — the library alone is clean in isolation. The driver is.
 
-| build | clip_probe vs pspGL |
+The fault is in the interaction the T1 work introduced, not in one file, and a first bisect that blamed
+`gl_draw.c` was **wrong**: it was built without removing the objects by hand, so it measured a mix of old and new
+objects (the same stale-object trap the port has hit before). With `rm -f tools/pspgu/*.o` before every build the
+picture is:
+
+| build (all forced clean) | clip_probe vs pspGL |
 |---|---|
-| `52d1b8e5` (pre-079) | 0 |
-| new library + pre-079 driver | 0 |
-| `806cb3d7` (new library + b35 driver) | 1681 |
-| `806cb3d7` driver with `PSPGU_NO_CLIP=1` | 1681 |
-| `806cb3d7` with `gl_draw.c` reverted | 0 |
+| `52d1b8e5` driver (b33) | 0 |
+| all `806cb3d7` driver files, `gl_draw.c` reverted | 0 — but only because that file's `#if defined(PSPGU_VFPU)` keeps the VFPU clip path initialised, which is the accidental state T1 was meant to remove |
+| the same, with `#if PSPGU_VFPU` (VFPU off, as the header now says) | **1681** |
+| whole driver reverted to `52d1b8e5`, tag `b36` | **0** |
 
-The state seen at the draw is identical between working and broken builds — same matrices, `fmt=0x180`, stride 12,
-viewport 480×272, scissor 0,0,480,272, cull/depth/light/fog off, one list per frame — so the mechanism inside
-`gl_draw.c` is **not identified**. Every experiment in that file (T1 VFPU clip, T2 fast clear, T4 through mode,
-T5 stubs) was recorded as dropped, so `gl_draw.c` was reverted to the `52d1b8e5` version, keeping the
-`#if PSPGU_VFPU` fix so the new header's `PSPGU_VFPU 0` is not re-enabled through `defined()`.
+So the scalar path (VFPU off) is the one that loses the triangle, and the VFPU path was masking it. That is the
+opposite of what T1 concluded, and it is not explained by any single-file diff: the draw state is identical in both
+cases (matrices, `fmt=0x180`, stride 12, viewport and scissor, cull/depth/light/fog off, one list per frame).
 
-The adopted sincos stays. Benchmarks after the revert: **33.31 ms of work / 23.9 fps** (3D) and **20.27 / 29.6**
-(2D), against 37.33 / 20.0 and 20.51 before the sprint. The experiments remain in this commit's history, not in the
-driver.
+**Decision:** every driver-side change in this sprint was recorded as *dropped*, so the whole driver is reverted to
+its `52d1b8e5` content and re-tagged **`b36`** — the archive's behaviour is no longer `b35`, and a tag that says so
+would claim experiments it does not contain. The adopted sincos stays in `libraylib.a`.
+
+Benchmarks after the revert (`b36` driver, sincos library):
+
+| demo | before the sprint | after | note |
+|---|---|---|---|
+| 3D `psp_showcase` | 37.331 ms work / 20.0 fps | **33.713 ms / 20.0 fps** | −9.7 %, the sincos gain |
+| 2D `psp_2d_showcase` | 20.508 ms work / 29.6 fps | **21.562 ms / 29.6 fps** | **+5.1 %**: the VFPU thread attribute costs ~1 ms/frame and the demo never rotates, so it pays without gaining |
+
+That second row is the cost this sprint's adoption carries into 2D: `PSP_VFPU_SINCOS` buys a rotated-sprite win and
+charges a context-switch tax to every app that links it. Worth a dedicated decision (lazy init, or gate it on the
+app), not a silent default.
