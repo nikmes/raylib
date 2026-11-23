@@ -78,6 +78,8 @@ void sample_audio_sound_loading(void);
 void sample_audio_sound_multi(void);
 void sample_audio_stream_callback(void);
 void sample_audio_stream_effects(void);
+void sample_bench_showcase_3d(void);
+void sample_bench_showcase_2d(void);
 
 static Sample samples[] = {
     { "core", "2d_camera", sample_core_2d_camera },
@@ -155,9 +157,11 @@ static Sample samples[] = {
     { "audio", "sound_multi", sample_audio_sound_multi },
     { "audio", "stream_callback", sample_audio_stream_callback },
     { "audio", "stream_effects", sample_audio_stream_effects },
+    { "benchmarks", "showcase_3d", sample_bench_showcase_3d },
+    { "benchmarks", "showcase_2d", sample_bench_showcase_2d },
 };
 
-static const char *categories[] = { "core", "shapes", "textures", "audio" };
+static const char *categories[] = { "core", "shapes", "textures", "audio", "benchmarks" };
 #define CATEGORY_COUNT ((int)(sizeof(categories)/sizeof(categories[0])))
 #define SAMPLE_COUNT ((int)(sizeof(samples)/sizeof(samples[0])))
 
