@@ -6,7 +6,7 @@
  * sprint 007-009 batcher and every existing test stay untouched. See
  * docs/psp/phases/05-native-gu-backend.md.
  *
- * Written over sceGu rather than the GE registers directly: GU is the SDK's own command
+ * Written over sceGu rather than the GE registers directly: GU is the platform's own command
  * layer and already does the state shadowing pspGL hand-rolled.
  *
  * SPRINT 009/010 INVARIANTS THIS FILE MUST HONOUR
@@ -53,7 +53,7 @@
 #define PSPGU_TEXFMT_NAME (PSPGU_TEXFMT_AUTO? "auto" : "8888")
 
 // P10-S9 T1: TexSync (block frame-buffer read-out) before TexFlush (drop the
-// texture cache), the order used by the official billboard/monochrome samples.
+// texture cache), the order used by the reference billboard/monochrome samples.
 // Measured: it did not clear the band (656 vs 528 px), so the default stays 0;
 // =1 remains the measured arm for a later retest.
 #ifndef PSPGU_TEXSYNC_FIRST

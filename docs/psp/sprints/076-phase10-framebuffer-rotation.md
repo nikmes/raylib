@@ -31,9 +31,9 @@ that made the prior candidates look broken was measuring display lag, not a rend
 - `sceGuTexSync()` / `sceGuTexFlush()` order was tested as arm 3 and **rejected**: 656 px versus arm 2's 528 px
   at 2 frames. The default remains `TexFlush` then `TexSync`.
 
-**SDK cross-check (2026-11-23).** The official 6.60 libgu reference says `sceGuTexSync()` inserts a list command
+**GU cross-check (2026-11-23).** The GU reference (local notes §2) says `sceGuTexSync()` inserts a list command
 that blocks frame-buffer read-out, required for recursive drawing; `TexFlush()` is the separate cache flush. The
-official samples order them `TexSync` then `TexFlush` before sampling (`billboard:848`, `monochrome:633`), but that
+the reference samples order them `TexSync` then `TexFlush` before sampling (`billboard:848`, `monochrome:633`), but that
 order did not clear the measured band. `sceGuDrawBufferList()` is a **mid-list** command; `sceGuSwapBuffers()`
 returns the new drawing buffer and does not change the display buffer through `DrawBufferList`. The adopted fix
 uses the post-swap frame buffer, not a pre-swap saved pointer.
@@ -130,7 +130,7 @@ which changes the frame/list state for no additional benefit. Both measured 0 di
 black, but that region is outside the sampled panel's last 16 screen rows (the sampled band is GL y=16..31). The
 sampled draw buffer is clean; the capture band was display lag.
 
-**The rejected order.** The official `TexSync`→`TexFlush` order gave 656 px versus 528 px at 2 frames; it is not
+**The rejected order.** The `TexSync`→`TexFlush` order (local notes §2) gave 656 px versus 528 px at 2 frames; it is not
 adopted. The switch remains for future measurement.
 
 ### Task log (append-only)
@@ -221,7 +221,7 @@ Protocol: device only; one variable per arm; two identical captures; reset betwe
 
 The flicker is fixed and the apparent band was a measurement artifact. Candidate (b) saves this frame's rotating
 buffer without starting a list before the save. At 2 frames the corrected restore still shows the *previous*
-frame's buffer in the capture (528 px for (a), 656 px with the official order), which is why the earlier bisect
+frame's buffer in the capture (528 px for (a), 656 px with that order), which is why the earlier bisect
 looked like a regression. `BAND_DIAG` showed the draw buffer on frame 2 is clean; at 8 frames both candidates give
 **0 diff**. Candidate (b) is adopted because it is the smaller change.
 
