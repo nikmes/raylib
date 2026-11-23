@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `21f6ac50` (pspgu `b37`; docs commits on top of the b37 driver) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; `libraylib.a` `9a1d97210d7a1df6` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`); new probes opt-in |
-| Tasks | 0/8 done |
+| Tasks | 0/11 done |
 
 ## 0. Handover
 
@@ -42,6 +42,11 @@ the pair. One tag per sprint (`b38`), forced object removal before every driver 
 | Submission | fewer GE sync points | targeted two-lists-in-flight waits, 13-19 µs, no full wait (069/076); all `sceGeListSync`/`TexSync` sites not audited as a set | T6 |
 | Coherence | writeback and buffer lifetime | per-list 64-byte-aligned arenas, writeback before every GE pointer, texture pinning across two frames | T7 verification; no feature unless a bug is found |
 | Profiling | GE and CPU time separately | `work = avg - swap`; no GE time; `sceGeDrawSync(1)` is explicitly not a GE timer (see the guide) | **T1 first** |
+
+A second reference, **gLib2D** (LGPLv3), contributes three implementation choices not in the list above: its
+2D through-mode 16-bit-UV vertex format (T2b), list-local vertex memory via `sceGuGetMemory` (T6a), and 64-px
+sprite slicing (T5b). Its single-list full-sync model, global dither-off and scissor call are explicitly rejected
+in §6; only ideas are used, no code.
 
 ## 1. Objective
 
@@ -85,10 +90,13 @@ the Media Engine, audio, streaming, and any change to the 2D `batch_check` pixel
 |---|---|---|---|---|
 | T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `todo` | GE + CPU + swap reconstructs the b37 `avg` within one frame; two runs agree; no game change | — |
 | T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `todo` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | — |
+| T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `todo` | T1 split; 613-colour gate; drop if slower or any pixel moves | — |
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `todo` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | — |
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `todo` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | — |
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `todo` | clear-only work; 0 diff; drop if < 0.05 ms or no GE-time change | — |
+| T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
+| T6a | **List-local vertex memory.** gLib2D allocates every batch with `sceGuGetMemory` inside the direct list (glib2d.c:406). Replace the per-list 512 KiB arena with list-local vertices for one arm; measure CPU submission, main-RAM (2×512 KiB saved), `listUsedMax`/overflow and coherence. Only the memory placement is tested; gLib2D's single-list full sync is not | `todo` | T1 split; main-RAM ledger; `listUsedMax`; 0 diff; no list overflow; drop if no win or overflow | — |
 | T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
 | T8 | **Gates and close.** Full gate table, the pair twice, docs, commit, restore the chosen driver | `todo` | §7 all green; two runs; strict docs build | — |
 
@@ -125,6 +133,31 @@ are static; matrices stay in the parent list. Measure `sceGuCallList`/stall upda
 **T7 — coherence is verified, not assumed.** The driver already writes back vertices/indices/textures and keeps one
 arena per rotating list. The stress probe is the evidence; only a failing frame justifies code.
 
+### gLib2D reference (LGPLv3) — what to test and what not to copy
+
+Source: <https://github.com/libcg/gLib2D>, `glib2d.c`. Ideas only; do not copy code, comments or inline assembly.
+
+| gLib2D choice | disposition |
+|---|---|
+| `glib2d.c:375-440` — 2-vertex `GU_SPRITES`, 6-vertex `GU_TRIANGLES` for rotated; `GU_TRANSFORM_2D`, 32-bit position, `GU_TEXTURE_16BIT`, optional 8888 colour (20-byte textured vertex) | **T2b** — the only new ingredient is the 16-bit UV in through mode; the through-mode and compact-format priors are already negative |
+| `glib2d.c:406` — `sceGuGetMemory` for the batch inside the direct list | **T6a** — the strongest new idea: list-local vertices versus our 2×512 KiB arena |
+| `glib2d.c:39-45,428` — 512 KiB single direct list, 64-px sprite slicing | **T5b** for the slicing; the single list is rejected |
+| `glib2d.c:633-644` — `sceGuFinish` + `sceGuSync(0,0)` every frame | **Rejected** — our two rotating lists and targeted waits are measured better (069/076) |
+| `glib2d.c:264-266` — `GU_DITHER` globally off | **Rejected** — 5650 dither parity (012) |
+| `glib2d.c:1384` — `sceGuScissor(x, y, x+w, y+h)` | **Rejected, do not copy** — passes edges where width/height are required; our `gl_state.c:249` is correct |
+| `glib2d.c:588-589` — `GU_PSM_8888` always, optional swizzle | **No task** — ours already supports swizzle and per-texture 16-bit formats |
+
+### Hard rules
+
+- **LGPLv3 reference:** ideas only; no code, comments, macros or inline assembly copied.
+- **Instrument first:** T1 before any speed claim; a control and a control-again per point; one variable per run.
+- **Adoption threshold:** >0.05 ms work or measured GE time; 0 pixel diff on the gate table; otherwise drop with the
+  number.
+- **No re-opened decisions:** S16, swizzle, 5650, targeted waits and merged clean runs are baseline; compact 2D/s8
+  only as T2b/T2 on a new workload; CLUT4/8 only as T4; blit strips remain 023's null.
+- **No full GE wait:** `arenaOverflows=0`, `listUsedMax` within the list, no gLib2D-style per-frame `sceGuSync`.
+- **Forced-clean build:** `rm -f tools/pspgu/*.o tools/pspgu/libGL.a` before every driver build; one tag (`b38`).
+
 ## 7. Gates
 
 Every task keeps these green; a speed claim with a pixel change is a drop.
@@ -143,7 +176,7 @@ Every task keeps these green; a speed claim with a pixel change is a drop.
 ## 8. Exit criteria
 
 - [ ] T1's split is reproducible and used by every adoption decision
-- [ ] every T2-T7 task has a measured adopt/drop with a number and a pixel result
+- [ ] every task and sub-task (T2-T7, T2b, T5b, T6a) has a measured adopt/drop with a number and a pixel result
 - [ ] adopted changes: `b38`, gate table 0, pair re-run, docs updated
 - [ ] dropped changes: recorded here and in the Phase 10 table; no code left behind
 - [ ] full gates and a strict docs build pass
@@ -167,5 +200,7 @@ Pending — no device runs yet.
   077 (compact formats), 078 (merged clean runs), 079 (PGE/fast clear), 080/081 (state and reference checks)
 - `tools/pspgu/gl_draw.c` (`guPrimitive`, `guVertexFormat`, index paths), `gl_texture.c` (no CLUT),
   `gl_state.c` (clear), `egl.c` (list waits), `gl_matrix.c` (s16/s8 scale rule)
+- gLib2D — <https://github.com/libcg/gLib2D>, `glib2d.c` lines 39-45, 153, 241, 264-266, 375-440, 588-589, 633-644,
+  1384. LGPLv3; ideas only, no code copied.
 - public: PPSSPP GE documentation (vertex pipeline, display lists, raster rules), pspsdk `samples/gu` and
   `pspgu.h`. No vendor SDK documentation or code is used.
