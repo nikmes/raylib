@@ -1,4 +1,4 @@
-# Sprint 077 (P10-S10) — pspgu optimisation after the SDK audit
+# Sprint 077 (P10-S10) — pspgu optimisation after the GU audit
 
 | | |
 |---|---|
@@ -11,8 +11,8 @@
 
 ## 0. Handover
 
-**Situation.** The SDK audit (Phase 10 page, "Audit against the official SDK") measured where the 3D path actually
-spends its time and checked every official GU feature we do not use. This sprint turns that audit into work: it
+**Situation.** The GU audit (Phase 10 page, "Audit against the GU capabilities") measured where the 3D path
+actually spends its time and checked every GU feature we do not use. This sprint turns that audit into work: it
 attacks the two measured losses (the clip pass and the per-call path), adopts the VFPU where it wins, and decides
 the remaining structural question (per-call merging) with numbers. It does **not** re-open GUM.
 
@@ -39,14 +39,14 @@ the remaining structural question (per-call merging) with numbers. It does **not
    previous sprint had a number for it.
 4. **`sceGuBeginObject` was correctly left out.** It skips rasterisation, not submission; our CPU cull skips the
    whole draw (218 of 500 at N=500). Do not "fix" culling by moving it into the GE.
-5. **The official compact 2D vertex format was correctly rejected** for the exact pixel gate; it stays an opt-in
+5. **The compact 2D vertex format was correctly rejected** for the exact pixel gate; it stays an opt-in
    experiment only.
 6. **GUM was correctly rejected** — and the reason is now measured. Our own VFPU layer is the right home for the
    remaining math wins (P11-S12 / sprint 074), not a second matrix library.
 
 **Read before acting**, in this order:
 
-1. Phase 10 page, "Audit against the official SDK (2026-11-23)" — the findings and the priority list.
+1. Phase 10 page, "Audit against the GU capabilities (2026-11-23)" — the findings and the priority list.
 2. `../sprints/069-phase10-clip-cost-and-lit-parity.md` §5 T1, §7 — the clip design as shipped (classification
    cache, bbox shortcut, guard-band region, run emission, VFPU projection, staged output).
 3. `tools/pspgu/gl_draw.c` — `clipClassify`, `fetchPosition`, `clipProject`, `clipEmitClean`, `clipEmitDirty`;
@@ -142,7 +142,7 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 | T2 | **Cull: per-frame MVP + VFPU corners.** In `rmodels`, replace the two `glGetFloatv` and the two scalar 4×4 multiplies with a per-frame MVP cache, and transform the eight AABB corners with the same VFPU transform the clipper uses (scalar fallback). Keep the test conservative and the culled set unchanged | `todo` | `PSP_MATRIX_PROBE` cull 12 µs → ≤5 µs/call; CULL=0 vs CULL=1 captures 0 diff at N=1,000; frame delta measured | — |
 | T3 | **VFPU `glMultMatrixf`.** Replace the scalar 4×4 multiply in the GL stack with a VFPU matrix×matrix (same readiness and scalar fallback as T1's transform); the upload stays skipped when the composed matrix is unchanged | `todo` | `PSP_MATRIX_PROBE` `mult_ms` 3.5 µs → ≤1.5 µs/call; all captures 0 diff; sample thresholds hold | — |
 | T4 | **Per-call overhead: attribute, then decide instancing.** Attribute the ~51 µs/call baseline with counters (array setup, texture bind, matrix, driver entry) in a measurement-only build. Prototype merging identical `DrawMesh` calls behind `PSP_MERGE_DRAWS=1` and measure — including the lost per-object AABB shortcut — then adopt or drop with the number | `todo` | attribution in ms/frame; merged vs per-object work at N=100/500; 0 diff captures; decision text | — |
-| T5 | **Opt-in official formats (conditional).** `PSP_FAST2D=1`: batcher vertices as `GU_TRANSFORM_2D` + s16 position + 16-bit UV (colour stays 8888 for the gate). `GU_NORMAL_8BIT` for packed lit meshes. Both behind flags, both gated by the pixel captures; drop either with the number if parity or speed is against it | `todo` | per flag: capture diff vs default; work delta; decision | — |
+| T5 | **Opt-in compact formats (conditional).** `PSP_FAST2D=1`: batcher vertices as `GU_TRANSFORM_2D` + s16 position + 16-bit UV (colour stays 8888 for the gate). `GU_NORMAL_8BIT` for packed lit meshes. Both behind flags, both gated by the pixel captures; drop either with the number if parity or speed is against it | `todo` | per flag: capture diff vs default; work delta; decision | — |
 | T6 | **Re-close.** Full gates (2D, 060, MESH_SCENE, 061, 065, 066, `basic_shapes`), sample 300 frames ×2, docs (audit section updated with what landed), commit, restore pspGL | `todo` | every gate 0; sample thresholds; `2ab7378e` installed; strict build | — |
 
 ### Design notes

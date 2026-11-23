@@ -104,7 +104,7 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] Map fog, lighting and texture environment onto GE state; document explicitly what cannot be expressed
       — 062: lit/texenv/fog 0 diff vs pspGL; two-sided, COMBINE, EXP fog and per-pixel specular rejected
 - [x] Render-to-texture with explicit read-after-write tracking; synchronise only on a real dependency — 065:
-      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only (order revised in P10-S9 T1)
+      256×256 0 diff, dirty targets use `TexFlush`+`TexSync` only (official order tested and rejected in P10-S9 T1)
 - [x] Static bounds and GE-side object culling for scenes with many objects — 066: 917/1,000 culled,
       0 pixel change, 233.6 → 50 ms
 - [x] Tessellate large triangles on the CPU where the GE would drop them at the window edge — 066:
@@ -132,26 +132,26 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 - [x] vertex formats and their byte costs documented in the feature page — 060/061 tables
 - [x] what the GE cannot do is listed, with the fallback the engine takes — S3/S4/S5 limits tables
 
-## Audit against the official SDK (2026-11-23)
+## Audit against the GU capabilities (2026-11-23)
 
-Re-read the libgu reference and the shipped `gu/` samples, then A/B the current driver and reuse the 069/070
-measurements. All numbers are device-only; the SDK claims carry a public source (`psp_sdk_660` HTML) or the sample
-that uses the feature.
+Re-read the GU API surface and the samples shipped with our toolchain, then A/B the current driver and reuse the
+069/070 measurements. All numbers are device-only; every behaviour cited below is either measured here or comes
+from the toolchain's own headers and samples.
 
 **What is already at or above the samples' level.** Three framebuffers with two rotating direct lists, a per-list
 vertex arena and targeted waits (13-19 µs, no full GE wait at 60 fps); GE-native packed meshes on the direct path;
 guard-band clipping instead of the screen edge; VFPU projection in the clipper; texture shadow/residency; RTT over
-the GU draw buffer. The official `doublelist` sample is the closest reference and does less.
+the GU draw buffer. The toolchain's `doublelist` sample is the closest reference and does less.
 
-**SDK features we do not use, and why.**
+**GU features we do not use, and why.**
 
 | feature (public source) | why not |
 |---|---|
-| `sceGuBeginObject`/`EndObject` — hardware object culling (`gu/beginobject`) | It skips *rasterisation*, not submission. Our CPU cull removes the whole `DrawMesh` (submission **and** clip classification): at N=500, 218 of 500 calls never reach the driver. Replacing it with a GE-side box would submit all 500 at ~51 µs/call — about +11 ms before the GE does anything. Not recommended as a replacement. |
-| `GU_TRANSFORM_2D` with 16-bit vertices and 16-bit textures (`gu/blit`, `gu/blend`, `gu/doublelist`, `gu/font`) | The official 2D vertex is ~12 B with no 3D T&L; ours is 24 B (f32 uv/pos, 8888 colour) with a 2D ortho. The 2D pixel gate is exact (613 colours); the 061 s16-UV trial cost 37 px, and 5551 colour would move every shaded pixel. The 2D ceiling is CPU-bound in the batcher, not vertex-bound, so this is an opt-in experiment, not a default. |
+| `sceGuBeginObject`/`EndObject` — hardware object culling | It skips *rasterisation*, not submission. Our CPU cull removes the whole `DrawMesh` (submission **and** clip classification): at N=500, 218 of 500 calls never reach the driver. Replacing it with a GE-side box would submit all 500 at ~51 µs/call — about +11 ms before the GE does anything. Not recommended as a replacement. |
+| `GU_TRANSFORM_2D` with 16-bit vertices and 16-bit textures | A 2D vertex in that format is ~12 B with no 3D T&L; ours is 24 B (f32 uv/pos, 8888 colour) with a 2D ortho. The 2D pixel gate is exact (613 colours); the 061 s16-UV trial cost 37 px, and 5551 colour would move every shaded pixel. The 2D ceiling is CPU-bound in the batcher, not vertex-bound, so this is an opt-in experiment, not a default. |
 | `GU_NORMAL_8BIT`, `GU_COLOR_5551` | Bandwidth/quality trade on the packed meshes; the pack is one-time and the GE is not the bottleneck. Parity risk on the lit path. Low priority. |
-| `sceGuCopyImage` (libgu reference) | VRAM-to-VRAM only (the sample passes EDRAM pointers). It cannot DMA a main-RAM upload, so the 8-row band upload stands. |
-| `GU_CLIP_PLANES` (enabled by `gu/celshading`, `gu/envmap`) | This SDK documents no plane setter (`pspgu.h` exposes only the enable bit), so it cannot replace the software near-plane clip. |
+| `sceGuCopyImage` | VRAM-to-VRAM only (the sample passes EDRAM pointers). It cannot DMA a main-RAM upload, so the 8-row band upload stands. |
+| `GU_CLIP_PLANES` | The API exposes only the enable bit, with no documented plane setter, so it cannot replace the software near-plane clip. |
 
 **Where the time actually goes (measured).**
 
@@ -182,7 +182,7 @@ why 070 dropped it. The clip pass is the largest *driver-side* share and the per
   at N=500 → ~2 ms.
 - **P4 — compose/multiply (~6.5 µs/call).** Same VFPU transform; not GUM (070 T4: default GUM slower, VFPU GUM
   wins only the multiply and needs a VFPU/FPU fence — it raised FPU Exception (IV) in the probe).
-- **P5 — official-format experiments** (2D s16/5551, s8 normals) only behind flags and the pixel gates.
+- **P5 — compact-format experiments** (2D s16/5551, s8 normals) only behind flags and the pixel gates.
 
 ## Guidelines from the renderer blueprint
 
@@ -374,4 +374,4 @@ float, specified as **P10-S8 (070)**.
 | [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, guard-band clip region, VFPU projection, framebuffer-rotation fix, lit correction, sweep, re-close | **done** — 60 fps at N=50, work 11.56 ms, 0 overflows; 237/720 px; lit corrected; b30 |
 | [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | **done** — cache 13x (6.31 -> 0.49 µs/pos); GUM dropped (builders 1.48 µs/frame); cull ~12 µs/call = 20 % at N=500 |
 | [P10-S9 — Framebuffer rotation with render targets](../../sprints/076-phase10-framebuffer-rotation.md) | the deferred flicker: localize the RTT band, list break on unbind, 2-buffer fallback | written — T1 `TexSync`/`TexFlush` A/B implemented; device run pending |
-| [P10-S10 — pspgu optimisation after the SDK audit](../../sprints/077-phase10-pspgu-optimisation.md) | clip dedup/fused fetch, VFPU cull and multiply, per-call attribution, opt-in formats | written |
+| [P10-S10 — pspgu optimisation after the GU audit](../../sprints/077-phase10-pspgu-optimisation.md) | clip dedup/fused fetch, VFPU cull and multiply, per-call attribution, opt-in formats | written |
