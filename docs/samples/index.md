@@ -5,6 +5,22 @@ beside its screenshot; the capture shown is the first of a byte-identical pair, 
 match before it was trusted. The page grows with [Phase 13](../psp/phases/13-samples-porting/index.md) and will
 eventually cover all 227 upstream samples across the eight categories.
 
+## PSP
+
+Samples written for this port rather than ported from upstream raylib.
+
+| Sample | Screenshot |
+|---|---|
+| `psp_showcase` | ![psp_showcase](images/psp_showcase.png) |
+
+**`psp_showcase`** — a stress demo for the 3D path as it stands after sprint 078. 400 lit, textured cubes ride a
+sine wave under an orbiting camera, split into two merged colour runs (cool/warm), over a fogged checker ground,
+with a 2D HUD. It draws about **24 fps** at 480×272 on a PSP-1000, with **2 merged draws** for the 400 cubes and
+one per-object draw for the ground; the HUD reports the live count and frame rate.
+
+Source: `psp-tests/samples/psp/psp_showcase/`. Build with `make` (runs until power-off) or `make FRAMES=600`
+(stops after 600 frames, prints statistics and sleeps, which is what the capture workflow needs).
+
 ## Core
 
 | Sample | Screenshot |

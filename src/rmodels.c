@@ -1800,7 +1800,7 @@ static void pspMergeReplay(Mesh *mesh, int vc, int ic)
     PspMergeRun *r = &pspMergeRun;
 
     if (r->tex > 0) rlEnableTexture(r->tex); else rlDisableTexture();
-    rlColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
+    glColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
                (unsigned char)((r->color >> 16) & 0xFF), (unsigned char)((r->color >> 24) & 0xFF));
 
     glEnableClientState(GL_VERTEX_ARRAY);
@@ -1836,6 +1836,13 @@ void rlpspMergeFlush(void)
     vc = (int)r->mesh.vertexCount;
     ic = r->mesh.triangleCount*3;
 
+#if defined(PSP_MERGE_DIAG)
+    {
+        static int lg = 0;
+        if (lg < 6) { lg++; TRACELOG(RL_LOG_INFO, "MERGE run colour=%08x instances=%d", r->color, r->instances); }
+    }
+#endif
+
     // The run's vertices are world space; drawing them under a different modelview than the
     // one the instances were submitted under would move every instance in the run.
     glGetFloatv(GL_MODELVIEW_MATRIX, mv);
@@ -1845,7 +1852,10 @@ void rlpspMergeFlush(void)
         pspMergeBuild(&r->mesh, vc, ic);
 
         if (r->tex > 0) rlEnableTexture(r->tex); else rlDisableTexture();
-        rlColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
+        // glColor4ub, not rlColor4ub: under PSP_BATCH the latter only stores the 2D batch's
+        // colour and never reaches the GE, so the run would draw in whatever global colour
+        // the last 2D flush left behind (measured: every material rendered white).
+        glColor4ub((unsigned char)(r->color & 0xFF), (unsigned char)((r->color >> 8) & 0xFF),
                    (unsigned char)((r->color >> 16) & 0xFF), (unsigned char)((r->color >> 24) & 0xFF));
 
         glEnableClientState(GL_VERTEX_ARRAY);
@@ -2224,7 +2234,9 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 #endif
         }
 
-        rlColor4ub(material.maps[MATERIAL_MAP_DIFFUSE].color.r,
+        // glColor4ub for the same reason: a batched rlColor4ub is 2D batch state, not the
+        // GE global colour that a draw without a vertex-colour array actually uses.
+        glColor4ub(material.maps[MATERIAL_MAP_DIFFUSE].color.r,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.g,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.b,
                    material.maps[MATERIAL_MAP_DIFFUSE].color.a);

@@ -385,6 +385,16 @@ quantum, not a measurement artefact. Two honest caveats: the grid reshapes as N 
 work is not monotonic at every step (N=190 costs less than N=180), and N=140 passes on the median while dropping
 frames in p95 — it is listed as borderline, not as a pass.
 
+**A demo found a colour bug the gates could not.** The PSP showcase (Samples → PSP) rendered every material
+white: under `PSP_BATCH`, `rlColor4ub` only writes the 2D batch's colour and never reaches the GE, so a draw
+without a vertex-colour array kept whatever global colour the last 2D flush left behind. `DrawMesh` and the merged
+flush now call `glColor4ub` directly. Every gate uses white materials, which is why the pixel gates never saw it;
+`scene_3d` and `basic_shapes` were re-captured after the fix and remain 0 diff.
+
+It also caught the same class of thing in the material API: `Material.maps` is a pointer, so
+`Material warm = cool;` shares the map array and the second colour overwrites the first. The demo now calls
+`LoadMaterialDefault()` twice.
+
 **Recorded, not redefined:**
 
 - `bunnymark` N=50 ×2: median **16.712 / 16.718 ms** against the frozen ≤16.683 — **over by 0.03 ms** (0.2 %).
