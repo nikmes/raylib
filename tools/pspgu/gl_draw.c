@@ -16,6 +16,8 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
+#include <malloc.h>
 
 #include "pspgu_internal.h"
 
@@ -193,72 +195,175 @@ static void packVertex(unsigned char *dst, const PspGuLayout *l, int index)
 
 static void *arenaAllocHard(unsigned int bytes);
 
+#ifndef PSPGU_NO_CLIP
 typedef struct {
     float x, y, z;
     float u, v;
     float nx, ny, nz;
     float r, g, b, a;
+    float cx, cy, cz, cw;       // clip space, computed once and carried through the clipper
 } ClipV;
 
-static void fetchClipVertex(ClipV *out, int index)
+// The PSP CPU has no scalar FPU: a soft-float 4x4 transform is ~5,000 cycles per vertex,
+// and at 1,536 vertices a frame that alone was the 20 ms clip bill measured in sprint 069.
+// VFPU does it in one instruction. The matrix is transposed once per draw into `vm` so
+// that vtfm4 (which consumes rows) reproduces the column-major convention used above.
+static void clipProjectScalar(const float vm[16], const ClipV *v, float out[4])
 {
-    memset(out, 0, sizeof(*out));
+    out[0] = vm[0]*v->x + vm[1]*v->y + vm[2]*v->z + vm[3];
+    out[1] = vm[4]*v->x + vm[5]*v->y + vm[6]*v->z + vm[7];
+    out[2] = vm[8]*v->x + vm[9]*v->y + vm[10]*v->z + vm[11];
+    out[3] = vm[12]*v->x + vm[13]*v->y + vm[14]*v->z + vm[15];
+}
 
-    if (pspgu.clientBits & PSPGU_CS_TEXCOORD)
+// CP2 (the VFPU) is not usable until the calling thread has the VFPU attribute.
+// pspvfpu_initcontext() sets it. It is referenced weakly so an app that does not link
+// libpspvfpu still links against this archive and simply gets the scalar fallback.
+extern void *pspvfpu_initcontext(void) __attribute__((weak));
+static int clipVfpuReady = -1;
+
+static int clipVfpuInit(void)
+{
+    if (clipVfpuReady < 0)
+    {
+        if (pspvfpu_initcontext != NULL)
+        {
+            pspvfpu_initcontext();
+            clipVfpuReady = 1;
+        }
+        else clipVfpuReady = 0;
+    }
+
+    return clipVfpuReady;
+}
+
+static void clipProject(const float vm[16], const ClipV *v, ClipV *o)
+{
+    float p[4] __attribute__((aligned(16)));
+    float r[4] __attribute__((aligned(16)));
+
+    if (!clipVfpuReady)
+    {
+        float s[4];
+        clipProjectScalar(vm, v, s);
+        o->cx = s[0]; o->cy = s[1]; o->cz = s[2]; o->cw = s[3];
+        return;
+    }
+
+    p[0] = v->x; p[1] = v->y; p[2] = v->z; p[3] = 1.0f;
+
+    __asm__ volatile(
+        "lv.q C000, 0(%0)\n"
+        "lv.q C010, 16(%0)\n"
+        "lv.q C020, 32(%0)\n"
+        "lv.q C030, 48(%0)\n"
+        "lv.q C100, 0(%1)\n"
+        "vtfm4.q C200, M000, C100\n"
+        "sv.q C200, 0(%2)\n"
+        : : "r"(vm), "r"(p), "r"(r) : "memory");
+
+    o->cx = r[0]; o->cy = r[1]; o->cz = r[2]; o->cw = r[3];
+}
+
+// vm = row-major view of the column-major MVP, i.e. vm[4r+c] = mvp[4c+r].
+static void clipBuildVm(const float mvp[16], float vm[16])
+{
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++)
+            vm[4*r + c] = mvp[4*c + r];
+}
+
+static inline __attribute__((always_inline))
+void fetchPosition(float *x, float *y, float *z, int index)
+{
+    if (arrVertex.type == GL_SHORT)
+    {
+        int stride = arrVertex.stride? arrVertex.stride : (arrVertex.size*2);
+        const short *p = (const short *)(arrVertex.ptr + (size_t)index*stride);
+        *x = p[0]/32768.0f; *y = p[1]/32768.0f;
+        *z = (arrVertex.size >= 3)? p[2]/32768.0f : 0.0f;
+    }
+    else
+    {
+        int stride = arrVertex.stride? arrVertex.stride : (arrVertex.size*4);
+        const float *p = (const float *)(arrVertex.ptr + (size_t)index*stride);
+        *x = p[0]; *y = p[1]; *z = (arrVertex.size >= 3)? p[2] : 0.0f;
+    }
+}
+
+// `attrs` is false for the classification pass, which only needs the clip-space position.
+// Reading and converting nine attributes per vertex dominated that pass on a CPU with no
+// FPU: the colour path alone was four soft-float multiplies.
+static inline __attribute__((always_inline))
+void fetchClipVertex(ClipV *out, int index, const float vm[16], int attrs)
+{
+    if (attrs && (pspgu.clientBits & PSPGU_CS_TEXCOORD))
     {
         const float *uv = (const float *)(arrTexCoord.ptr + (arrTexCoord.stride? index*arrTexCoord.stride : index*8));
         out->u = uv[0]; out->v = uv[1];
     }
 
-    if (pspgu.clientBits & PSPGU_CS_NORMAL)
+    if (attrs && (pspgu.clientBits & PSPGU_CS_NORMAL))
     {
         const float *n = (const float *)(arrNormal.ptr + (arrNormal.stride? index*arrNormal.stride : index*12));
         out->nx = n[0]; out->ny = n[1]; out->nz = n[2];
     }
 
-    if (pspgu.clientBits & PSPGU_CS_COLOR)
+    if (!attrs)
     {
+        // Never packed: only the clipper's position and clip coords are read.
+    }
+    else if (pspgu.clientBits & PSPGU_CS_COLOR)
+    {
+        // Multiply by the reciprocal: a soft-float divide costs hundreds of cycles on
+        // this CPU, and four of them per vertex were most of the clip classification bill.
+        const float inv = 1.0f/255.0f;
         const unsigned char *c = arrColor.ptr + (arrColor.stride? index*arrColor.stride : index*4);
-        out->r = c[0]/255.0f; out->g = c[1]/255.0f; out->b = c[2]/255.0f; out->a = c[3]/255.0f;
+        out->r = c[0]*inv; out->g = c[1]*inv; out->b = c[2]*inv; out->a = c[3]*inv;
     }
     else
     {
-        out->r = pspgu.cr/255.0f; out->g = pspgu.cg/255.0f;
-        out->b = pspgu.cb/255.0f; out->a = pspgu.ca/255.0f;
+        const float inv = 1.0f/255.0f;
+        out->r = pspgu.cr*inv; out->g = pspgu.cg*inv;
+        out->b = pspgu.cb*inv; out->a = pspgu.ca*inv;
     }
 
     if (arrVertex.type == GL_SHORT)
     {
-        const short *p = (const short *)(arrVertex.ptr + (arrVertex.stride? (size_t)index*arrVertex.stride : 0));
+        int stride = arrVertex.stride? arrVertex.stride : (arrVertex.size*2);
+        const short *p = (const short *)(arrVertex.ptr + (size_t)index*stride);
         out->x = p[0]/32768.0f;
         out->y = p[1]/32768.0f;
         out->z = (arrVertex.size >= 3)? p[2]/32768.0f : 0.0f;
     }
     else
     {
-        const float *p = (const float *)(arrVertex.ptr + (arrVertex.stride? (size_t)index*arrVertex.stride : 0));
+        int stride = arrVertex.stride? arrVertex.stride : (arrVertex.size*4);
+        const float *p = (const float *)(arrVertex.ptr + (size_t)index*stride);
         out->x = p[0]; out->y = p[1]; out->z = (arrVertex.size >= 3)? p[2] : 0.0f;
     }
+
+    clipProject(vm, out, out);
 }
 
-static void clipTransform(const float m[16], const ClipV *v, float out[4])
-{
-    out[0] = m[0]*v->x + m[4]*v->y + m[8]*v->z + m[12];
-    out[1] = m[1]*v->x + m[5]*v->y + m[9]*v->z + m[13];
-    out[2] = m[2]*v->x + m[6]*v->y + m[10]*v->z + m[14];
-    out[3] = m[3]*v->x + m[7]*v->y + m[11]*v->z + m[15];
-}
+// Guard-band planes, not the screen edge. A vertex is dropped by the GE at GU coordinate
+// 4096, measured as NDC |x| = 8.53 and |y| = 15.0; GU clips anything inside that band to
+// the viewport correctly by itself. Clipping at the screen edge therefore re-clipped most
+// of the ground every frame for no pixel gain. 8.0 on both axes stays inside the measured
+// band, and the near/far planes are unchanged - they are what handles geometry behind the
+// camera, which the guard band cannot express.
+#define PSPGU_CLIP_XY 8.0f
 
-static float clipDistance(const float c[4], int plane)
+static float clipDistance(const ClipV *v, int plane)
 {
     switch (plane)
     {
-        case 0: return c[0] + c[3];
-        case 1: return c[3] - c[0];
-        case 2: return c[1] + c[3];
-        case 3: return c[3] - c[1];
-        case 4: return c[2] + c[3];
-        default: return c[3] - c[2];
+        case 0: return PSPGU_CLIP_XY*v->cw + v->cx;
+        case 1: return PSPGU_CLIP_XY*v->cw - v->cx;
+        case 2: return PSPGU_CLIP_XY*v->cw + v->cy;
+        case 3: return PSPGU_CLIP_XY*v->cw - v->cy;
+        case 4: return v->cz + v->cw;
+        default: return v->cw - v->cz;
     }
 }
 
@@ -277,28 +382,48 @@ static ClipV clipLerp(const ClipV *a, const ClipV *b, float t)
     o.g = a->g + (b->g - a->g)*t;
     o.b = a->b + (b->b - a->b)*t;
     o.a = a->a + (b->a - a->a)*t;
+    o.cx = a->cx + (b->cx - a->cx)*t;
+    o.cy = a->cy + (b->cy - a->cy)*t;
+    o.cz = a->cz + (b->cz - a->cz)*t;
+    o.cw = a->cw + (b->cw - a->cw)*t;
     return o;
 }
 
-static int clipPolygon(ClipV *poly, int n, const float mvp[16], ClipV *out)
+static int clipPolygon(ClipV *poly, int n, ClipV *out)
 {
     ClipV a[8], b[8];
 
     if (n > 8) n = 8;
     memcpy(a, poly, (size_t)n*sizeof(ClipV));
 
+    // Only planes the triangle actually crosses can change it: clipping against a plane
+    // that keeps every vertex does nothing, and one that rejects every vertex rejects the
+    // triangle. On this CPU's soft float each plane pass costs thousands of cycles, and a
+    // typical triangle crosses one plane, so skipping the rest is most of the saving.
+    unsigned int planes = 0;
+
+    for (int plane = 0; plane < 6; plane++)
+    {
+        int in = 0;
+
+        for (int i = 0; i < n; i++)
+            if (clipDistance(&a[i], plane) >= 0.0f) in++;
+
+        if (in == 0) return 0;                  // entirely outside: reject
+        if (in < n) planes |= (1u << plane);    // crosses: must clip
+    }
+
     for (int plane = 0; plane < 6; plane++)
     {
         int m = 0;
+
+        if (!(planes & (1u << plane))) continue;
         for (int i = 0; i < n; i++)
         {
             ClipV *p = &a[i];
             ClipV *q = &a[(i + 1)%n];
-            float cp[4], cq[4];
-            clipTransform(mvp, p, cp);
-            clipTransform(mvp, q, cq);
-            float dp = clipDistance(cp, plane);
-            float dq = clipDistance(cq, plane);
+            float dp = clipDistance(p, plane);
+            float dq = clipDistance(q, plane);
 
             if (dp >= 0.0f) b[m++] = *p;
             if ((dp >= 0.0f) != (dq >= 0.0f))
@@ -340,114 +465,393 @@ static void packClipVertex(unsigned char *dst, const PspGuLayout *l, const ClipV
     }
 }
 
-static int clipNeeds(const unsigned short *idx, int count, int first)
+// Classification is done once per chunk and cached: clipNeeds must decide whether the
+// draw needs clipping at all, and drawClipped then has to know which triangles are dirty.
+// Running the per-vertex transform twice was half the clip cost measured in sprint 069.
+static unsigned char *clipDirty;
+static int clipDirtyCap;
+static int clipDirtyTris;
+static const unsigned short *clipDirtyIdx;
+static int clipDirtyFirst;
+static int clipDirtyValid;
+
+static int clipDirtyEnsure(int tris)
+{
+    if (tris <= clipDirtyCap) return 1;
+
+    unsigned char *next = (unsigned char *)malloc((size_t)tris);
+
+    if (next == NULL) return 0;
+    free(clipDirty);
+    clipDirty = next;
+    clipDirtyCap = tris;
+
+    return 1;
+}
+
+static unsigned long long clipCleanRuns, clipDirtyRuns, clipVertsIn;
+static int clipCalls;
+
+static int clipClassify(const unsigned short *idx, int count, int first)
 {
     float mvp[16];
+    float vm[16] __attribute__((aligned(16)));
+    int tris = count/3;
+    int dirty = 0;
 
-    if (!(arrVertex.type == GL_FLOAT || arrVertex.type == GL_SHORT)) return 0;
+    if ((tris <= 0) || !clipDirtyEnsure(tris)) return 0;
+
     pspguGetMVP(mvp);
+    clipBuildVm(mvp, vm);
+    clipVfpuInit();
 
-    for (int i = 0; i < count; i++)
+    // Convexity short-circuit: the draw's axis-aligned bounds contain every vertex, so if
+    // all eight corners are inside the clip region the whole draw is clean and the
+    // per-vertex scan can be skipped. Read the bounds with the position only; eight matrix
+    // transforms are far cheaper than one transform per vertex on the common small mesh.
     {
-        int index = idx? idx[i] : (first + i);
-        ClipV v; float c[4];
-        fetchClipVertex(&v, index);
-        clipTransform(mvp, &v, c);
-        float w = c[3];
-        if ((c[0] < -w) || (c[0] > w) || (c[1] < -w) || (c[1] > w) ||
-            (c[2] < -w) || (c[2] > w)) return 1;
+        float mnx = 3.4e38f, mny = 3.4e38f, mnz = 3.4e38f;
+        float mxx = -3.4e38f, mxy = -3.4e38f, mxz = -3.4e38f;
+
+        for (int i = 0; i < count; i++)
+        {
+            int index = idx? idx[i] : (first + i);
+            float x, y, z;
+            fetchPosition(&x, &y, &z, index);
+            if (x < mnx) mnx = x;
+            if (x > mxx) mxx = x;
+            if (y < mny) mny = y;
+            if (y > mxy) mxy = y;
+            if (z < mnz) mnz = z;
+            if (z > mxz) mxz = z;
+        }
+
+        int allIn = 1;
+
+        for (int c = 0; c < 8 && allIn; c++)
+        {
+            ClipV cv;
+            cv.x = (c & 1)? mxx : mnx;
+            cv.y = (c & 2)? mxy : mny;
+            cv.z = (c & 4)? mxz : mnz;
+            clipProject(vm, &cv, &cv);
+
+            for (int pl = 0; pl < 6; pl++)
+                if (clipDistance(&cv, pl) < 0.0f) { allIn = 0; break; }
+        }
+
+        if (allIn)
+        {
+            clipDirtyValid = 0;
+            return 0;
+        }
     }
 
-    return 0;
+    // One-time convention check: the VFPU path must agree with the scalar formula the
+    // rest of the driver (and every recorded capture) is based on.
+    {
+        static int checked = 0;
+        if (!checked)
+        {
+            checked = 1;
+            float worst = 0.0f;
+            for (int v = 0; v < 3; v++)
+            {
+                ClipV cv;
+                float a[4], b[4];
+                fetchClipVertex(&cv, idx? idx[v] : (first + v), vm, 0);
+                clipProjectScalar(vm, &cv, a);
+                b[0] = cv.cx; b[1] = cv.cy; b[2] = cv.cz; b[3] = cv.cw;
+                for (int k = 0; k < 4; k++)
+                {
+                    float d = a[k] - b[k];
+                    if (d < 0) d = -d;
+                    if (d > worst) worst = d;
+                }
+            }
+            pspguLog("clip: vfpu transform check maxerr=%f", (double)worst);
+        }
+    }
+
+    for (int t = 0; t < tris; t++)
+    {
+        int inside = 1;
+
+        for (int v = 0; v < 3; v++)
+        {
+            ClipV cv;
+
+            // The clip coords are computed at fetch time; the polygon clipper reuses
+            // them instead of re-running the matrix six times per edge.
+            fetchClipVertex(&cv, idx? idx[t*3 + v] : (first + t*3 + v), vm, 0);
+
+            if (inside)
+            {
+                float x = cv.cx, y = cv.cy, z = cv.cz, w = cv.cw;
+                if ((PSPGU_CLIP_XY*w + x < 0.0f) || (PSPGU_CLIP_XY*w - x < 0.0f) ||
+                    (PSPGU_CLIP_XY*w + y < 0.0f) || (PSPGU_CLIP_XY*w - y < 0.0f) ||
+                    (z + w < 0.0f) || (w - z < 0.0f)) inside = 0;
+            }
+        }
+
+        clipDirty[t] = (unsigned char)(inside? 0 : 1);
+        dirty += (inside? 0 : 1);
+    }
+
+    clipDirtyTris = tris;
+    clipDirtyIdx = idx;
+    clipDirtyFirst = first;
+    clipDirtyValid = 1;
+    clipVertsIn += (unsigned long long)tris*3;
+
+    return dirty;
+}
+
+static int clipNeeds(const unsigned short *idx, int count, int first)
+{
+    if (!(arrVertex.type == GL_FLOAT || arrVertex.type == GL_SHORT)) return 0;
+
+    return clipClassify(idx, count, first) > 0;
+}
+
+// Clipped output is staged in main RAM first, then copied into the arena at its exact
+// size. A triangle through six planes can become a nine-gon, so the old "six vertices
+// per triangle" allocation was an overflow waiting to happen; 18 vertices per triangle is
+// the fan bound for an eight-sided polygon.
+#define CLIP_STAGE_TRIS 64
+#define CLIP_STAGE_VERTS_PER_TRI 18
+static unsigned char *clipStage;
+static unsigned int clipStageBytes;
+
+static unsigned char *clipStageEnsure(unsigned int stride)
+{
+    unsigned int need = (unsigned int)CLIP_STAGE_TRIS * CLIP_STAGE_VERTS_PER_TRI * stride;
+
+    if (need > clipStageBytes)
+    {
+        unsigned char *next = (unsigned char *)memalign(64, need);
+
+        if (next == NULL) return NULL;
+        free(clipStage);
+        clipStage = next;
+        clipStageBytes = need;
+    }
+
+    return clipStage;
+}
+
+static void clipEmitClean(int t0, int t1, unsigned int prim, unsigned int fmt,
+                          const PspGuLayout *layout, const unsigned short *idx,
+                          int first)
+{
+    int n = (t1 - t0)*3;
+
+    if (n <= 0) return;
+
+    if (idx == NULL)
+    {
+        // Consecutive vertices: no index buffer is needed at all.
+        if (isDirectLayout(fmt, layout))
+        {
+            const unsigned char *base = (const unsigned char *)arrVertex.ptr - layout->offVtx;
+
+            pspguBeginFrame();
+            applyGlobalColor(fmt);
+            sceGuDrawArray(prim, fmt, n, NULL,
+                           base + (size_t)(first + t0*3)*layout->stride);
+        }
+        else
+        {
+            unsigned int bytes = (unsigned int)n*layout->stride;
+            unsigned char *verts = (unsigned char *)pspguArenaAlloc(bytes);
+            if (verts == NULL) verts = (unsigned char *)arenaAllocHard(bytes);
+            if (verts == NULL) return;
+
+            for (int i = 0; i < n; i++)
+                packVertex(verts + (size_t)i*layout->stride, layout, first + t0*3 + i);
+
+            pspguWriteback(verts, bytes);
+            applyGlobalColor(fmt);
+            sceGuDrawArray(prim, fmt, n, NULL, verts);
+        }
+        return;
+    }
+
+    if (isDirectLayout(fmt, layout))
+    {
+        // GE-native vertices stay in the client buffer; only the run's indices are copied,
+        // because the list may outlive the caller's index array.
+        unsigned int bytes = (unsigned int)n*sizeof(unsigned short);
+        unsigned short *rb = (unsigned short *)pspguArenaAlloc(bytes);
+        if (rb == NULL) rb = (unsigned short *)arenaAllocHard(bytes);
+        if (rb == NULL) return;
+
+        for (int i = 0; i < n; i++) rb[i] = idx[t0*3 + i];
+
+        const unsigned char *base = (const unsigned char *)arrVertex.ptr - layout->offVtx;
+
+        pspguWriteback(rb, bytes);
+        applyGlobalColor(fmt);
+        sceGuDrawArray(prim, fmt, n, rb, base);
+        return;
+    }
+
+    {
+        // Converting layout: pack the run's vertex range once, rebase its indices into it.
+        int lo = 0x7FFFFFFF, hi = -1;
+
+        for (int i = 0; i < n; i++)
+        {
+            int v = idx[t0*3 + i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+
+        int range = hi - lo + 1;
+        unsigned int vbytes = (unsigned int)range*layout->stride;
+        unsigned int ibytes = (unsigned int)n*sizeof(unsigned short);
+        unsigned char *verts = (unsigned char *)pspguArenaAlloc(vbytes);
+        unsigned short *rb = (unsigned short *)pspguArenaAlloc(ibytes);
+
+        if ((verts == NULL) || (rb == NULL))
+        {
+            verts = (unsigned char *)arenaAllocHard(vbytes);
+            rb = (unsigned short *)arenaAllocHard(ibytes);
+            if ((verts == NULL) || (rb == NULL)) return;
+        }
+
+        for (int i = 0; i < range; i++)
+            packVertex(verts + (size_t)i*layout->stride, layout, lo + i);
+        for (int i = 0; i < n; i++) rb[i] = (unsigned short)(idx[t0*3 + i] - lo);
+
+        pspguWriteback(verts, vbytes);
+        pspguWriteback(rb, ibytes);
+        applyGlobalColor(fmt);
+        sceGuDrawArray(prim, fmt, n, rb, verts);
+    }
+}
+
+static void clipEmitDirty(int t0, int t1, unsigned int prim, unsigned int fmt,
+                          const PspGuLayout *cl, const unsigned short *idx, int first,
+                          const float vm[16])
+{
+    unsigned int cfmt = (fmt & ~GU_VERTEX_BITS) | GU_VERTEX_32BITF;
+    unsigned char *stage = clipStageEnsure(cl->stride);
+
+    if (stage == NULL) return;
+
+    for (int b = t0; b < t1; b += CLIP_STAGE_TRIS)
+    {
+        int e = b + CLIP_STAGE_TRIS;
+        int outVerts = 0;
+
+        if (e > t1) e = t1;
+
+        for (int k = b; k < e; k++)
+        {
+            ClipV in[3], poly[8];
+
+            for (int v = 0; v < 3; v++)
+                fetchClipVertex(&in[v], idx? idx[k*3 + v] : (first + k*3 + v), vm, 1);
+
+            int n = clipPolygon(in, 3, poly);
+
+            if (n < 3) continue;
+
+            for (int f = 1; f < n - 1; f++)
+            {
+                packClipVertex(stage + (size_t)outVerts*cl->stride, cl, &poly[0]);
+                packClipVertex(stage + (size_t)(outVerts + 1)*cl->stride, cl, &poly[f]);
+                packClipVertex(stage + (size_t)(outVerts + 2)*cl->stride, cl, &poly[f + 1]);
+                outVerts += 3;
+            }
+        }
+
+        if (outVerts > 0)
+        {
+            unsigned int bytes = (unsigned int)outVerts*cl->stride;
+            unsigned char *out = (unsigned char *)pspguArenaAlloc(bytes);
+            if (out == NULL) out = (unsigned char *)arenaAllocHard(bytes);
+            if (out == NULL) return;
+
+            memcpy(out, stage, bytes);
+            pspguWriteback(out, bytes);
+            applyGlobalColor(cfmt);
+            sceGuDrawArray(prim, cfmt, outVerts, NULL, out);
+        }
+    }
 }
 
 static void drawClipped(unsigned int prim, unsigned int fmt, int count, int first,
                         const unsigned short *idx)
 {
     float mvp[16];
+    float vm[16] __attribute__((aligned(16)));
     unsigned int cfmt = (fmt & ~GU_VERTEX_BITS) | GU_VERTEX_32BITF;
-    PspGuLayout cl;
-    const int chunkTris = 256;
+    PspGuLayout cl, layout;
 
     vertexLayout(cfmt, &cl);
+    vertexLayout(fmt, &layout);
     pspguGetMVP(mvp);
+    clipBuildVm(mvp, vm);
 
     int tris = count/3;
+    if (tris <= 0) return;
+
+    pspguBeginFrame();
+
+    // clipNeeds ran on exactly this chunk; its dirty bits are reused here. The identity
+    // check is a guard against a future caller using the clip path without the pre-scan.
+    if (!clipDirtyValid || (clipDirtyTris != tris) || (clipDirtyIdx != idx) ||
+        (clipDirtyFirst != first))
+        clipClassify(idx, count, first);
+
+    clipDirtyValid = 0;
+
+    // Runs are emitted in index order, so depth and blend order are unchanged: a clean
+    // triangle drawn before a dirty one stays before it.
     int t = 0;
-    int clipped = 0;
 
     while (t < tris)
     {
-        int nTris = tris - t;
-        if (nTris > chunkTris) nTris = chunkTris;
+        int t0 = t;
 
-        unsigned int bytes = (unsigned int)nTris*6*cl.stride;
-        unsigned char *buf = (unsigned char *)pspguArenaAlloc(bytes);
-        if (buf == NULL)
+        if (!clipDirty[t])
         {
-            buf = (unsigned char *)arenaAllocHard(bytes);
-            if (buf == NULL) return;
+            while ((t < tris) && !clipDirty[t]) t++;
+            clipEmitClean(t0, t, prim, fmt, &layout, idx, first);
+            clipCleanRuns++;
         }
-
-        int outVerts = 0;
-        for (int k = 0; k < nTris; k++)
+        else
         {
-            int base = (t + k)*3;
-            ClipV in[3], poly[8];
-            for (int v = 0; v < 3; v++)
-            {
-                int index = idx? idx[base + v] : (first + base + v);
-                fetchClipVertex(&in[v], index);
-            }
-
-            // Fast path: a triangle whose vertices are all inside needs no planes.
-            int inside = 1;
-            for (int v = 0; v < 3; v++)
-            {
-                float cp[4];
-                clipTransform(mvp, &in[v], cp);
-                for (int pl = 0; pl < 6; pl++)
-                    if (clipDistance(cp, pl) < 0.0f) { inside = 0; break; }
-                if (!inside) break;
-            }
-
-            if (inside)
-            {
-                for (int v = 0; v < 3; v++)
-                    packClipVertex(buf + (size_t)(outVerts + v)*cl.stride, &cl, &in[v]);
-                outVerts += 3;
-                continue;
-            }
-
-            int n = clipPolygon(in, 3, mvp, poly);
-            if (n < 3) continue;
-
-            for (int f = 1; f < n - 1; f++)
-            {
-                packClipVertex(buf + (size_t)outVerts*cl.stride, &cl, &poly[0]);
-                packClipVertex(buf + (size_t)(outVerts + 1)*cl.stride, &cl, &poly[f]);
-                packClipVertex(buf + (size_t)(outVerts + 2)*cl.stride, &cl, &poly[f + 1]);
-                outVerts += 3;
-            }
-            clipped++;
+            while ((t < tris) && clipDirty[t]) t++;
+            clipEmitDirty(t0, t, prim, fmt, &cl, idx, first, vm);
+            clipDirtyRuns++;
         }
-
-        if (outVerts > 0)
-        {
-            pspguWriteback(buf, (unsigned int)outVerts*cl.stride);
-            applyGlobalColor(cfmt);
-            sceGuDrawArray(prim, cfmt, outVerts, NULL, buf);   // re-fanned, non-indexed
-        }
-        t += nTris;
     }
 
-    static int logged = 0;
-    if (clipped && (logged < 4))
     {
-        pspguLog("clip tris=%d fmt=0x%x stride=%u", clipped, cfmt, cl.stride);
-        logged++;
+        static int logged = 0;
+
+        if (logged < 4)
+        {
+            int dirty = 0;
+            for (int i = 0; i < tris; i++) dirty += clipDirty[i];
+            pspguLog("clip tris=%d clean=%d dirty=%d fmt=0x%x", tris, tris - dirty, dirty, cfmt);
+            logged++;
+        }
+    }
+
+    if (++clipCalls == 60)
+    {
+        pspguLog("clip: draws=%d clean_runs=%llu dirty_runs=%llu verts=%llu",
+                 clipCalls, clipCleanRuns, clipDirtyRuns, clipVertsIn);
+        clipCalls = 0;
+        clipCleanRuns = clipDirtyRuns = clipVertsIn = 0;
     }
 }
+
+#endif
 
 // Vertices live in the current list's arena, never in a shared scratch buffer: with two
 // lists in flight a single scratch buffer would be rewritten by frame N while frame N-1

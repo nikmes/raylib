@@ -247,3 +247,22 @@ test scenes; the bake is measured and deliberately not promoted.
   follow-up if bake cost ever matters.
 - Per-pixel specular and shadows are out of scope; document the per-vertex limit in the sample docs.
 
+## Correction — sprint 069, 2026-11-22
+
+The lit gate ("0 diff, 9,804 px") above **cannot be reproduced** and is withdrawn as a parity claim.
+
+- The exact combination from this sprint — the 062 app, the 062 library and the 062 driver, all rebuilt from
+  `288d33bb` — renders the lit cube at **248 / 128 / 160** on the top / front / right faces, 9,804 px away from
+  both the archived pspGL capture and the archived "pspgu" capture. pspGL (`2ab7378e`) renders **192 / 56–64 /
+  80–88** and still reproduces its archived capture byte-for-byte; the two archived captures are identical to
+  each other.
+- pspGL is not a valid oracle here: 56 on a face that receives the 0x40 ambient term (64) cannot come from an
+  additive Lambert model. The 062 "0 diff" therefore did not measure two correct implementations agreeing.
+- The archive-swap bug recorded in `tools/pspgu-build.sh` (a pspgu install could overwrite the pspGL backup) is
+  the only explanation consistent with all three measurements: the archived "pspgu" lit run measured pspGL.
+- What stands from this sprint: the lighting API and its state mapping, `sceGuSpecular`, the texture-environment
+  modes, the fog mapping (each still gated), and the bake comparison. Only the lit byte-for-byte claim is withdrawn;
+  the lit gate now records the measured face colours.
+
+Sprint 069 §7 and the Phase 10 page carry the numbers.
+

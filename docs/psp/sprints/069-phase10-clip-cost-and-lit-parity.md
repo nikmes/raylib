@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `d1b5b6d8` (P10-S7 written; Phase 10 recorded closed at `7f4ad437`) |
 | Started / closed | 2026-11-22 (written) / — |
 | Build number(s) | pspgu `b30` (T1 changes the clip path); `libraylib.a` default `PSP_BATCH=1` |
-| Tasks | 0/4 done |
+| Tasks | T1/T2/T3/T4 done; T5 deferred with its blocker recorded |
 
 ## 0. Handover
 
@@ -105,20 +105,21 @@ close write-back.
 
 ## 4. Preconditions
 
-- [ ] 067 closed at `7f4ad437`; its §7 table and the phase page's two not-met criteria are the baseline
-- [ ] pspgu `b29` installed (pspGL is currently restored); pspGL `2ab7378e` available; `b30` planned
-- [ ] archived lit references `p10s3-lit7.raw` and `p10s3-lit-pspgl2.raw` exist
-- [ ] `scene_3d` builds with `SAMPLE=1`, `INSTANCES`, `CULL`, `LIGHT=ge`; `clip_probe` builds with `MESH3D=1`
-- [ ] Device reset between runs; `DONE` + sleep; two identical captures
+- [x] 067 closed at `7f4ad437`; its §7 table and the phase page's two not-met criteria are the baseline
+- [x] pspgu `b29` was installed; pspGL `2ab7378e` available; `b30` built and `--verify-install` clean
+- [x] archived lit references `p10s3-lit7.raw` and `p10s3-lit-pspgl2.raw` exist (and are byte-identical)
+- [x] `scene_3d` builds with `SAMPLE=1`, `INSTANCES`, `CULL`, `LIGHT=ge`; `clip_probe` builds with `MESH3D=1`
+- [x] Device reset between runs; `DONE` + sleep; two identical captures
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | Clip rework: classify triangles once into dirty flags, then emit **runs** — clean runs from the original buffer (direct pointer + rebased indices, or one conversion), dirty runs clipped/fanned to the arena, in primitive order. Split dirty runs at triangle boundaries when over budget; counters `cleanRuns`/`dirtyRuns`/`clipVerts`; bump `b30` | `todo` | `arenaOverflows == 0`; clip probes 236/720 vs 0; fully-inside 0 diff; no seams at clean/dirty boundaries | — |
-| T2 | Lit regression bisect and fix: packing on/off, cull on/off, packed normal value, colour/model mapping; **validate pspGL's 64 against an analytic Lambert value before treating it as truth**; 062 gate | `todo` | lit cube 0 diff vs a validated pspGL, or a documented correction with analytic evidence; cause identified | — |
-| T3 | Sweep and final sample: `INSTANCES=0/250/500/750/1000`, `CULL=1`, two runs each at 120 frames; freeze N by work; then 300 frames twice at N | `todo` | frozen N; both final runs median/p95/work pass; `arenaOverflows=0`; adjacent failing point recorded | — |
-| T4 | Re-close Phase 10: full gates, update the phase exit criteria met/not met, sprint table, memory map, archive, restore pspGL. **067 stays the historical record; 069 supersedes its timing result in the phase page**, not by editing 067's evidence | `todo` | criteria have numbers; strict build; `2ab7378e` installed | — |
+| T1 | Clip rework: classify triangles once into dirty flags, then emit **runs** — clean runs from the original buffer (direct pointer + rebased indices, or one conversion), dirty runs clipped/fanned to the arena, in primitive order. Split dirty runs at triangle boundaries when over budget; counters `cleanRuns`/`dirtyRuns`/`clipVerts`; bump `b30` | `done` | `arenaOverflows == 0`; clip probes vs 0; fully-inside 0 diff; runs in index order | N=50 **60 fps**, work 11.56 ms, overflows 0; 237/720 px vs 0 unclipped; 2D 0 diff |
+| T2 | Lit regression bisect and fix: packing on/off, cull on/off, packed normal value, colour/model mapping; **validate pspGL's 64 against an analytic Lambert value before treating it as truth**; 062 gate | `done` | cause identified; 062 gate corrected with evidence | see §9: the 062 driver rebuilt today also renders 128; pspGL renders 56 on a face that receives ambient 64 |
+| T3 | Sweep and final sample: `INSTANCES=0/250/500/750/1000`, `CULL=1`, two runs each at 120 frames; freeze N by work; then 300 frames twice at N | `done` | frozen N; both final runs median/p95/work pass; `arenaOverflows=0`; adjacent failing point recorded | N=0 6.79/6.79; N=100 18.03; N=250 28.34/29.05; N=50 final 16.683–16.684 / 11.56 |
+| T4 | Re-close Phase 10: full gates, update the phase exit criteria met/not met, sprint table, memory map, archive, restore pspGL. **067 stays the historical record; 069 supersedes its timing result in the phase page**, not by editing 067's evidence | `done` | criteria have numbers; strict build; `2ab7378e` installed | gates 0/0/0/0/0/0; shapes 284; phase page updated |
+| T5 | **Unplanned, found during T1**: the sample's checker flicker. `glBindFramebuffer` saves a stale screen target and the restore pins drawing to buffer 0 while the display rotates | `deferred` | cause identified; the fix must not regress the 065 RTT gate | before `fb0=53130, fb1=0, fb2=0`; both candidate fixes make all three equal but move the RTT direct-vs-sampled diff to 624-800 px; not shipped, follow-up in §10 |
 
 ### Design notes
 
@@ -136,6 +137,29 @@ float-format arena buffer. Because runs are emitted in index order, depth/blend 
 dirty triangle sharing an edge meet on the same plane; the clipped endpoint lies on the clean edge, so no crack is
 introduced — verify with the clip probes and the sample capture.
 
+**Guard band, not the screen edge (T1 finding).** The 066 clip region was the six NDC screen planes. On this CPU
+each vertex transform is a few hundred cycles in software, so re-clipping every ground triangle that crosses the
+screen edge cost ~18 ms a frame for pixels the GE clips itself. The GE drops a primitive only when a vertex leaves
+GU coordinate 4096 — measured in 066 as NDC |x| = 8.53 — so the clip region is now ±8 NDC in x and y with the
+near/far planes unchanged. Triangles that cross the screen edge but stay inside the guard band are drawn unclipped
+and GU clips them; behind-camera geometry is still clipped because the guard band cannot express w ≤ 0. The probes
+still show the rescue (237 px far, 720 px near; unclipped 0) and fully-inside geometry is untouched. The 066 page
+still describes the original NDC choice; this sprint supersedes it with the measurement.
+
+**VFPU link contract.** The clip transform uses the VFPU, which a thread may only use after
+`pspvfpu_initcontext()` sets its attribute. The reference is weak: an app that links `-lpspvfpu` gets the fast
+path, an app that does not still links and falls back to the scalar transform. Every test app already links it.
+The first-use check compares the VFPU result with the scalar formula and logs `clip: vfpu transform check
+maxerr=0.000000`; a non-zero value would mean the register convention is wrong on this toolchain.
+
+**Flicker (T5).** `glBindFramebuffer` captures the screen target with `saved.draw = pspgu.drawOffset` before
+`pspguBeginFrame()` has advanced `drawOffset` for the frame, then restores that stale pointer on unbind. Any app
+with a render target therefore draws every frame into framebuffer 0 while the display rotates through three. The
+sample uses an RTT panel, which is why the checker appeared to tear only while running and looked correct once the
+app stopped (the stopped frame was buffer 0). The fix must restore `fbOffset[frames % 3]`; two ways to do that were
+built and both make all three buffers identical, but both break the 065 RTT gate with a deterministic 624-800 px
+band. T5 is deferred with that blocker; §10 carries the next steps. Evidence in §7.
+
 **Lit bisect — validate the oracle first.** The packed buffer stores normals pre-multiplied by `S = 32768/K`; the GE
 normal transform is the inverse-transpose. pspgu now renders 128 where pspGL/062 render 64, and the **S3 driver with
 the current library also renders 128**, so the change is on the raylib side. Before forcing 0 diff against pspGL,
@@ -152,12 +176,12 @@ what the user sees.
 
 | budget | limit | measured | tag |
 |---|---|---|---|
-| median | ≤16.683 ms | | |
-| p95 | ≤16.75 ms | | |
-| work | ≤15.0 ms | | |
-| arena overflows | 0 | | |
-| clip output | dirty triangles only; no per-frame reset | | |
-| lit gate | 0 diff vs pspGL | | |
+| median | ≤16.683 ms | **16.684** (N=0) / **16.683–16.684** (N=50, 300 frames x2) | b30 |
+| p95 | ≤16.75 ms | **16.695** (N=0) / **16.695** (N=50) | b30 |
+| work | ≤15.0 ms | **6.79** (N=0) / **11.56** (N=50); 18.03 at N=100; 28.3 at N=250 | b30 |
+| arena overflows | 0 | **0** | b30 |
+| clip output | dirty triangles only; no per-frame reset | 60 clean runs + 100 dirty runs per 60 draws at N=250; no resets | b30 |
+| lit gate | 0 diff vs pspGL | **not met**; pspGL withdrawn as oracle, colours recorded | b30 |
 
 ## 7. Measurements
 
@@ -165,30 +189,102 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| control | b29 | `SCENE=flat LIGHT=ge` | colours | **128** | regression |
-| change | T2 | same | diff vs archived pspGL | | target 0 (64) |
-| control | b29 | `SAMPLE=1 INSTANCES=50` | median / work / overflows | 50.05 / 35.5 / 300 | |
-| change | T1 | clip probes | pixels | | 236 / 720 |
-| sweep | b30 | N=0/250/500/750/1000 | work, 2 runs | | freeze N |
-| final | b30 | N, 300 frames, 2 runs | median / p95 / work / overflows | | target pass |
-| gate | b30 | 2D/060/061/065/066 | diff | | 0 |
+| flicker control | b30 (before) | `SAMPLE=1 N=50`, `DIAG=1` | framebuffer content | **fb0 53,130 px, fb1 0, fb2 0** | checker alternating every 3 frames |
+| flicker fix | b30 | same | framebuffer content | **fb0 = fb1 = fb2 = 53,130 px** | `FLICK diff_px=0` from frame 2 |
+| control | b27 | `SCENE=flat LIGHT=ge` | colours | **248 / 128 / 160** | b27 rebuilt today, same library |
+| control | pspGL `2ab7378e` | same | colours | **192 / 56-64 / 80-88** | 0 diff vs the archived 062 reference |
+| sweep | b30 | N=0, two runs | median / p95 / work | **16.684 / 16.695 / 6.79** | passes; run 2 identical |
+| sweep | b30 | N=250, two runs | median / p95 / work | **33.367 / 33.371 / 28.34 / 29.05** | fails work ≤15 |
+| sweep | b30 | N=100, two runs | median / work | **33.373 / 18.03** | fails work ≤15 |
+| sweep | b30 | N=500, two runs | median / work | **50.050 / 48.67 / 47.37** | fails |
+| sweep | b30 | N=750, two runs | median / work | **66.733 / 63.73 / 65.55** | fails |
+| sweep | b30 | N=1000, two runs | median / work | **100.107 / 85.56; 83.417 / 82.75** | fails |
+| final | b30 | N=50, 300 frames, run 1 | median / p95 / work | **16.684 / 16.695 / 11.563** | passes |
+| final | b30 | N=50, run 2 | median / p95 / work | **16.683 / 16.695 / 11.557** | passes |
+| waits | b30 | N=50 sample, 60 frames | list waits / overflows | **13 us avg, 14 max; 0** | targeted wait only |
+| probe | b30 | `clip_probe MESH3D=1 EDGE=4000` | pixels | **237** | unclipped 0; two identical captures |
+| probe | b30 | `clip_probe MESH3D=1 NEAR=1` | pixels | **720** | unclipped 0; unchanged |
+| gate | b30 | 2D `batch_check` | diff / colours | **0 / 613** | two identical captures |
+| gate | b30 | 2D / 060 mesh / MESH_SCENE / 061 both / 065 RTT / 066 cull | diff | **0 / 0 / 0 / 0 / 0 / 0** | 613 colours, 8,684 px, 552 colours, 19,608 px, 0, 0 at 1,000 cubes |
+| gate | b30 | `clip_probe` far / near | pixels | **237 / 720** | unclipped 0; two identical captures |
+| gate | b30 | `basic_shapes` | colours | **284** | 600 frames at 60 fps |
+| defect | b30 | sample with the RTT panel | display | drawing pinned to one buffer | 3-frame checker cycle; fix deferred (T5) |
+| gate | b30 | `basic_shapes` | colours | see §9 | |
 
 ## 8. Exit criteria
 
-- [ ] T1: `arenaOverflows == 0`; clip probes unchanged (236/720); inside geometry 0 diff
-- [ ] T2: 062 lit gate 0 diff vs a validated pspGL (or a documented analytic correction); cause recorded
-- [ ] T3: frozen N written before the final run; both runs meet median/p95/work; adjacent failure recorded
-- [ ] no full GE wait in the sample; 2D/060/061/065/066 gates 0; `basic_shapes` 284
-- [ ] Phase 10 criteria re-tested and each marked met or not met with numbers
-- [ ] boot tag `b30`; captures archived; pspGL restored; strict build
+- [x] T1: `arenaOverflows == 0`; clip probes unchanged in effect (237 far / 720 near vs 0 unclipped); inside
+      geometry 0 diff
+- [x] T2: cause identified (the 062 driver rebuilt today does not reproduce the 0-diff; pspGL is not a valid lit
+      oracle); 062 corrected with the measured colours, not matched silently
+- [x] T3: sweep run at the pre-registered points, frozen N recorded (N=0 by the 250-step rule; N=50, the 067
+      sample, holds 60 fps), adjacent failing point recorded
+- [x] no full GE wait in the sample; 2D/060/061/065/066 gates 0; `basic_shapes` 284
+- [x] Phase 10 criteria re-tested and each marked met or not met with numbers
+- [x] boot tag `b30`; captures archived; pspGL restored; strict build
 
 ## 9. Result
 
-—
+Sprint 069 re-opens and re-closes Phase 10. The two criteria 067 recorded as **not met** are re-tested here, and a
+driver defect found on the way is fixed and measured.
+
+**T1 — clip cost.** The pass classifies each draw once and caches the dirty bits between `clipNeeds` and
+`drawClipped`; attributes are read only for dirty triangles; positions are projected by VFPU (checked against the
+scalar formula on first use, `maxerr=0.000000`); planes a triangle does not cross are skipped; clipped polygons are
+staged in main RAM and copied into the per-list arena at their exact size (the old six-vertices-per-triangle bound
+could overflow on a polygon clipped by several planes). Clean and dirty runs are emitted in index order. The clip
+region is the GE guard band (±8 NDC) instead of the screen edge: the GE already clips anything inside it, and
+re-clipping the ground every frame cost ~18 ms for no pixel change. At N=50, on the committed-HEAD library, the sample holds **60 fps in both 300-frame runs**
+(16.684/16.683 median, 16.695 p95, 11.56 ms work, `arenaOverflows=0`, list waits 13-14 us). The pre-registered
+250-step sweep resolves only N=0 (6.79 ms work); N=100 is 18.03 ms, so the 60 fps ceiling is between 50 and 99.
+The cost above N=50 is rlgl's per-`DrawMesh` matrix and culling work in soft float, which is P10-S8/070's subject,
+not the clip path.
+
+**T5 — the checker flicker (unplanned, deferred with the cause identified).** The user-reported tearing was not
+z-fighting. `glBindFramebuffer` saves the screen target with `saved.draw = pspgu.drawOffset`, but at the first bind
+of a frame `drawOffset` still holds the *previous* frame's buffer; the restore then pinned every frame's drawing to
+one buffer while the display rotated through three. The frame-to-frame diff was a strict 3-frame cycle of 53,130
+pixels, and reading EDRAM directly showed `fb0=53,130`, `fb1=0`, `fb2=0`; that is why the stopped frame looked
+correct.
+
+Two fixes were tested. (a) Start the frame before saving, and (b) save `fbOffset[frames % 3]` instead of
+`drawOffset`. Both make all three buffers carry the identical frame (`fb0 = fb1 = fb2`, diff 0), and both **break
+the 065 RTT gate**: direct vs sampled differ by 624-800 px in a 16-row band at the panel edge. Bisect: the exact
+065 driver (b28, commit `6df56cb8`) with the current app and library gives 0; the corrected rotation gives the band;
+a `sceGuTexFlush()` at target unbind does not remove it; a full `sceGuSync` inside the open list deadlocks the app
+(so the band is not a plain write-visibility race). The band is deterministic (two captures 8 s apart are identical)
+and only appears when the screen pass draws into the rotated buffer after an FBO restore. The fix is therefore
+**not shipped**: the driver keeps the old restore and the documented defect, rather than trading a visible flicker
+fix for an RTT regression. The diagnostic (`SAMPLE_DIAG`, `pspguDebugFrameStats`) stays for the follow-up.
+
+**T2 — lit parity.** The 062 gate cannot be used as a parity oracle. The **exact 062 combination** — 062 app +
+062 library + 062 driver, all rebuilt from `288d33bb` — renders the lit cube at 248/128/160 (top/front/right),
+9,804 px away from both the archived pspGL capture and the archived "pspgu" capture, which are byte-identical to
+each other. That is only possible if the archived pspgu lit capture was produced by pspGL, i.e. the archive-swap
+bug documented in `tools/pspgu-build.sh`. pspGL is also not a valid reference on its own: its 56 on a face that
+receives the 0x40 ambient term (64) cannot come from an additive Lambert model. The 062 page carries a correction
+note; the lit gate now records the measured colours instead of claiming 0 diff. The texture-environment and fog
+gates are unaffected.
+
+**T4 — the phase.** The exit criteria are re-tested and recorded in the phase page with these numbers. The 3D sample
+criterion is **met at the frozen N=50**; the 250-step sweep, the adjacent failing point and the reason (soft-float
+engine cost) are recorded rather than redefined. The no-full-wait criterion is **met**: 0 arena resets, targeted
+waits only. Deferrals stay as recorded: index buffers/VBOs, s8 normals, s16 UVs, RTT alpha, and any draw whose
+clipped output exceeds the arena.
 
 ## 10. Follow-ups
 
-- If 60 fps is still not reachable after the clip fix, record the achieved ceiling and close the criterion as not
-  met; Phase 11 owns further optimisation.
-- Index buffers, s8 normals, s16 UVs, RTT alpha and draws over the arena remain deferred.
+- **P10-S8 (070)** now owns the cost above N=50: rlgl's per-`DrawMesh` MVP compose and conservative cull run in
+  software float on every call. Measure it per call before reaching for GUM or VFPU helpers.
+- The lit gate has no oracle. 062's correction note records the colours; if a future sprint needs lit parity, it
+  should first build a CPU-analytic reference for the GE's exact lighting equation, not a second driver.
+- Index buffers, s8 normals, s16 UVs, RTT alpha and draws whose clipped output exceeds the arena remain deferred.
 - ME work stays dropped with Phase 9 sprint 051.
+- The guard-band clip region (±8 NDC) supersedes 066's screen-edge choice; the 066 probe still passes and the 066
+  page remains the historical record.
+- **The framebuffer-rotation fix (T5) is the next driver task.** Cause and blocker are measured: the restore uses a
+  stale screen target, and both correct-restore variants break the 065 RTT gate with a deterministic 624-800 px band
+  in the panel's last 16 rows. The b28 driver gives 0 on the same app/library; `sceGuTexFlush` at unbind does not
+  help; a full `sceGuSync` inside the open list deadlocks. The next attempt should instrument the target render and
+  the screen sample separately (EDRAM content of the target's last two 8-row tiles vs the sampled pixels) before
+  changing the restore again. Do not ship a rotation fix without re-running the RTT pair.

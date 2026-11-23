@@ -550,6 +550,41 @@ void pspguVramReport(const char *when)
     pspguTextureReport(when);
 }
 
+// Diagnostic: read every rotating framebuffer straight out of EDRAM and count the pixels
+// that are not black, plus how many scanlines carry real content. A static scene must
+// produce the same numbers for all three buffers; a buffer that never received the frame
+// stands out immediately. Reads uncached EDRAM, so only call it from a probe.
+void pspguDebugFrameStats(const char *tag)
+{
+    for (int i = 0; i < PSP_GU_FB_COUNT; i++)
+    {
+        if (pspgu.bufQid[i] >= 0) sceGeListSync(pspgu.bufQid[i], PSP_GE_LIST_DONE);
+    }
+
+    const unsigned char *base = (const unsigned char *)sceGeEdramGetAddr();
+
+    for (int i = 0; i < PSP_GU_FB_COUNT; i++)
+    {
+        const unsigned short *p = (const unsigned short *)(base + (unsigned int)pspgu.fbOffset[i]);
+        unsigned int nonblack = 0, rows = 0, sum = 0;
+
+        for (int y = 0; y < pspgu.height; y++)
+        {
+            unsigned int row = 0;
+
+            for (int x = 0; x < pspgu.width; x++)
+            {
+                unsigned short v = p[(size_t)y*pspgu.stride + x];
+                if (v != 0) { nonblack++; row++; }
+                sum += v;
+            }
+            if (row > 100) rows++;
+        }
+
+        pspguLog("FBSTAT %s fb%d nonblack=%u rows=%u sum=%u", tag, i, nonblack, rows, sum);
+    }
+}
+
 // Per-list vertex memory. The pointer handed to sceGuDrawArray must stay valid until the
 // GE has finished that list; with two lists in flight, one arena per list is what makes
 // that true without a full wait.

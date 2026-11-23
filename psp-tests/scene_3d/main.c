@@ -17,12 +17,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
 #include <GL/gl.h>
 #include "psp_counters.h"
+
+#ifdef SAMPLE_DIAG
+void pspguDebugFrameStats(const char *tag);
+#endif
 
 PSP_MODULE_INFO("scene_3d", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
@@ -269,6 +274,55 @@ int main(void)
                 EndMode3D();
                 if (panel.id != 0) DrawTexture(panel.texture, 216, 16, WHITE);
             EndDrawing();
+
+#ifdef SAMPLE_DIAG
+            {
+                static unsigned char prev[480*272*4];
+                static unsigned char cur[480*272*4];
+                static int have = 0;
+                glReadPixels(0, 0, 480, 272, GL_RGBA, GL_UNSIGNED_BYTE, cur);
+                if (have)
+                {
+                    int diff = 0;
+                    int band[17] = { 0 };
+                    int minx = 480, maxx = -1, miny = 272, maxy = -1, samples = 0;
+                    for (int y = 0; y < 272; y++)
+                    {
+                        for (int x = 0; x < 480; x++)
+                        {
+                            int i = (y*480 + x)*4;
+                            if ((cur[i] != prev[i]) || (cur[i+1] != prev[i+1]) || (cur[i+2] != prev[i+2]))
+                            {
+                                diff++;
+                                band[y/16]++;
+                                if (x < minx) minx = x;
+                                if (x > maxx) maxx = x;
+                                if (y < miny) miny = y;
+                                if (y > maxy) maxy = y;
+                                if (samples < 4)
+                                {
+                                    TraceLog(LOG_INFO, "FLICKPX x=%d y=%d prev=%d,%d,%d cur=%d,%d,%d",
+                                             x, y, prev[i], prev[i+1], prev[i+2], cur[i], cur[i+1], cur[i+2]);
+                                    samples++;
+                                }
+                            }
+                        }
+                    }
+                    TraceLog(LOG_INFO, "FLICKBB frame=%d x=%d..%d y=%d..%d", frame, minx, maxx, miny, maxy);
+                    TraceLog(LOG_INFO, "FLICK frame=%d diff_px=%d y0=%d y1=%d y2=%d y3=%d y4=%d y5=%d y6=%d y7=%d y8=%d y9=%d y10=%d y11=%d y12=%d y13=%d y14=%d y15=%d y16=%d",
+                             frame, diff, band[0],band[1],band[2],band[3],band[4],band[5],band[6],band[7],
+                             band[8],band[9],band[10],band[11],band[12],band[13],band[14],band[15],band[16]);
+                }
+                memcpy(prev, cur, sizeof(cur));
+                have = 1;
+                if ((frame >= 1) && (frame <= 5))
+                {
+                    char tag[16];
+                    snprintf(tag, sizeof(tag), "f%d", frame);
+                    pspguDebugFrameStats(tag);
+                }
+            }
+#endif
 
             frameTimes[frame] = (float)GetFrameTime();
             sum += frameTimes[frame];

@@ -40,6 +40,9 @@ endif
 ifeq ($(PANEL),0)
     CFLAGS += -DNO_PANEL
 endif
+ifeq ($(DIAG),1)
+    CFLAGS += -DSAMPLE_DIAG
+endif
 ifeq ($(CAMREL),1)
     CFLAGS += -DCAMREL_ARM
 endif

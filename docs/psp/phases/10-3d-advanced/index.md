@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| State | **reopened** — P10-S7 targets the two not-met criteria and the lit regression; P10-S8 written for the camera/matrix cost question (067 recorded the baseline) |
+| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 carries the remaining per-DrawMesh CPU cost |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
-| Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **not met**: 20 fps, one sync/frame (067) |
+| Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **met at the frozen N=50**: median 16.683 ms, p95 16.695, work 11.56 ms, 0 arena resets (069). The 60 fps ceiling is between N=50 and N=99; the cost above it is engine-side soft float (P10-S8) |
 
 ## What this phase is about
 
@@ -124,10 +124,11 @@ decision. The existing depth/matrix evidence (sprint 014 T8, sprint 013) is soun
 
 ## Exit criteria
 
-- [ ] 3D sample holds the target frame rate, with frame-time percentiles — **not met**: N=50, median 50.05 ms,
-      p95 50.06, work 35.5 ms (≈20 fps); 067 §9
-- [ ] no per-frame full GE wait; hazards synchronise individually — **not met in the sample**: 300 arena-reset
-      syncs over 300 frames; the 2D/3D gates outside it show 0 overflows
+- [x] 3D sample holds the target frame rate, with frame-time percentiles — **met**: N=50, 300 frames, two runs,
+      median 16.684/16.683 ms, p95 16.695, work 11.563/11.557 ms. Ceiling between N=50 and N=99 (N=100 work
+      18.03 ms); 069 §7
+- [x] no per-frame full GE wait; hazards synchronise individually — **met in the sample**: 0 arena resets; list
+      waits 13-14 µs, display waits 19 µs; 069 §7
 - [x] vertex formats and their byte costs documented in the feature page — 060/061 tables
 - [x] what the GE cannot do is listed, with the fallback the engine takes — S3/S4/S5 limits tables
 
@@ -282,11 +283,31 @@ cannot supply (largest free 106,496 B at creation) — rejected with numbers, no
 
 ## Phase result
 
-Phase 10 closes with the renderer paths built and measured, but **two exit criteria are not met and are recorded as
-such**: the frozen 3D sample runs at ≈20 fps (median 50.05 ms, work 35.5 ms at N=50), and its steady frame takes one
-full GE sync per frame from the clip pass exhausting the vertex arena. The vertex-format/byte-cost table and the
-GE-limits list are complete. The 062 lit gate also regressed during the later sprints (pspgu 128 vs pspGL 64) and is
-carried into Phase 11 with that evidence. This is the honest state of the phase, not a redefined pass.
+Phase 10 closes with all four criteria met. The two that sprint 067 recorded as not met were re-opened and re-tested
+in sprint 069, not redefined:
+
+- **Frame rate.** The frozen sample (N=50 cubes, 16×16 ground, torus, RTT panel, one directional light, fog) holds
+  **60 fps**: median 16.684/16.683 ms, p95 16.695, work 11.56 ms over two 300-frame runs, with `arenaOverflows=0`
+  and targeted waits of 13-14 µs. The 60 fps ceiling is between N=50 and N=99 (N=100 is 18.03 ms work). The
+  pre-registered 250-step sweep (N=0/250/500/750/1000) is recorded in 069 §7; its only passing point is N=0, which
+  is why the finer N=100 bracket is the one that locates the ceiling.
+- **No full GE wait.** The 300 arena-reset syncs 067 measured are gone: the clip pass classifies once, reads
+  attributes only for dirty triangles, projects with VFPU, clips only triangles that leave the GE guard band, and
+  stages exact-size output in the per-list arena.
+- **The checker flicker** the user reported was a driver defect found during this work: `glBindFramebuffer` saves a
+  stale screen target, pinning drawing to one framebuffer while the display rotates through three. The cause is
+  confirmed by reading all three framebuffers directly, but the fix is **deferred**: both correct-restore variants
+  break the 065 RTT gate with a 624-800 px band, and the sprint records the blocker rather than shipping a
+  regression (069 T5 and §10).
+
+The **lit "parity" claim from 062 is withdrawn**: the exact 062 combination renders 248/128/160 where the archived
+pspGL capture reads 192/56-64/80-88, and the archived "pspgu" capture is byte-identical to pspGL — the archive-swap
+bug, not a lighting match. The lighting, texture-environment and fog implementations stand; only the byte-for-byte
+claim does not. 062 carries the correction note.
+
+Deferred and recorded: index buffers/VBOs, s8 normals, s16 UVs, RTT alpha, and any draw whose clipped output
+exceeds the arena. The remaining CPU cost above N=50 is rlgl's per-`DrawMesh` matrix and culling work in soft
+float, specified as **P10-S8 (070)**.
 
 ## Sprints and features
 
@@ -298,5 +319,5 @@ carried into Phase 11 with that evidence. This is the honest state of the phase,
 | [P10-S4 — Render-to-texture](../../sprints/065-phase10-render-to-texture.md) | weak FBO routing, 8192-aligned targets, explicit RAW, depth, readback, VRAM budget | **done** — 256² 0 diff; 300×200 rejected |
 | [P10-S5 — Culling, guard-band clipping and the ME option](../../sprints/066-phase10-culling-and-guard-band.md) | NDC clip + fan, conservative culling, ME dropped | **done** — 236/720 vs 0; 917 culled, 0 diff |
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | **done** — 20 fps; two criteria recorded not met |
-| [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, lit bisect, sweep, re-close | written |
+| [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, guard-band clip region, VFPU projection, framebuffer-rotation fix, lit correction, sweep, re-close | **done** — 60 fps at N=50, work 11.56 ms, 0 overflows; 237/720 px; lit corrected; b30 |
 | [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | written |

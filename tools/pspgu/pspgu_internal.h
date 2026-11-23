@@ -43,7 +43,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b29"
+#define PSPGU_BUILD "b30"
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -214,6 +214,7 @@ void pspguVramStats(PspGuVramStats *out);
 unsigned int pspguVramFreeBytes(void);      // probes use these two for the churn self-check
 unsigned int pspguVramLargestBytes(void);
 void pspguVramReport(const char *when);     // VRAM line + residency line
+void pspguDebugFrameStats(const char *tag); // diagnostic: content of each rotating framebuffer
 
 // Render-target attachment (sprint 065): promote to an 8192-aligned block, drop the
 // shadow, pin. Returns the GU fields the FBO needs.
