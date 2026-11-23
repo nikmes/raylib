@@ -282,7 +282,7 @@ clipped output exceeds the arena.
 - ME work stays dropped with Phase 9 sprint 051.
 - The guard-band clip region (±8 NDC) supersedes 066's screen-edge choice; the 066 probe still passes and the 066
   page remains the historical record.
-- **The framebuffer-rotation fix (T5) is the next driver task.** Cause and blocker are measured: the restore uses a
+- **The framebuffer-rotation fix (T5) is [sprint 076 (P10-S9)](076-phase10-framebuffer-rotation.md).** Cause and blocker are measured: the restore uses a
   stale screen target, and both correct-restore variants break the 065 RTT gate with a deterministic 624-800 px band
   in the panel's last 16 rows. The b28 driver gives 0 on the same app/library; `sceGuTexFlush` at unbind does not
   help; a full `sceGuSync` inside the open list deadlocks. The next attempt should instrument the target render and

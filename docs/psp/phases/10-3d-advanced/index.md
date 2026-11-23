@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 carries the remaining per-DrawMesh CPU cost |
+| State | **closed** — P10-S7 re-tested the two criteria: the frozen sample is at 60 fps with no full GE wait. The lit "parity" claim is withdrawn with a corrected 062 note. P10-S8 carries the remaining per-DrawMesh CPU cost; P10-S9 (written) resolves the deferred framebuffer-rotation defect |
 | Depends on | Phase 6 (textures and VRAM under control) and phase 7 (2D paths settled) |
 | Exit criterion | a 3D sample at target frame rate with no per-frame full GE wait — **met at the frozen N=50**: median 16.683 ms, p95 16.695, work 11.56 ms, 0 arena resets (069). The 60 fps ceiling is between N=50 and N=99; the cost above it is engine-side soft float (P10-S8) |
 
@@ -298,7 +298,7 @@ in sprint 069, not redefined:
   stale screen target, pinning drawing to one framebuffer while the display rotates through three. The cause is
   confirmed by reading all three framebuffers directly, but the fix is **deferred**: both correct-restore variants
   break the 065 RTT gate with a 624-800 px band, and the sprint records the blocker rather than shipping a
-  regression (069 T5 and §10).
+  regression (069 T5 and §10). P10-S9 carries the fix with the bisect as its starting evidence.
 
 The **lit "parity" claim from 062 is withdrawn**: the exact 062 combination renders 248/128/160 where the archived
 pspGL capture reads 192/56-64/80-88, and the archived "pspgu" capture is byte-identical to pspGL — the archive-swap
@@ -321,3 +321,4 @@ float, specified as **P10-S8 (070)**.
 | [P10-S6 — 3D sample target, regression and close](../../sprints/067-phase10-sample-target-and-close.md) | frozen sample, pre-registered ceiling, full regression, phase close | **done** — 20 fps; two criteria recorded not met |
 | [P10-S7 — Clip cost, lit parity and re-close](../../sprints/069-phase10-clip-cost-and-lit-parity.md) | dirty-only clip emission, guard-band clip region, VFPU projection, framebuffer-rotation fix, lit correction, sweep, re-close | **done** — 60 fps at N=50, work 11.56 ms, 0 overflows; 237/720 px; lit corrected; b30 |
 | [P10-S8 — Camera and matrix CPU cost: measure before GUM](../../sprints/070-phase10-camera-matrix-cost.md) | per-call and scene matrix cost, cached-vs-rebuild, conditional GUM A/B | written |
+| [P10-S9 — Framebuffer rotation with render targets](../../sprints/076-phase10-framebuffer-rotation.md) | the deferred flicker: localize the RTT band, list break on unbind, 2-buffer fallback | written |
