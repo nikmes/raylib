@@ -143,6 +143,29 @@ range writeback, and one stall syscall per allocation. Measure one block per lis
 batch (gLib2D's pattern, one stall per batch), and fall back to the arena when the block would not fit. The vendor
 6.6.0 graphics samples use the same API widely (30 samples); its headers and code are not copied.
 
+### T6a reference findings: `sceGuGetMemory` (pspsdk and the 6.6.0 tree)
+
+The mechanics below come from public pspsdk source; the 6.6.0 tree was checked only for usage, not quoted.
+
+| source | finding |
+|---|---|
+| `$PSPDEV` pspsdk `src/gu/sceGuGetMemory.c` | returns a **4-byte-aligned** block; rounds `size+3` down to 4; writes two command words before it; advances `gu_list->current`; in `GU_DIRECT` updates the stall with `sceGeListUpdateStallAddr`; performs **no bounds check** |
+| pspsdk `src/gu/sceGuStart.c` | maps the list as `list \| 0x40000000`, the **uncached alias**, so writes to the block need **no data-cache writeback** |
+| pspsdk `src/gu/sceGuFinishId.c` | FINISH/END plus a stall update; no separate cache flush for the list |
+| 6.6.0 reference tree | **30 graphics samples** call the API; usage observed only, no vendor code or documentation copied |
+
+**Why it might be a good idea.**
+
+- It removes the 2 × 512 KiB cached vertex arenas (`PSP_GU_ARENA_BYTES`) — **1 MiB of main RAM** — when the frame
+  fits in the 240 KiB list.
+- No `pspguWriteback` for the vertex block: it is in the uncached list alias.
+- Commands and vertices share one contiguous buffer, and the block's lifetime is the list's lifetime, which the
+  two-list rotation already guarantees.
+
+**What it costs.** The 240 KiB list cap (`PSP_GU_LIST_BYTES`; GE maximum `0x3FFFF`), no bounds check, 4-byte
+alignment, uncached stores instead of cached stores plus a range writeback, and one stall syscall per allocation.
+A per-batch block (gLib2D's pattern) multiplies the stall count; one reserve per list avoids that.
+
 **T6a implementation outline (ready to code).** Reviewed against the current driver; this is what the task
 needs before a device run:
 
