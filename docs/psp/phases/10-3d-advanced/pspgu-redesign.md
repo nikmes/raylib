@@ -149,18 +149,48 @@ matrix. That is "merging done once at load" rather than per frame, and it is the
 upload entirely. It cannot serve the animated cube grid — those matrices change every frame — which is why it is an
 arm, not the design.
 
-## 4. Phases and gates
+## 4. Sprints, and how many
 
-Each phase is its own sprint; each can stop the programme.
+**Five sprints, about thirty tasks.** Each is one change → device measurement → pixel gate cycle, and each has a
+kill rule, because the design only works if every step is attributable. The count is deliberately not one sprint:
+this phase has already paid twice for measuring two variables at once (088's single arm moved submission *and*
+vertex storage; 089 exists because of it).
 
-| phase | change | expected | gate | kill rule |
+| sprint | scope | tasks (est.) | needs | killed by |
 |---|---|---|---|---|
-| P10-S20 | **clean hint**: `DrawMesh` passes the classifier's answer; the driver skips `clipNeeds` for a clean per-object draw | per cube 180 → ~130 µs; 400 cubes 67.7 → ~52 ms work | 0 diff on `scene_3d`, `MESH_SCENE`, `batch_check`; `PSPGU_NO_CLIP=1` as the control arm | slope falls <20 % ⇒ the decomposition is wrong, stop |
-| P10-S21 | **matrix epoch**: cache the MVP from the cull, reuse it for the draw, skip unchanged pointer/texture setup | −10–20 µs/cube | gates 0 diff; `PSP_MATRIX_PROBE` cull ≤8 µs | no measurable change ⇒ the surface was already thin |
-| P10-S22 | **baked mesh path**: object-space bake + `pspguDrawBakedMesh` (§3.6 `sceGuSetMatrix`, not GUM); second arm bakes a static set in world space with no matrix | per cube ~130 → ~40 µs | 0 diff; memory ledger; 1,200-cube frame with 0 replays; upload cost per object measured | >60 µs/cube ⇒ raylib's surface dominates and the path belongs lower |
-| P10-S23 | **merge re-decision**: A/B thin per-object against merged at 400/800/1,200 | one of them wins clearly | pair + gates | if merged still wins, keep it and record why |
+| **P10-S20** | matched baseline on one layout (M3D-lessons E6) + **clean hint**: `DrawMesh` passes the classifier's answer, the driver skips `clipNeeds` for a clean per-object draw | 5 | — | clip is <20 % of the slope |
+| **P10-S21** | **thin call surface**: matrix epoch, cached MVP reused for the draw, skip pointer/texture setup when unchanged | 6 | S20 (for the baseline) | no measurable change |
+| **P10-S22** | **object-space baked mesh** + `pspguDrawBakedMesh` (§3.6 `sceGuSetMatrix`), loader/bake integration, memory ledger | 9 | S21 | >60 µs/cube |
+| **P10-S23** | **world-space bake arm** for static sets + **merge re-decision** at 400/800/1,200 | 6 | S22 | neither path wins by >0.05 ms |
+| **P10-S24** | **close**: matched ceiling sweep, arena/replay check, full gates, docs, default state | 4 | S23 | any gate not 0 diff |
 
-Every phase uses the same harness: `psp-bench.sh`, two runs per point, forced-clean builds, boot tag checked, and
+Total ≈ **30 tasks**. Three of the five are conditional: S21-S24 happen only if the previous phase's number holds, so
+a failed assumption costs one sprint, not five.
+
+### 4.1 The shortest path that still tests the design
+
+S21 is an optimisation, not a prerequisite: the baked path can be built on top of the current surface. So if the
+question is "does the thin architecture work at all", the minimum is **three sprints** — S20 (know the slope and
+remove the clip scan), S22 (bake and draw thin), S23 (decide against merging). S21 and S24 are what turn a working
+prototype into an adopted default.
+
+| if | sprints | expected outcome |
+|---|---|---|
+| everything holds | 5 (~30 tasks) | thin per-object is the 3D architecture; merge is measured and kept only where it wins |
+| S21 shows nothing | 4 (~24) | skip the call-surface work, keep the baked path |
+| S22 fails (>60 µs/cube) | 2 (~14) | the gap to M3D is raylib's scene layer; stop and record |
+| S20 fails (<20 % from the clip) | 1 (~5) | the decomposition was wrong; re-attribute before any redesign |
+
+### 4.2 What is not in that count
+
+- **087 B (index-run cache)** — postponed. The thin path has no per-frame index copy for static meshes, so the
+  0.45 ms it targets shrinks to dynamic draws; re-estimate after S22.
+- **087 C (baked geometry)** — merged into S22/S23, not run twice.
+- **2D** — untouched. M3D-lessons F6 says the batcher is already the right architecture.
+- **Arena sizing / replays** — handled in S24, because a thin per-object path has no per-frame expansion to run out
+  of room.
+
+Every sprint uses the same harness: `psp-bench.sh`, two runs per point, forced-clean builds, boot tag checked, and
 the pixel table on the arm it proposes to adopt.
 
 ## 5. Expected end state, and how it would be falsified
@@ -184,13 +214,18 @@ driver, and the next redesign belongs there.
 - **The clean hint must be exact.** 078 §0 has the proof obligation; a wrong hint drops primitives silently, and
   the pixel gates are the check.
 
-## 7. Relationship to the open sprints
+## 7. What happens to the open sprint (087)
 
-- **087 A (list-local vertices)** — superseded by 089. Keep only its diagnosis; the arena stays.
-- **087 B (index-run cache)** — unchanged and still worth ≈0.45 ms/frame. It applies to the current path and to the
-  merged path; the thin path has no per-frame index copy at all, which is another argument for it.
-- **087 C (baked geometry)** — this design is the concrete form of it; P10-S22 and 087 C should be merged into one
-  sprint rather than run twice.
+087 was written before 088-089 ran; two of its three workstreams are now settled. The disposition:
+
+| 087 workstream | disposition |
+|---|---|
+| **A — list-local vertices** | **closed.** 089 measured it at +1.2 ms (reserve) and +5.7 ms (per draw) against the arena; the arena stays. Keep only the diagnosis. |
+| **B — index-run cache** | **postponed to after P10-S22.** Still ≈0.45 ms/frame on the current path, but the thin path has no per-frame index copy for static meshes, so its value shrinks to dynamic draws. Re-estimate with S22's numbers rather than building it now. |
+| **C — baked geometry** | **absorbed.** S22 (object-space bake) and S23's world-space arm are its concrete form; do not write it twice. |
+
+087 should be rewritten as a short closure note (A closed, B deferred with its number, C absorbed) rather than
+implemented as written.
 
 ## 8. References
 
