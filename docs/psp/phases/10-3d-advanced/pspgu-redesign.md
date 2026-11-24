@@ -121,6 +121,34 @@ has no arena wall, no merge key, and no replays (154 at 1,200 cubes today).
 The GE setup, the framebuffer rotation, the submission model, the arena for dynamic draws, the 2D batcher, the
 pixel gates, and every number in 088/089.
 
+### 3.6 Matrix upload: not GUM
+
+The obvious reading of "M3D uses GUM matrices" is wrong for the hot path. Its per-object transform is
+`sceGuSetMatrix` from its own VFPU matrix system (`AMG_VFPU.cpp:109`), followed by a non-indexed
+`sceGuDrawArray` straight out of the model buffer (`AMG_Model.cpp:1148`). `sceGumDrawArray` appears only in a few
+paths (a preview at `:161`, a shadow pass at `:2180`, sprites and particles).
+
+Our driver already uploads the same way: `pspguUploadMatrices` (`gl_matrix.c:112-116`) sends `GU_PROJECTION` and
+`GU_MODEL` through `sceGuSetMatrix`, with a dirty check that skips an unchanged matrix (`gl_matrix.c:57-63`). So the
+mechanism is already the cheap one, and P10-S8 had already measured GUM's stack and dropped it (camera cache 13×,
+GUM not used).
+
+Reintroducing GUM for the thin path would add its CPU-side stack — push, multiply, load — to compute a product we
+already have from the cull (P10-S21). There is nothing for it to do.
+
+**The question that does survive** is whether the per-object upload is worth avoiding at all:
+
+| option | cost | valid when |
+|---|---|---|
+| `sceGuSetMatrix(GU_MODEL, mv)` per object (ours, M3D's) | 64 B + a few commands per object, ≈1 µs/cube at 400 | always |
+| world-space bake, no matrix at all | 0 upload, but one buffer per instance (400 × 24 × 32 B = 307 KiB) | the set is truly static |
+| GUM stack | CPU compose + upload | never, at this layer |
+
+So P10-S22 carries a second arm: **bake world-space for a static set** and measure it against the per-object
+matrix. That is "merging done once at load" rather than per frame, and it is the only variant that removes the
+upload entirely. It cannot serve the animated cube grid — those matrices change every frame — which is why it is an
+arm, not the design.
+
 ## 4. Phases and gates
 
 Each phase is its own sprint; each can stop the programme.
@@ -129,7 +157,7 @@ Each phase is its own sprint; each can stop the programme.
 |---|---|---|---|---|
 | P10-S20 | **clean hint**: `DrawMesh` passes the classifier's answer; the driver skips `clipNeeds` for a clean per-object draw | per cube 180 → ~130 µs; 400 cubes 67.7 → ~52 ms work | 0 diff on `scene_3d`, `MESH_SCENE`, `batch_check`; `PSPGU_NO_CLIP=1` as the control arm | slope falls <20 % ⇒ the decomposition is wrong, stop |
 | P10-S21 | **matrix epoch**: cache the MVP from the cull, reuse it for the draw, skip unchanged pointer/texture setup | −10–20 µs/cube | gates 0 diff; `PSP_MATRIX_PROBE` cull ≤8 µs | no measurable change ⇒ the surface was already thin |
-| P10-S22 | **baked mesh path**: load-time bake, `pspguDrawBakedMesh`, no packing/arena/writeback | per cube ~130 → ~40 µs | 0 diff; memory ledger; 1,200-cube frame with 0 replays | >60 µs/cube ⇒ raylib's surface dominates and the path belongs lower |
+| P10-S22 | **baked mesh path**: object-space bake + `pspguDrawBakedMesh` (§3.6 `sceGuSetMatrix`, not GUM); second arm bakes a static set in world space with no matrix | per cube ~130 → ~40 µs | 0 diff; memory ledger; 1,200-cube frame with 0 replays; upload cost per object measured | >60 µs/cube ⇒ raylib's surface dominates and the path belongs lower |
 | P10-S23 | **merge re-decision**: A/B thin per-object against merged at 400/800/1,200 | one of them wins clearly | pair + gates | if merged still wins, keep it and record why |
 
 Every phase uses the same harness: `psp-bench.sh`, two runs per point, forced-clean builds, boot tag checked, and
