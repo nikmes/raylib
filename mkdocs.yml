@@ -180,5 +180,6 @@ nav:
       - Recipes:
           - psp/recipes/particle-stream.md
           - psp/recipes/benchmarking.md
+          - psp/recipes/backend-ab-pspgu-vs-pspgl.md
 
 strict: true

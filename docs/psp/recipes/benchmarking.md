@@ -1,5 +1,8 @@
 # Benchmarking the port
 
+> Comparing **pspgu against pspGL** (as opposed to two builds of one backend) has its own procedure and traps:
+> see [backend AB: pspgu vs pspGL](backend-ab-pspgu-vs-pspgl.md).
+
 Two demos exist to measure the renderer as a whole, one per pipeline, and one script runs both and records the
 numbers so a change can be judged against the build before it.
 
