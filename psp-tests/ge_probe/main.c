@@ -84,6 +84,13 @@ static V16 stripMesh[STRIP_VERTS] __attribute__((aligned(64)));
 static V2 bigWhole[BIG_N*6] __attribute__((aligned(64)));
 static V2 bigSlice[BIG_N*BIG_SLICES*6] __attribute__((aligned(64)));
 
+// T6: what a static CALL list could save is the CPU cost of emitting N draw commands.
+// 1,000 small quads drawn as 1,000 calls, then as one call over the same 6,000 vertices.
+#define K1_N 1000
+
+typedef struct { unsigned int color; float x, y, z; } V1;
+static V1 k1[K1_N*6] __attribute__((aligned(64)));
+
 // T4 texture source: one image, three encodings, one palette.
 static unsigned short tex5650[64*64] __attribute__((aligned(64)));
 static unsigned int   tex8888[64*64] __attribute__((aligned(64)));
@@ -435,6 +442,58 @@ static void makeBigSprites(void)
     }
 }
 
+static void makeK1(void)
+{
+    int k = 0;
+
+    for (int r = 0; r < 25; r++)
+    {
+        for (int c = 0; c < 40; c++)
+        {
+            float x = (float)c*12.0f, y = (float)r*10.86f;
+            unsigned int col = (((r + c) & 1)? 0xFF7A96C8 : 0xFF5A78B4);
+            V1 a  = { col, x, y, 0.0f };
+            V1 b  = { col, x, y + 8.0f, 0.0f };
+            V1 d  = { col, x + 8.0f, y, 0.0f };
+            V1 e  = { col, x + 8.0f, y + 8.0f, 0.0f };
+
+            k1[k++] = a; k1[k++] = b; k1[k++] = d;
+            k1[k++] = d; k1[k++] = b; k1[k++] = e;
+        }
+    }
+}
+
+static void emitK1States(void)
+{
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDisable(GU_BLEND);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuDisable(GU_LIGHTING);
+    sceGuDisable(GU_FOG);
+}
+
+static unsigned int buildDraw1k(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitK1States();
+    for (int i = 0; i < K1_N; i++)
+        sceGuDrawArray(GU_TRIANGLES,
+                       GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+                       6, NULL, &k1[i*6]);
+    return (unsigned int)sceGuFinish();
+}
+
+static unsigned int buildDrawOne(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitK1States();
+    sceGuDrawArray(GU_TRIANGLES,
+                   GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+                   K1_N*6, NULL, k1);
+    return (unsigned int)sceGuFinish();
+}
+
 static void initGu(void)
 {
     unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
@@ -693,6 +752,7 @@ int main(void)
     makeMesh();
     makeQuadMesh();
     makeBigSprites();
+    makeK1();
     sceKernelDcacheWritebackRange(sprites, sizeof(sprites));
     sceKernelDcacheWritebackRange(cubes, sizeof(cubes));
     sceKernelDcacheWritebackRange(cubeIndex, sizeof(cubeIndex));
@@ -702,6 +762,7 @@ int main(void)
     sceKernelDcacheWritebackRange(stripMesh, sizeof(stripMesh));
     sceKernelDcacheWritebackRange(bigWhole, sizeof(bigWhole));
     sceKernelDcacheWritebackRange(bigSlice, sizeof(bigSlice));
+    sceKernelDcacheWritebackRange(k1, sizeof(k1));
 
     initGu();
     makeTextures();          // after initGu's checker: all texture arms share one image
@@ -716,6 +777,8 @@ int main(void)
     bench("big", buildBigWhole);
     bench("bigslice", buildBigSlice);
     bench("big8x", buildBigWhole8x);
+    bench("k1_draws", buildDraw1k);
+    bench("k1_one", buildDrawOne);
     bench("cubes", buildCubes);
     bench("frame", buildFrame);
     bench("mesh16", buildMesh16);

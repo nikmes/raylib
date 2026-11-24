@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 6/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6); T2b/T5 dropped on prior evidence |
+| Tasks | 7/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6), T6 dropped (§9.7); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -148,7 +148,7 @@ and the adoption threshold are unchanged.
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `dropped` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | §9.4 — T8 5,825 vs 5650 5,847 µs (no GE gain), 0 px diff, VRAM 5 KB vs 8 KB: saves VRAM, not time; unswizzled 8888 151.9 ms shows swizzle is mandatory (driver does it) |
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `dropped` | 079 T2 0.265→0.268 ms; bunnymark 4.706→4.702; 0 diff; b36 removed the flag | prior numbers |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `dropped` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | §9.5 — 32 vs 16 quads at 0 px diff, GE +36 µs (no saving); T4 already ruled out the texture-cache mechanism, and this arm's absolute times are below the GE fill rate (8× draws gave 3.2× time), so direction only |
-| T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
+| T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `dropped` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | §9.7 — 1,000 draws vs 1 over the same vertices: CPU 283→7 µs, GE 969→461 µs ⇒ CALL lists could save ≤0.27 ms on 1,000 draws and ≈1 µs on the 4-draw showcase; sync audit clean (no `sceGuSync`, targeted waits 15–50 µs, `arenaOverflows=0`) |
 | T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `dropped` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | §9.6 — 2D: work 21.593→20.106 ms (−1.49 ms, 0 fallbacks) but avg unchanged (GE-bound); 3D: `used_max` pinned at 161,768 B with 50 fallbacks at 160/200/208 KiB and work +0.88 ms, because the frame reopens its list mid-frame |
 | T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
 | T8 | **Gates and close.** Full gate table, the pair twice, docs, commit, restore the chosen driver | `todo` | §7 all green; two runs; strict docs build | — |
@@ -507,6 +507,40 @@ What survives is the useful fact for any future attempt: the uncached block is w
 frame, and it removes the writeback but not the arena fallback. The flag, the allocator and the no-op writeback stay
 in the driver compiled out (`PSPGU_LIST_VERTICES=0`); the installed archive is byte-identical to the control
 (`9798af84e81b269e`).
+
+### 9.7 T6 — static CALL lists and the sync audit (`dropped`, 2026-11-24)
+
+**(a) CALL lists — measured as the cost they could remove.** pspsdk exports `sceGuCallList` but no `sceGuReturn`, and
+no sample in `$PSPDEV/psp/sdk/samples/` builds a callable sub-list, so a sub-list would need a hand-written RET
+opcode. Rather than record a number from an unverified construct, the probe measures the thing a CALL list replaces:
+emitting N draw commands over static vertices.
+
+| arm | draws | CPU build | GE | list bytes |
+|---|---|---|---|---|
+| 1,000 separate draws | 1,000 | 283 µs | 969 µs | 16,032 |
+| one draw, same 6,000 vertices | 1 | 7 µs | 461 µs | 48 |
+
+- **Command emission: 276 µs per 999 draws ≈ 0.28 µs/draw** — the absolute upper bound on what CALL lists can save,
+  since a CALL still has to be emitted.
+- **GE time also grows 508 µs** for the same vertices. A CALL list does not remove that: the GE still processes
+  1,000 primitives inside the sub-lists. So even a perfect CALL implementation cannot recover it.
+- The 3D showcase submits **4 draws per frame** after the P10-S11 merge. At 0.28 µs/draw the ceiling is ≈1 µs.
+
+Dropped: the merge path has already collapsed 400 cubes into 2 draws, so there are no per-mesh command streams left
+to cache. A renderer that submits 1,000 separate meshes could save ≈0.27 ms, and that is the number to remember if
+the batcher is ever changed to stop merging.
+
+**(b) Sync audit — clean, and the evidence is the counters.** No `sceGuSync` or `sceGeDrawSync` exists anywhere in the
+driver; every wait is `sceGeListSync` on a specific queue id:
+
+| wait | when | measured |
+|---|---|---|
+| begin-frame, list two frames old | steady state | 15–31 µs avg, 140 µs max |
+| display, the frame being shown | at swap | 46–50 µs avg |
+| `pspguFinishAndWait` | boot, readback, texture eviction only | not on the steady path |
+
+`arenaOverflows=0` in every run of this sprint, `list_used_max` 2.4–4.7 KiB against a 240 KiB list, and no list
+overflow line. The audit passes: targeted waits only, nothing waits on the frame it just submitted.
 
 ## 10. Follow-ups
 
