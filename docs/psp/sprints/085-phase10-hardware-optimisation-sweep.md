@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 7/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6), T6 dropped (§9.7); T2b/T5 dropped on prior evidence |
+| Tasks | 8/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6), T6 dropped (§9.7), T7 done (§9.8); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -150,7 +150,7 @@ and the adoption threshold are unchanged.
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `dropped` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | §9.5 — 32 vs 16 quads at 0 px diff, GE +36 µs (no saving); T4 already ruled out the texture-cache mechanism, and this arm's absolute times are below the GE fill rate (8× draws gave 3.2× time), so direction only |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `dropped` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | §9.7 — 1,000 draws vs 1 over the same vertices: CPU 283→7 µs, GE 969→461 µs ⇒ CALL lists could save ≤0.27 ms on 1,000 draws and ≈1 µs on the 4-draw showcase; sync audit clean (no `sceGuSync`, targeted waits 15–50 µs, `arenaOverflows=0`) |
 | T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `dropped` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | §9.6 — 2D: work 21.593→20.106 ms (−1.49 ms, 0 fallbacks) but avg unchanged (GE-bound); 3D: `used_max` pinned at 161,768 B with 50 fallbacks at 160/200/208 KiB and work +0.88 ms, because the frame reopens its list mid-frame |
-| T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
+| T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `done` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | §9.8 — 600 frames × 1,000 moving bunnies, `arenaOverflows=0`, `list_used_max=1,516`; two runs byte-identical (`5e390310…`); no code change |
 | T8 | **Gates and close.** Full gate table, the pair twice, docs, commit, restore the chosen driver | `todo` | §7 all green; two runs; strict docs build | — |
 
 Status vocabulary: `todo` / `doing` / `done` / `dropped`. IDs are stable.
@@ -541,6 +541,37 @@ driver; every wait is `sceGeListSync` on a specific queue id:
 
 `arenaOverflows=0` in every run of this sprint, `list_used_max` 2.4–4.7 KiB against a 240 KiB list, and no list
 overflow line. The audit passes: targeted waits only, nothing waits on the frame it just submitted.
+
+### 9.8 T7 — coherence stress (`done`, 2026-11-24)
+
+The hazard is the CPU running ahead of the GE: a vertex buffer rewritten while the GE still reads it, or a writeback
+that publishes the pointer before the data. The driver's answer is four rules; the audit below cites each, and the
+stress run is the evidence that they hold under a moving workload.
+
+| rule | where |
+|---|---|
+| write back the arena run before the draw that references it | `gl_draw.c:738,758,792-793,843,938,1460,1586,1615-1616` |
+| one vertex arena per rotating list; reset only that list's cursor | `egl.c:502-503` |
+| reuse a list only after the GE finished the frame that last used it | `egl.c:491-494` (wait on `listQid[next]`) |
+| texture churn: finish and wait before evicting VRAM the GE may read | `gl_texture.c:408` |
+
+**Stress run.** `bunnymark` with `FIXED_SEED`, 1,000 bunnies, 600 frames — geometry rebuilt and re-written every
+frame, so every rotation is exercised:
+
+| measure | value |
+|---|---|
+| frames | 600, median 16.710 ms (60 fps), one 46.8 ms outlier at startup |
+| `arenaOverflows` | 0 |
+| `list_used_max` | 1,516 B |
+| list waits | 22 µs avg, 24 µs max |
+
+**Determinism check.** The demo freezes its last two frames under `FIXED_SEED`, so a capture at DONE is comparable.
+Two independent runs (reset between) produced **byte-identical 391,734-byte captures**, md5 `5e390310d911b3cd…`.
+A missing writeback or a list reused too early would show as a run-to-run difference, because the rotation timing is
+not deterministic even when the frame content is.
+
+Verdict: verified, **no code change**. The only anomaly is the single 46.8 ms first-frame outlier, which is texture
+upload at first use, not coherence — it appears once and never returns in 600 frames.
 
 ## 10. Follow-ups
 
