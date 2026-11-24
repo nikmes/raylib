@@ -121,6 +121,7 @@ nav:
           - 10 — 3D and advanced:
               - psp/phases/10-3d-advanced/index.md
               - M3D compared — what a direct-to-GE engine does differently: psp/phases/10-3d-advanced/m3d-lessons.md
+              - Redesigning the 3D path — thin GE transforms: psp/phases/10-3d-advanced/pspgu-redesign.md
               - P10-S1 — DrawMesh fix and mesh gate: psp/sprints/060-phase10-drawmesh-and-mesh-gate.md
               - P10-S2 — Camera-relative and GE-native models: psp/sprints/061-phase10-camera-relative-and-ge-native-models.md
               - P10-S3 — Lighting, fog and texenv: psp/sprints/062-phase10-lighting-fog-texenv.md
