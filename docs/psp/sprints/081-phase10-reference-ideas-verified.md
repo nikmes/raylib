@@ -225,3 +225,10 @@ FINISH/END and updates the stall; there is no separate cache flush for the list.
 **Disposition.** Not an S14 adoption. P10-S15 T6a measures list-local vertices against the arena on main-RAM,
 `listUsedMax`, stall count, uncached-store cost, the 0-diff gates and a fallback. The S14 result stands: nothing
 adopted.
+
+**Implementation readiness (reviewed 2026-11-24).** S14 has **no open code**: T1-T4 are closed and both reference
+arms were already present/dropped. The `sceGuGetMemory` follow-up is not an S14 task; it is **P10-S15 T6a**. T6a now
+carries the implementation outline — the `PSPGU_LIST_VERTICES` flag and 160 KiB budget, the `pspguBeginFrame`
+reserve, the `pspguArenaAlloc` bump allocator, the `pspguWriteback` range check, the arena/no-arena arms, the
+`listUsedMax` guard/fallback, the workloads and the gate table. Until T6a is measured, S14 stays closed and nothing
+is adopted.

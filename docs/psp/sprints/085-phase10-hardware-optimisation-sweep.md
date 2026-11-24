@@ -143,6 +143,32 @@ range writeback, and one stall syscall per allocation. Measure one block per lis
 batch (gLib2D's pattern, one stall per batch), and fall back to the arena when the block would not fit. The vendor
 6.6.0 graphics samples use the same API widely (30 samples); its headers and code are not copied.
 
+**T6a implementation outline (ready to code).** Reviewed against the current driver; this is what the task
+needs before a device run:
+
+- **Flags.** `PSPGU_LIST_VERTICES ?= 0` in `tools/pspgu/Makefile` and the `tools/pspgu-build.sh` passthrough;
+  `PSPGU_LIST_VERTEX_BYTES ?= 163840` (160 KiB) in `pspgu_internal.h`. Default off; never a release default until
+  the gates.
+- **`egl.c`.** In `pspguBeginFrame`, after `sceGuStart`, reserve one block with
+  `sceGuGetMemory(PSPGU_LIST_VERTEX_BYTES)` and keep `listVertexBase`/`listVertexUsed` per list. That is one skip
+  and one stall per list. `pspguArenaAlloc` becomes a 4-byte bump allocator over that block; when
+  `used + bytes > budget` it returns NULL and the existing arena is the fallback. Add a second arm that removes
+  the 2×512 KiB arena (or shrinks it to a small fallback) to measure the 1 MiB saving.
+- **Writeback.** `pspguWriteback` must no-op for pointers in `[listVertexBase, listVertexBase + budget)`; the
+  cached-arena ranges keep their current writeback. The list-local block is uncached, so this is a correctness
+  requirement, not an optimisation.
+- **Guards.** `sceGuGetMemory` has no bounds check. The 160 KiB reserve leaves ~80 KiB for the list commands in the
+  240 KiB list; `pspguEndFrame` must log `listUsedMax`, the reserve used and the remaining bytes, and a frame where
+  the reserve plus commands would exceed the list must fall back before the overrun. `pspguArenaReset` remains the
+  full-sync fallback and `arenaOverflows` must stay 0.
+- **Arms.** (a) One reserve block per list, sub-allocated; (b) one `sceGuGetMemory` per draw (gLib2D's pattern),
+  counting the extra stall updates. Both with the arena present and with the no-arena/small-fallback build.
+- **Workloads.** 2D showcase 3,645 vertices (~87 KiB), bunnymark 2,375 sprites (~57 KiB), `scene_3d SAMPLE=1`, and a
+  1,000-mesh scene; a synthetic frame that exceeds the 160 KiB budget must exercise the fallback.
+- **Measure and gate.** T1 GE/CPU split; main-RAM ledger; `listUsedMax`; stall count; 0-diff gates (2D 613,
+  scene_3d, MESH_SCENE, RTT, clip 237/720, shapes 284); no full wait; no list overflow; drop if there is no win or
+  the fallback is reached on a normal frame.
+
 ### gLib2D reference (LGPLv3) — what to test and what not to copy
 
 Source: <https://github.com/libcg/gLib2D>, `glib2d.c`. Ideas only; do not copy code, comments or inline assembly.
