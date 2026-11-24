@@ -93,16 +93,44 @@ Reviewed against the code 088 left. **V1 is the only new machinery**; everything
 - `sceGuGetMemory` rounds to 4 bytes and has no bounds check (085 §6), so an over-allocation is a corrupted stream,
   not an error return.
 
+## 4b. Readiness review (2026-11-24)
+
+Reviewed against `master @ 07f516bb` and the code 088 left. **V1 is not a new file, but it touches five compile
+switches and one inline in a header**; the decisions below are the ones that would otherwise be discovered by a run.
+
+1. **`PSPGU_LIST_VERTICES` is boolean in five places** (egl.c:267, 484, 557, 641, 728; pspgu_internal.h:354). Mode 2
+   must turn the reserve sites into `== 1` and add a third branch to `pspguArenaAlloc` (egl.c:641). Left as `#if`,
+   mode 2 silently runs the reserve path — 088's shape again, under a new name.
+2. **The writeback skip assumes one block range** (`listVertexBase[i] .. +listVertexBytes`). Per-draw has no single
+   block, so mode 2 must test the uncached alias instead — `(uintptr_t)addr >= 0x40000000u`, which is also the actual
+   rule. Keeping the range test would allow a writeback of a list block, and writing back the *cached* alias can
+   overwrite uncached-written data with stale lines.
+3. **No reserve in mode 2, and the soft budget needs a headroom.** Start at 32 KiB: 088 measured the 3D command
+   stream at 26.7 KiB, and the 16 KiB headroom was what overflowed a 240 KiB list. V4 refines it.
+4. **The stall count needs no hook.** Each `sceGuGetMemory` call in `GU_DIRECT` performs exactly one
+   `sceGeListUpdateStallAddr`, so counting our calls *is* the stall count. Stated so the number is not invented.
+5. **The boot line must name the mode.** Today it prints "LIST-VERTICES: N KiB per list", meaningless in mode 2. A
+   stale archive must not be measurable as the wrong cell.
+6. **The ledger splits arithmetically**: allocations are counted directly, and commands = `listUsedMax − allocated`
+   (each allocation's two jump words are inside its own cost). V4's by-class split needs the counter per call site,
+   not one total.
+7. **S-A is `PSPGU_SUBMIT=single` + `PSPGU_SINGLE_ARENA_BYTES=524288`.** Without the arena the cell falls into
+   `arenaAllocHard` and measures a full sync per draw instead of the model it claims to test.
+8. **A prediction that changes V3 and V6.** N=400 cannot fit a single list *even per-draw*: 088's S arm used
+   324,372 B, of which ~26.7 KiB was commands, so vertices alone were ≈297 KiB against a 256 KiB cap. The per-draw
+   shape therefore does **not** fix 088's capacity wall; it only removes the reserve waste. V3's ceiling will land
+   between N=100 and N=400, and V6's pair may only be answerable at or below that ceiling.
+
 ## 5. Tasks
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| V1 | **Per-draw allocation mode.** `PSPGU_LIST_VERTICES=2`: `pspguArenaAlloc` calls `sceGuGetMemory(bytes)` directly, no reserve; track a soft budget and the allocations/bytes used; count stall updates. Keep the arena as fallback | `todo` | a frame renders with 0 fallbacks; the counter reports allocations and bytes; the guard refuses without corrupting | — |
+| V1 | **Per-draw allocation mode.** `PSPGU_LIST_VERTICES=2`: `pspguArenaAlloc` calls `sceGuGetMemory(bytes)` directly, no reserve; soft budget = `listBytes − 32 KiB`, refined by V4; count allocations, bytes and stall calls; writeback skip switches to the uncached-alias test; boot line names the mode (§4b 1-5) | `todo` | a frame renders with 0 fallbacks; counters report allocations, bytes and stalls; the guard refuses without corrupting | — |
 | V2 | **The 2×2 at N=100.** D-A, D-Lf, D-Lp, S-A on the same `GRID=10` scene, two runs each | `todo` | avg/work/swap per cell; allocation count and bytes per cell; no `LIST OVERFLOW` | — |
 | V3 | **Capacity sweep per cell.** Raise `GRID` until each cell refuses or overflows | `todo` | maximum cubes per cell, with the failure mode named (refusal vs overflow) | — |
 | V4 | **List-bytes ledger.** Commands vs vertices per frame, and the headroom each cell needs | `todo` | bytes per category; the reserve that would have been needed; 088's 4 %-used reserve quantified | — |
 | V5 | **Pixel table on the adopted variant** | `todo` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT; no full GE wait | — |
-| V6 | **Pair A/B.** N=400 and the 2D showcase, winner vs today's default | `todo` | adopt only if `avg` or capacity improves without a pixel change; otherwise record the number | — |
+| V6 | **Pair A/B.** The 2D showcase, plus the largest `GRID` that V3 shows fits in a list (N=400 will not, §4b 8) | `todo` | adopt only if `avg` or capacity improves without a pixel change; otherwise record the number | — |
 | V7 | **Close.** Recommendation, docs, driver hash, restore the default | `todo` | one paragraph per cell; explicit default state | — |
 
 ## 6. Design notes
