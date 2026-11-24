@@ -521,10 +521,12 @@ in the driver compiled out (`PSPGU_LIST_VERTICES=0`); the installed archive is b
 
 ### 9.7 T6 — static CALL lists and the sync audit (`dropped`, 2026-11-24)
 
-**(a) CALL lists — measured as the cost they could remove.** pspsdk exports `sceGuCallList` but no `sceGuReturn`, and
-no sample in `$PSPDEV/psp/sdk/samples/` builds a callable sub-list, so a sub-list would need a hand-written RET
-opcode. Rather than record a number from an unverified construct, the probe measures the thing a CALL list replaces:
-emitting N draw commands over static vertices.
+**(a) CALL lists — measured as the cost they could remove.** *Correction (2026-11-24): the original text said pspsdk
+had no way to build a callable sub-list without a hand-written RET opcode. That was wrong.* `GU_CALL` is a context
+type (`pspgu.h:295`) and `samples/gu/doublelist:157-160` builds two callable sub-lists with
+`sceGuStart(GU_CALL, list[i])` + `sceGuFinish()` before `sceGuCallList` is ever used. The measurement below stands —
+it measures the command emission a CALL would replace — but the implementation path is the documented one, not an
+opcode hack.
 
 | arm | draws | CPU build | GE | list bytes |
 |---|---|---|---|---|
