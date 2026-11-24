@@ -493,12 +493,19 @@ that work. Repeat the workload in the same list and require the ratio before rec
 design note: **uncached list-local stores are faster than cached stores plus a range writeback**, by about the cost
 of the writeback itself.
 
-**3D showcase (the CPU-bound workload): cannot use it.** `used_max` stopped at exactly **161,768 bytes with 50
-fallbacks** at 160, 200 and 208 KiB budgets, and work rose to 32.94 ms against the 32.06 control (+0.88 ms). A
-budget that does not change the ceiling is not the limiter: the 3D frame **closes and reopens its list mid-frame**
-(`pspguFinishAndWait`, gl_texture.c:408, reached from the texture-eviction path), so a fixed per-list reserve is
-asked for twice on the same buffer. The public `sceGuGetMemory` has no bounds check, so this is a design limit, not
-a tuning value.
+**3D showcase (the CPU-bound workload): cannot use it as built.** `used_max` stopped at exactly **161,768 bytes with
+50 fallbacks** at 160, 200 and 208 KiB budgets, and work rose to 32.94 ms against the 32.06 control (+0.88 ms).
+That one fallback per submit at every budget has **two explanations and they were not separated here**:
+
+- **(a) chunked allocation, budget still too small.** The frame needs ≈205 KiB per fill, but the allocations are
+  chunky: at a 208 KiB budget the last chunk must exceed the 43 KiB left, so exactly one allocation fails per fill.
+  Under this reading the budget never reached the need, and a 224 KiB reserve in a 252 KiB list could work.
+- **(b) list reopen.** The 3D frame can close and reopen its list mid-frame (`pspguFinishAndWait`,
+  gl_texture.c:408, from the texture-eviction path), so the reserve can be requested more than once per buffer.
+
+Sprint 086 T1 separates them; the drop stands for this sprint either way, because the 2D workload — where the block
+did fit — is GE-bound and gains nothing in the pair. The public `sceGuGetMemory` has no bounds check, so any
+attempt also needs a guard.
 
 Dropped as a default, for three reasons and with no code changed:
 
