@@ -185,6 +185,26 @@ why 070 dropped it. The clip pass is the largest *driver-side* share and the per
   wins only the multiply and needs a VFPU/FPU fence — it raised FPU Exception (IV) in the probe).
 - **P5 — compact-format experiments** (2D s16/5551, s8 normals) only behind flags and the pixel gates.
 
+## Cross-engine control: M3D (2026-11-24)
+
+A second engine on the same hardware was measured against this port, with the same content and the same capture
+discipline: [M3D compared with pspgu](m3d-lessons.md). M3D has no GL layer, no CPU clipper and no CPU transform — it
+bakes geometry, composes a GUM matrix per object and lets the GE transform.
+
+| cubes (20-wide grid) | M3D work / fps | ours (merged) work / fps |
+|---|---|---|
+| 400 | **8.48 ms / 60.0** | 31.92 ms / 29.8 |
+| 800 | **15.93 ms / 57.3** | 54.05 ms / 15.0 |
+| 1,200 | **24.07 ms / 30.0** | 96.11 ms / 9.3 (154 replays) |
+
+M3D holds 60 fps to **760 cubes**; its per-cube cost is **~19 µs** against **~55 µs** for our CPU-expanded merged
+vertex and **~180 µs** for our per-object draw. The 2D side goes the other way: our batcher does 1,566 sprites in
+6 draws at 20.5 ms, while both M3D 2D paths are one draw per sprite (34.9–63.8 ms).
+
+The actionable conclusions are F1–F3 and R1–R3 in that page: the GE is not the bottleneck, our call surface is, and
+the clip scan is the largest removable block for objects the classifier already proves clean. They feed the open
+sprints 086–089 directly.
+
 ## Guidelines from the renderer blueprint
 
 Sources: local reference notes (`LOCAL-REFERENCES.md`, untracked, not in the repository) §3, cross-checked against

@@ -30,8 +30,15 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
     #define SHOWCASE_FRAMES 0
 #endif
 
-#ifndef GRID
-#define GRID 20                 // GRID x GRID cubes, overridable for the P10-S18 sweep
+#if defined(GRID)
+    #define COLS GRID
+    #define ROWS GRID
+#endif
+#ifndef COLS
+    #define COLS 20
+#endif
+#ifndef ROWS
+    #define ROWS 20
 #endif
 #define SPACING 1.15f
 
@@ -107,7 +114,7 @@ int main(void)
             DrawRectangle(8, 8, 212, 62, (Color){ 6, 10, 22, 210 });
             DrawRectangleLines(8, 8, 212, 62, (Color){ 90, 140, 210, 255 });
             DrawText("PSP-1000  GE  pspgu", 14, 14, 10, (Color){ 150, 190, 240, 255 });
-            DrawText(TextFormat("%d cubes merged", GRID*GRID), 14, 28, 10, RAYWHITE);
+            DrawText(TextFormat("%d cubes merged", COLS*ROWS), 14, 28, 10, RAYWHITE);
             DrawText(TextFormat("%d fps", GetFPS()), 14, 42, 10, (Color){ 120, 220, 160, 255 });
 
             BeginMode3D(cam);
@@ -120,14 +127,14 @@ int main(void)
                 {
                     Material mat = pass? warm : cool;
 
-                    for (int z = 0; z < GRID; z++)
+                    for (int z = 0; z < ROWS; z++)
                     {
-                        for (int x = 0; x < GRID; x++)
+                        for (int x = 0; x < COLS; x++)
                         {
                             if (((x + z) & 1) != pass) continue;
 
-                            float px = ((float)x - (GRID - 1)*0.5f)*SPACING;
-                            float pz = ((float)z - (GRID - 1)*0.5f)*SPACING;
+                            float px = ((float)x - (COLS - 1)*0.5f)*SPACING;
+                            float pz = ((float)z - (ROWS - 1)*0.5f)*SPACING;
                             float wave = sinf(t*1.5f + x*0.42f + z*0.31f);
                             float py = 1.1f + 0.75f*wave;
                             float s = 0.62f + 0.16f*sinf(t*1.1f + x*0.2f - z*0.25f);
@@ -171,7 +178,7 @@ int main(void)
     TraceLog(LOG_INFO, "STAT n=%d avg=%.3f fps=%.1f", frames, avg, (avg > 0.0)? 1000.0/avg : 0.0);
     TraceLog(LOG_INFO, "SPLIT n=%d work=%.3f swap=%.3f", frames, avg - swapAvg, swapAvg);
     PspCountersDump("SCENE", frames);
-    TraceLog(LOG_INFO, "DONE frames %d cubes %d", frames, GRID*GRID);
+    TraceLog(LOG_INFO, "DONE frames %d cubes %d", frames, COLS*ROWS);
     sceKernelSleepThread();
 
     return 0;

@@ -9,6 +9,9 @@ CFLAGS += -DSHOWCASE_FRAMES=$(FRAMES) -I../../../bunnymark -DWRAP_COUNTERS
 ifdef GRID
 CFLAGS += -DGRID=$(GRID)
 endif
+ifdef COLS
+CFLAGS += -DCOLS=$(COLS) -DROWS=$(ROWS)
+endif
 LDFLAGS += -Wl,--wrap=glBegin -Wl,--wrap=glEnd \
            -Wl,--wrap=glVertex2f -Wl,--wrap=glVertex2i \
            -Wl,--wrap=glBindTexture \
