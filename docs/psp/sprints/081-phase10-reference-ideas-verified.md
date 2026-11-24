@@ -191,3 +191,37 @@ verified by pixels instead. That is worth fixing in the script: hash the object 
   RTT). Record the decision then, not now.
 - The reference's other choices were already measured and rejected: compact vertex colours (077), GUM (070), the
   full-sync model (Phase 5).
+- `sceGuGetMemory` list-local vertices: checked after close; scheduled as P10-S15 T6a, not an S14 adoption.
+
+## 11. Post-close reference check: `sceGuGetMemory` (2026-11-24)
+
+Not one of the two sprint arms; recorded here because the same gLib2D reference contributed it, and the
+measurement belongs to P10-S15 T6a.
+
+**What the public pspsdk source shows.** `sceGuGetMemory` returns a 4-byte-aligned block inside the current
+display list. `sceGuStart` maps the list through the **uncached alias** (`list | 0x40000000`), so writes to the
+returned block need **no `pspguWriteback`**; the block is invalid as soon as the same list is refilled. The function
+also advances the stall address for a direct list and performs **no bounds check**. `sceGuFinishId` writes
+FINISH/END and updates the stall; there is no separate cache flush for the list.
+
+**Why it might be a good idea.**
+
+- It removes the 2 × 512 KiB cached vertex arenas (`PSP_GU_ARENA_BYTES`) — **1 MiB of main RAM** — because the
+  vertices live in the already-allocated 240 KiB display lists.
+- No data-cache writeback for the vertex block; commands and vertices are one contiguous uncached buffer.
+- Its lifetime is the list's lifetime, which our two-list rotation already guarantees.
+
+**What it costs.**
+
+- The list is **240 KiB** (`PSP_GU_LIST_BYTES`); the GE maximum is `0x3FFFF`. The current arena can hold 512 KiB
+  of vertices per frame.
+- **No bounds check**: the caller must track `listUsedMax` and fall back to the arena rather than overrun.
+- The block is 4-byte aligned (our arena is 64-byte line-aligned) and uncached stores replace cached stores plus a
+  range writeback.
+- One stall syscall per allocation; one block per list versus gLib2D's per-batch pattern changes the count.
+- The vendor 6.6.0 reference tree uses the API in 30 graphics samples (reference/sample study only; no vendor code
+  or documentation is copied). The pspsdk source is the authoritative behavior here.
+
+**Disposition.** Not an S14 adoption. P10-S15 T6a measures list-local vertices against the arena on main-RAM,
+`listUsedMax`, stall count, uncached-store cost, the 0-diff gates and a fallback. The S14 result stands: nothing
+adopted.
