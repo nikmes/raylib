@@ -67,16 +67,49 @@ on the dual arm as they land).
 - [ ] S0 guard exists before any capacity sweep
 - [ ] the control pair re-read: 3D 33.548 / work 32.071, 2D 33.803 / work 21.590
 
+## 4b. Readiness review (2026-11-24)
+
+Reviewed against `master @ 1b07e018`. Verdict: **S0 and S1 are startable as written; S2-S5 each need one concrete
+hook the first draft did not name.** All five are small and are decided here so the implementer does not have to
+choose.
+
+1. **Where the full wait goes decides the split.** The harness computes `work = avg − swap`, and `pspguEndFrame`
+   runs inside `eglSwapBuffers` (egl.c:792). If the single arm syncs at the end of the frame — as the reference
+   model does before its swap — the wait lands in `swap` and `work` stays pure list build; if it syncs at
+   `pspguBeginFrame`, the same wait lands in `work`. Both are correct, only the first is comparable to the dual
+   arm's numbers. **Decision: sync in `pspguEndFrame`, before the display switch.** `avg` is the comparison;
+   `work`/`swap` mean different things per arm and the result must say so.
+2. **S1 needs a code path that does not exist yet.** `pspguEndFrame` today does nothing in the direct build and
+   enqueues in the replay build (`GU_SEND`). The single arm is a third case: `GU_DIRECT`, the qid captured at
+   `sceGuStart` (`ge_list_executed[0]`), and `sceGeListSync(qid, PSP_GE_LIST_DONE)` at end of frame. Plumbing:
+   `PSPGU_SUBMIT` in `tools/pspgu/Makefile` and `tools/pspgu-build.sh`, `single` implying
+   `PSPGU_LIST_VERTICES=1`, and the boot line naming the arm.
+3. **S5 needs a deterministic trigger, not VRAM pressure.** "Force a texture eviction" depends on allocator state we
+   do not control frame by frame. Add a debug flag `PSPGU_FORCE_REOPEN=N` that closes and reopens the list once at
+   frame N through the existing `pspguFinishAndWait` path — the same path the real eviction takes
+   (`gl_texture.c:408`), but reproducible.
+4. **S2/S3 need sweepable knobs.** bunnymark accepts `BUNNY_COUNT` and `SPRITE_SCALE` (Makefile:11,14). The
+   showcase's `GRID` is an unconditional `#define` (main.c:33) and must become `#ifndef GRID` before it can be swept
+   — otherwise the cube sweep means editing source between runs, which is how a stale build gets measured.
+5. **S4 needs a number source.** `sceKernelTotalFreeMemSize()` and `sceKernelMaxFreeMemSize()`
+   (`pspsysmem.h:81,88`) logged at boot, plus the driver's own `listBytes`/`arenaBytes` boot line. The dual build
+   allocates both lists and both arenas unconditionally (egl.c:273-278); the single arm must allocate **one list and
+   no arena**, or the ledger measures the wrong thing.
+6. **S0 is half-built already.** `pspguArenaAlloc` refuses past `listVertexBytes` and counts the refusal
+   (`pspgu.listVertexFellBack`), and `pspguWriteback` already skips the block. What is missing is the reserve
+   *derivation* — today it is the fixed `PSPGU_LIST_VERTEX_BYTES`, not `listBytes − commandHeadroom` — and the log
+   line that proves the guard fired. S0 is therefore an edit of existing code, not new machinery.
+
 ## 5. Tasks
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
 | S0 | **Guard and reserve** for vertices inside the list — shared with 087 A2/A3: reserve bounded by `listBytes − commandHeadroom`, refuse sub-allocations past it, count refusals. Without this the capacity sweep corrupts memory instead of reporting | `todo` | a deliberately oversized frame renders correctly and increments the refusal counter; normal frames stay at 0 | — |
-| S1 | **Single-list arm.** `PSPGU_SUBMIT=single`: one list (240 KiB, `memalign(64)`), `GU_DIRECT`, vertices via `sceGuGetMemory`, `sceGeListSync(qid, PSP_GE_LIST_DONE)` at the end of every frame. Boot line names the arm. Dual is the control | `todo` | both arms boot and render the same scene; the sync is visible in the logs as one wait per frame | — |
-| S2 | **Capacity sweep.** Sprites (2 verts each, 24 B) and merged cubes until the guard refuses or the list ends; report the maximum for each arm | `todo` | numbers for both arms; the boundary behaviour described (refusal + fallback vs corruption avoided) | — |
+| S1 | **Single-list arm.** `PSPGU_SUBMIT=single`: one list (240 KiB, `memalign(64)`), `GU_DIRECT`, vertices via `sceGuGetMemory`, sync in `pspguEndFrame` (inside the wrapped `eglSwapBuffers`, so the wait is counted in `swap`). One list allocated, no arena. Dual is the control | `todo` | both arms boot and render the same scene; the boot line names the arm; exactly one full wait per frame, visible as the swap component | — |
+| S2 | **Capacity sweep.** Sprites (`BUNNY_COUNT`, 2 verts each, 24 B) and merged cubes (`GRID`, once it is `#ifndef`) until the guard refuses or the list ends; report the maximum for each arm | `todo` | numbers for both arms; the boundary behaviour described (refusal + fallback vs corruption avoided) | — |
 | S3 | **Three-ratio frame time.** Same scene, tuned so build ≫ GE, build ≈ GE and GE ≫ build (use vertex count for build, fill/sprite count for GE). Two runs per point per arm | `todo` | avg, build, GE and vblank per arm per ratio; the **crossover ratio** stated where the models meet | — |
-| S4 | **RAM ledger.** Static array vs lists + arenas, and the heap/static split | `todo` | bytes per arm at equal capacity, and at maximum capacity | — |
-| S5 | **Mid-frame reopen.** Force a texture eviction (VRAM pressure) while a frame is in flight, on the single-list arm | `todo` | what happens is described; if the single buffer is destroyed by a second `sceGuStart`, that is the finding | — |
+| S4 | **RAM ledger.** Static array vs lists + arenas, and the heap/static split, from `sceKernelTotalFreeMemSize()` at boot plus the driver's `listBytes`/`arenaBytes` line | `todo` | bytes per arm at equal capacity, and at maximum capacity | — |
+| S5 | **Mid-frame reopen.** `PSPGU_FORCE_REOPEN=N`: close and reopen the list at frame N through `pspguFinishAndWait` while a draw is already queued, on the single-list arm | `todo` | what happens is described; if the single buffer is destroyed by a second `sceGuStart`, that is the finding | — |
 | S6 | **Pixel table on both arms.** Same scene, same library | `todo` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT identical on both arms | — |
 | S7 | **Close and recommend.** One paragraph per question with its number; a recommendation per scene class | `todo` | the recommendation is decided by the numbers, including "no scene class" if that is the answer | — |
 
