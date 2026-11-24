@@ -183,6 +183,28 @@ Pending — no device runs yet.
 - If C is adopted, an asset converter becomes worthwhile only once the repo has an asset format; until then the bake
   helper is the whole pipeline.
 
+**Audit findings from the writeback review (2026-11-24).** Every path that hands a pointer to the GE was checked
+against the rule "the range must be visible, by writeback or by an uncached alias". The shipped build satisfies it
+everywhere — copied runs go through `arenaCopy` (memcpy + writeback, gl_draw.c:936-937), the converting layout
+packs and writes back at each site, static meshes are written back at load (rmodels.c:1945), and the list block is
+never written back because `sceGuStart` maps it uncached. Two gaps are outside the shipped path and are recorded
+here rather than fixed:
+
+- **The direct-layout path has an unasserted visibility invariant.** `gl_draw.c:1429` passes the client's pointer to
+  `sceGuDrawArray` with no writeback. It is correct today because the batcher's layout is caught by
+  `isBatchedLayout()` first and copied, and because `Mesh` vertices are written back at load. Nothing states or
+  checks that "whoever produced this pointer wrote it back", so a future caller with its own interleaved array reads
+  stale vertices — the documented failure mode is degenerate, invisible primitives, not distorted ones. Follow-up:
+  assert or log the invariant in debug builds, and copy when the provenance is not known.
+- **`UpdateMeshBuffer` is a silent no-op on the GL 1.1 path.** `rmodels.c:2131` calls `rlUpdateVertexBuffer`, whose
+  body is compiled only for `GRAPHICS_API_OPENGL_33` / `_ES2`. Dynamic mesh updates therefore change nothing and
+  report no error. Follow-up: either implement it (memcpy into the mesh's array plus `sceKernelDcacheWritebackRange`,
+  keeping `mesh.vertices` as the live source) or fail loudly. This is a functional gap, not a coherence hazard.
+
+Neither is a reason to change the writeback model: the model is right, and 085 T6a measured the alternative
+(21.593 → 20.106 ms with zero writebacks on a 2D frame). They are recorded so the next person does not re-derive
+them.
+
 ## 11. References
 
 - sprint 085 §9.1 (split), §9.3 (strips, index copy), §9.6 (T6a numbers), §9.7 (sync audit), §9.9 (close pair)
