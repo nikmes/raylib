@@ -38,7 +38,15 @@
 // The driver sits below raylib, so it cannot call TraceLog: that would invert the layering
 // and could recurse through the very GL calls being logged. printf reaches PSPLink's
 // console the same way the application's own TRACELOG does.
+#ifndef PSPGU_VERBOSE
+#define PSPGU_VERBOSE 1
+#endif
+
+#if PSPGU_VERBOSE
 #define pspguLog(...) do { printf("[PSPGU] "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while (0)
+#else
+#define pspguLog(...) ((void)0)
+#endif
 
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014

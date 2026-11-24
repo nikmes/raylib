@@ -20,6 +20,8 @@ CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -fno-strict-aliasing \
 ifdef PSP_GU_TRACE
     CFLAGS += -DPSP_GU_TRACE
 endif
+PSPGU_VERBOSE ?= 1
+CFLAGS += -DPSPGU_VERBOSE=$(PSPGU_VERBOSE)
 ifdef PSP_GU_DEPTH
     CFLAGS += -DPSP_GU_DEPTH=$(PSP_GU_DEPTH)
 endif

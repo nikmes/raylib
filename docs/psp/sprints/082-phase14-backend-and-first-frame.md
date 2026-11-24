@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `7d495d16` |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | first port build `galaga-b1`; driver from T1 (current pspgu b37 expected) |
-| Tasks | 0/8 done |
+| Tasks | 7/8 done — T5 physical-input confirmation open |
 
 ## 0. Handover
 
@@ -135,14 +135,19 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Decide display and driver.** Choose A (logical height 272, 1:1, centred at x=128) or C (tate); choose the current pspgu (b37 on `master`; build from a clean worktree and verify) or pspGL (repack every texture ≤512). Record both with the reason | `todo` | decision table in §9; `pspgu-build.sh --check` output, driver hash, and a clean-worktree note | — |
-| T2 | **Scaffold and build.** Copy the core, add a C++ rule and Makefile, declare `PSP_HEAP_SIZE_KB(n);` in the port's main source, and produce `galaga.elf`/`.prx` | `todo` | `make` completes; PRX size and `psp-nm` logged; boot log shows the declared heap and free bytes; no errors from port code | — |
-| T3 | **Renderer.** Implement `setTranslation`, `drawPoint`, `drawRectangle`, `drawSprite(Sprite,dst,src,size)`, including the 540-wide `title_shine` path; convert the game's `0x00BBGGRR` integers to raylib `Color {r,g,b,255}` | `todo` | title screen + stage frame show every expected sprite; a colour test (red/blue/green) matches the enum; sprite positions match the checklist in §7 | — |
-| T4 | **Text.** Load PressStart2P at 8 px (or a pre-baked atlas) and emit each glyph at `x + 8*i` using `GetGlyphIndex`/`GetGlyphAtlasRec`; never fall back to raylib's 10 px font | `todo` | HUD and message positions match the checklist; no "atlas exceeds 512" log; two identical captures | — |
-| T5 | **Input.** Map D-pad and nub (`IsGamepadButtonDown`, `GetGamepadAxisMovement`) to LEFT/RIGHT, CROSS to FIRE, and keep `isKeyPressedOnce` semantics; add a non-gameplay exit (SELECT/START) that logs `DONE` and sleeps | `todo` | button-by-button device test; edge detection fires once per press; no press is lost while held | — |
-| T6 | **Loop and runtime.** Fixed 1/60 s accumulator, `EndDrawing` pacing, no 3 ms sleep; replace `getchar(); exit()` in `ol::error`; route logs to `TraceLog` with a build number; count logical draws/text/points and read pspgu's `pspguVramStats`/`pspguResidencyStats` | `todo` | 600 frames logged, frame counter and `DONE`; a forced asset miss logs an error and exits cleanly; the stats line prints | — |
-| T7 | **Assets.** Load all title/stage PNGs from a staged root; report any missing file; keep the upstream `res/graphic` layout | `todo` | zero load errors; every sprite used by the title and stage is present | — |
-| T8 | **Device run and close.** Title → stage, 600 frames, two identical captures, the T6 counters (logical draw/text/point calls, `pspguVramStats`/`pspguResidencyStats`, frame time), reset; write the result back | `todo` | two identical captures; no crash; §7 rows filled; §9 result written | — |
+| T1 | **Decide display and driver.** Choose A (logical height 272, 1:1, centred at x=128) or C (tate); choose the current pspgu (b37 on `master`; build from a clean worktree and verify) or pspGL (repack every texture ≤512). Record both with the reason | `done` | decision table in §9; `pspgu-build.sh --check` output, driver hash, and a clean-worktree note | pspgu b37 + `PSPGU_TEXFMT=auto`; full-screen `STRETCH=1` requested by the user, `STRETCH=0` keeps 224×272 centred; pspgu built quiet for gameplay |
+| T2 | **Scaffold and build.** Copy the core, add a C++ rule and Makefile, declare `PSP_HEAP_SIZE_KB(n);` in the port's main source, and produce `galaga.elf`/`.prx` | `done` | `make` completes; PRX size and `psp-nm` logged; boot log shows the declared heap and free bytes; no errors from port code | `galaga.prx` 3,171,722 B; `PSP_HEAP_SIZE_KB(16384)`; explicit `%.o: %.cpp`, `-lstdc++ -lm`, `-G0` |
+| T3 | **Renderer.** Implement `setTranslation`, `drawPoint`, `drawRectangle`, `drawSprite(Sprite,dst,src,size)`, including the 540-wide `title_shine` path; convert the game's `0x00BBGGRR` integers to raylib `Color {r,g,b,255}` | `done` | title screen + stage frame show every expected sprite; a colour test (red/blue/green) matches the enum; sprite positions match the checklist in §7 | title and stage render full-screen; 27 textures; `title_shine` through the 512-window path |
+| T4 | **Text.** Load PressStart2P at 8 px (or a pre-baked atlas) and emit each glyph at `x + 8*i` using `GetGlyphIndex`/`GetGlyphAtlasRec`; never fall back to raylib's 10 px font | `done` | HUD and message positions match the checklist; no "atlas exceeds 512" log; two identical captures | atlas 256×128, 8 px; HUD/messages aligned; two identical title captures |
+| T5 | **Input.** Map D-pad and nub (`IsGamepadButtonDown`, `GetGamepadAxisMovement`) to LEFT/RIGHT, CROSS to FIRE, and keep `isKeyPressedOnce` semantics; add a non-gameplay exit (SELECT/START) that logs `DONE` and sleeps | `doing` | button-by-button device test; edge detection fires once per press; no press is lost while held | mapping implemented and the autoplay FIRE starts the stage; **physical D-pad/nub/CROSS test not yet recorded** |
+| T6 | **Loop and runtime.** Fixed 1/60 s accumulator, `EndDrawing` pacing, no 3 ms sleep; replace `getchar(); exit()` in `ol::error`; route logs to `TraceLog` with a build number; count logical draws/text/points and read pspgu's `pspguVramStats`/`pspguResidencyStats` | `done` | 600 frames logged, frame counter and `DONE`; a forced asset miss logs an error and exits cleanly; the stats line prints | `STATS`/`CALLS` lines; `DONE frames=600 fps=60.0`; pspgu VRAM/residency counters |
+| T7 | **Assets.** Load all title/stage PNGs from a staged root; report any missing file; keep the upstream `res/graphic` layout | `done` | zero load errors; every sprite used by the title and stage is present | 27 textures + font, 0 load errors, 0 VRAM failures |
+| T8 | **Device run and close.** Title → stage, 600 frames, two identical captures, the T6 counters (logical draw/text/point calls, `pspguVramStats`/`pspguResidencyStats`, frame time), reset; write the result back | `done` | two identical captures; no crash; §7 rows filled; §9 result written | title 600 frames/60 fps, two byte-identical captures; stage 600 frames/60 fps; VRAM 1,766,912/330,240; 30 resident, 0 failures |
+
+### Task log (append-only)
+
+- 2026-11-23 — sprint opened, all tasks `todo`
+- 2026-11-24 — T1–T4, T6–T8 `done`; T5 mapping implemented, physical test open
 
 ### Design notes
 
@@ -232,11 +237,12 @@ number. A screenshot without a build number is not evidence.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline | | title, 600 frames | frame median / p95 | | |
-| baseline | | title, 600 frames | draws / binds / vertices | | |
-| baseline | | boot | declared heap / entry free | | |
-| baseline | | boot | VRAM used / free / largest | | |
-| baseline | | title + stage | load time, open count | | |
+| title | galaga-b1 | 600 frames | frame / fps | **60 fps**, work 1.1–1.5 ms | `DONE frames=600 fps=60.0` |
+| title | galaga-b1 | 600 frames | logical calls | 2,397 sprites / 4,430 texts / 44,895 points | cumulative |
+| stage | galaga-b1 | 600 frames | frame / fps | **60 fps**, work 1.2–1.5 ms | `START_SCENE=2` |
+| boot | galaga-b1 | all assets | VRAM used / free / largest | **1,766,912 / 330,240 / 330,240 B** | 30 resident, 0 failures |
+| boot | galaga-b1 | declared heap | partition free / max | **4,247,552 / 4,202,496 B** | 16 MiB heap |
+| title | galaga-b1 | two captures | raw sha256 / diff | **identical / none** | full-screen stretch |
 
 ## 8. Exit criteria
 
@@ -249,8 +255,18 @@ number. A screenshot without a build number is not evidence.
 
 ## 9. Result
 
-Open. This section is written when the sprint closes; it must contain the decision table from T1, the first
-frame's numbers, and what failed.
+**P14-S1 is implemented; one verification remains open.** The port builds as `galaga.prx`, loads 27 textures
+plus the 8 px font, and runs the title and stage at 60 fps with the full-screen stretch. The title produces two
+byte-identical captures. VRAM is 1,766,912 B used / 330,240 B free with 30 textures resident and 0 allocation
+failures; the 16 MiB heap leaves 4.2 MB of partition free.
+
+Two game defects were exposed and fixed in the port: `Hud::set1UpBlinking` (missing `return` in a `bool`
+function) fell through into the next function and crashed the stage, and `Entity::commitZOrderChange` had the
+same defect. The raylib colour macros also collide with the game's `ol::Color` enum, so the backend `#undef`s
+them after `raylib.h`. The stale `src/infra/Game.cpp` was deleted before the first build.
+
+**Open:** T5's physical D-pad/nub/CROSS confirmation. The mapping is implemented and the autoplay FIRE path
+starts the stage, but no pass has recorded a human press of the three controls.
 
 ## 10. Follow-ups
 

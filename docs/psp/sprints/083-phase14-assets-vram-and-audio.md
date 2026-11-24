@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `7d495d16`; port at `/home/psp/galaga-psp` from P14-S1 |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | `galaga-b2` onward; driver chosen in P14-S1 T1 |
-| Tasks | 0/8 done |
+| Tasks | 4/8 done — T5 load timing and T7 soak open; T6/EBOOT and T8 close remain |
 
 ## 0. Handover
 
@@ -119,14 +119,19 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Budget and format.** Record the current padded texture set, free VRAM and the declared heap; choose 16-bit `--texfmt=auto`, a repack, or both; confirm zero texture allocation failures | `todo` | boot line: used/free/largest; 27 textures loaded; 0 failures; declared heap / entry free | — |
-| T2 | **Repack and split.** Split `title_shine` (540×36) into ≤512 pieces; optionally pack the sprite sheets into one atlas. Measure draws/binds before and after | `todo` | every sprite and frame renders; draw/bind delta recorded; adopt only if it wins | — |
-| T3 | **Text parity.** If the runtime 8 px TTF is unstable, bake the atlas offline; keep the fixed 8-pixel advance | `todo` | HUD/message checklist; atlas ≤512; no default-font fallback; two identical captures | — |
-| T4 | **Audio backend and memory plan.** Classify the 17 sound clips and 6 music tracks by decoded size; load short SFX as `Sound` with alias pools, stream music and (if needed) long clips as `Music` streams; set `looping = false`, stop-previous, one `UpdateMusicStream` per frame | `todo` | every enum plays; repeated shots overlap; a track stops the previous; peak heap and open-file count recorded; no blocking call in the frame | — |
-| T5 | **Startup and load.** Measure the open count and time to first frame with the chosen load plan; stage or pack assets; no black screen longer than the measured load | `todo` | load time, open count, heap high-water in §7; no missing-file log | — |
+| T1 | **Budget and format.** Record the current padded texture set, free VRAM and the declared heap; choose 16-bit `--texfmt=auto`, a repack, or both; confirm zero texture allocation failures | `done` | boot line: used/free/largest; 27 textures loaded; 0 failures; declared heap / entry free | 4444/5650 auto; 1,766,912/330,240 B; 30 resident, **0 failures**; heap 16 MiB, partition free 4.25 MB |
+| T2 | **Repack and split.** Split `title_shine` (540×36) into ≤512 pieces; optionally pack the sprite sheets into one atlas. Measure draws/binds before and after | `dropped` | every sprite and frame renders; draw/bind delta recorded; adopt only if it wins | Not needed: pspgu's 512-window path renders `title_shine`; auto fits with 330 KB free and 0 failures |
+| T3 | **Text parity.** If the runtime 8 px TTF is unstable, bake the atlas offline; keep the fixed 8-pixel advance | `done` | HUD/message checklist; atlas ≤512; no default-font fallback; two identical captures | atlas 256×128 at 8 px; fixed 8 px advance; title captures identical |
+| T4 | **Audio backend and memory plan.** Classify the 17 sound clips and 6 music tracks by decoded size; load short SFX as `Sound` with alias pools, stream music and (if needed) long clips as `Music` streams; set `looping = false`, stop-previous, one `UpdateMusicStream` per frame | `done` | every enum plays; repeated shots overlap; a track stops the previous; peak heap and open-file count recorded; no blocking call in the frame | 17 Sounds + 6 Music on 16 MiB; commands queued to a 0x30 control thread; 512-frame blocks; worker 0x20; **0 underruns** in the 30 s stage arm |
+| T5 | **Startup and load.** Measure the open count and time to first frame with the chosen load plan; stage or pack assets; no black screen longer than the measured load | `doing` | load time, open count, heap high-water in §7; no missing-file log | assets staged under `host0:/galaga/`; 0 missing-file logs; timing not yet recorded |
 | T6 | **EBOOT packaging.** PARAM.SFO, title, asset root under `ms0:/PSP/GAME/<TITLE>/`; verify beside-EBOOT paths | `todo` | EBOOT launches without PSPLink; title appears; same captures as the PRX run | — |
-| T7 | **Five-minute run.** Title → stage → game over with audio; log frame time, dropouts, heap and VRAM high-water | `todo` | 0 dropouts; 0 allocation failures; no crash; p95 frame time recorded | — |
+| T7 | **Five-minute run.** Title → stage → game over with audio; log frame time, dropouts, heap and VRAM high-water | `doing` | 0 dropouts; 0 allocation failures; no crash; p95 frame time recorded | 10-minute soak running; 0 underruns to t=30 s; autoplay stress reached 33–37 fps at t=55–70 s |
 | T8 | **Close and decide.** Record which format/atlas/packaging arms were adopted; update the phase page and §9 | `todo` | decision table in §9; phase page's state row updated | — |
+
+### Task log (append-only)
+
+- 2026-11-23 — sprint opened, all tasks `todo`
+- 2026-11-24 — T1/T3/T4 `done`; T2 `dropped` (windows + auto fit); T5/T7 `doing`; T6/T8 `todo`
 
 ### Design notes
 
@@ -202,14 +207,12 @@ do not scatter `#ifdef PLATFORM_PSP` through gameplay code.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline | | all textures | used / free / largest / failures | | |
-| baseline | | all textures | draws / binds per frame | | |
-| T1 | | all textures | used / free / largest / failures | | |
-| T2 | | all textures | draws / binds, frame work | | |
-| T3 | | title + HUD | capture diff | | |
-| T4 | | 5-minute run | dropouts / audio memory / peak heap / open files | | |
-| T5 | | cold start | load time, open count, heap high-water | | |
-| T6 | | EBOOT | launch / capture parity | | |
+| baseline | galaga-b1 | all textures | used / free / largest / failures | **1,766,912 / 330,240 / 330,240 / 0** | 30 resident |
+| T4 | galaga-b1 | 17 Sounds + 6 Music | partition free / open files | **4.25 MB free**; music files streamed | 16 MiB heap |
+| T4 | galaga-b1 | 30 s stage | audio dropouts | **0** | 512-frame blocks, worker 0x20 |
+| T4 | galaga-b1 | title, 5 min | audio dropouts | 4 at startup (before the queue/priority fixes) | superseded |
+| T7 | galaga-b1 | 10-minute autoplay | fps / dropouts | **33–37 fps at t=55–70 s; 0 underruns so far** | soak running |
+| T6 | — | EBOOT | launch / capture parity | — | not tested |
 
 ## 8. Exit criteria
 
@@ -223,8 +226,15 @@ do not scatter `#ifdef PLATFORM_PSP` through gameplay code.
 
 ## 9. Result
 
-Open. This section is written when the sprint closes; it must contain the format/atlas table, the audio
-numbers and the load-time row.
+**P14-S2 is mostly implemented; packaging and the long-run performance gate remain.** The texture set fits at
+4444/5650 with 330 KB free and 0 allocation failures, so the planned repack was dropped. The 8 px font is
+stable. Audio uses 17 decoded Sounds and 6 streamed Music tracks on a 16 MiB heap; playback commands are queued
+to a control thread, the DSP block is 512 frames, and the worker runs at the game thread's priority. The 30 s
+stage arm recorded **0 underruns**.
+
+The 10-minute autoplay soak is running. It has 0 underruns so far, but the autoplay stress drops to 33–37 fps
+after about 55 s; the main-thread work at that point is 6.9–8.5 ms, so the remaining time is scheduling/audio
+interaction rather than draw submission. EBOOT packaging and a final five-minute run are still open.
 
 ## 10. Follow-ups
 

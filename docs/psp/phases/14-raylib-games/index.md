@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **written, not started** — readiness-reviewed 2026-11-23; three sprints (082–084); first target CppGalaga v3 |
+| State | **in progress** — P14-S1 done; P14-S2 audio/VRAM done, EBOOT and the 5-minute gate open; P14-S3 10-minute soak running. Port at `/home/psp/galaga-psp` (outside this repo) |
 | Depends on | Phases 5–10 closed (renderer, textures/VRAM, input, audio, 3D); Phase 13 for the text and input paths it validated |
 | Exit criterion | one complete third-party game runs on a PSP-1000 at 60 fps from a cold launch to game over, with stable input, all sprites and text, audio without dropouts, two identical captures, and no crash in a 10-minute soak — without a change to raylib's public API; any library change is its own sprint |
 
@@ -111,6 +111,38 @@ the plan; all are now in the task tables.
 The review did **not** change the display recommendation (272-high, 1:1, centred), the local-only licensing rule,
 or the sprint order. It did add an explicit heap decision to S1, an audio streaming decision to S2, and the
 counter-source split to S1.
+
+## Implementation status (2026-11-24)
+
+The port is built and running on the PSP-1000. It lives at `/home/psp/galaga-psp`; only this documentation
+lives in the repository.
+
+**Build.** `make RUN_SECONDS=... START_SCENE=... AUTOPLAY=... STRETCH=1 AUDIO=1 MUSIC=1`. The Makefile has
+an explicit `%.o: %.cpp` rule and `-lstdc++ -lm`; `Game.cpp` declares `PSP_HEAP_SIZE_KB(16384);`. The port
+deletes the stale `src/infra/Game.cpp`, binds the raylib colour macros locally, and replaces `getchar()`/`exit()`
+in `Util.cpp` with `TraceLog`.
+
+**Display.** Full-screen stretch is the default (`STRETCH=1`): the 224×272 logical frame is mapped to 480×272
+with point filtering. `STRETCH=0` restores the 224×272 centred, pixel-perfect layout.
+
+**Renderer.** 27 PNGs and the PressStart2P 8 px atlas load; sprites use `DrawTexturePro`, text uses
+`GetGlyphIndex`/`GetGlyphAtlasRec` with a fixed 8-pixel advance. The 540-wide `title_shine` is sampled through
+pspgu's 512-window path.
+
+**Audio.** 17 SFX are decoded `Sound`s and 6 tracks are `Music` streams on a 16 MiB heap. Playback commands
+are queued to a 0x30 control thread, so the frame loop never waits on the mixer. The PSP backend uses 512-frame
+blocks, the worker is pinned at priority 0x20 (equal to the game thread), and the startup priority raise is
+suppressed for 200 callbacks. The pspgu driver is built quiet (`PSPGU_VERBOSE=0`) for gameplay.
+
+**Measured.** Title: 600 frames at 60 fps, two byte-identical captures, VRAM 1,766,912 B used / 330,240 free,
+30 textures resident, 0 allocation failures. Stage autoplay: 30 s game time, score 310, lives 2, main work
+6.0 ms at t=25.8 s, **0 audio underruns**. The 10-minute soak reached **GAMEOVER at t≈75 s** (stage 1, score
+2320, lives 0) with no crash and 0 audio underruns so far; the heavy phase ran at **33–40 fps**, not 60. The
+post-game title/attract ran at 44–45 fps. The soak continues; its log is `/tmp/galaga-soak.log`.
+
+**Fixes found by the port.** `Hud::set1UpBlinking` and `Entity::commitZOrderChange` were declared `bool` with no
+`return`; GCC let them fall through into the next function (the former crashed the stage). The game's `ol::Color`
+names collide with raylib's colour macros, so the backend `#undef`s them after `raylib.h`.
 
 ## Sprints
 

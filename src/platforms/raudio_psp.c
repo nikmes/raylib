@@ -15,8 +15,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#define RAUDIO_PSP_FRAMES 1024
+#define RAUDIO_PSP_FRAMES 512
 #define RAUDIO_PSP_CHANNEL_FRAMES PSP_AUDIO_SAMPLE_ALIGN(RAUDIO_PSP_FRAMES)
+
+// P14: asset loading can delay the first callbacks by >28 ms twice and raise the
+// worker above the 0x20 game thread for the rest of the session. Ignore gaps
+// during the first N callbacks; a real slow scene can still raise it afterwards.
+#ifndef PSP_AUDIO_RAISE_GRACE_CALLBACKS
+#define PSP_AUDIO_RAISE_GRACE_CALLBACKS 200
+#endif
 
 static int16_t raudioPspPcm[2][RAUDIO_PSP_FRAMES*2] __attribute__((aligned(64)));
 static int raudioPspPcmIndex = 0;
@@ -132,6 +139,10 @@ static ma_result OnPspDeviceWrite(ma_device *device, const void *frames, ma_uint
     {
         raudioPspFirstWrite = now;
         raudioPspThreadId = sceKernelGetThreadId();
+        // Equal priority with the 0x20 game thread: it gets scheduled during
+        // the frame's vblank wait without preempting the whole frame.
+        sceKernelChangeThreadPriority(raudioPspThreadId, 0x20);
+        raudioPspHighPriority = 1;
     }
 
     const int16_t *source = (const int16_t *)frames;
@@ -165,7 +176,11 @@ static ma_result OnPspDeviceWrite(ma_device *device, const void *frames, ma_uint
             // it above the frame loop only after two consecutive slow gaps, so a single
             // load hitch does not raise a 60 fps workload. One-way: once raised it stays, so
             // 60 fps and slow scenes each keep their correct policy.
-            if (writeGap > 28000) raudioPspSlowGaps++;
+            if (raudioPspCallbacks < PSP_AUDIO_RAISE_GRACE_CALLBACKS)
+            {
+                raudioPspSlowGaps = 0;
+            }
+            else if (writeGap > 28000) raudioPspSlowGaps++;
             else raudioPspSlowGaps = 0;
 
             if (!raudioPspHighPriority && (raudioPspSlowGaps >= 2))

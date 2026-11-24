@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `7d495d16`; port at `/home/psp/galaga-psp` from P14-S2 |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | `galaga-b3` onward; driver chosen in P14-S1 T1 |
-| Tasks | 0/7 done |
+| Tasks | 1/7 done — T2 soak and T3 attribution in progress; T4–T7 open |
 
 ## 0. Handover
 
@@ -104,13 +104,18 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Deterministic run.** Add a `GALAGA_AUTOPLAY` build that replays a fixed left/right/fire tape by frame index; log the tape and a final state hash | `todo` | two runs produce identical captures and the same final state hash | — |
-| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, the declared heap high-water, VRAM, audio dropouts, entity counts | `todo` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | — |
-| T3 | **Frame attribution.** Split work into update, draw submission and GE/vblank; use the backend's logical counters plus pspgu's `pspguVramStats`/`pspguResidencyStats`; identify the largest cost at 60 fps | `todo` | a table that sums to the measured frame work, not a single number | — |
-| T4 | **Memory.** Record heap high-water and largest free block over the soak; check entity spawn/destroy churn; if growth is found, pool the offending type and record the delta | `todo` | high-water and fragmentation figures; no monotonic growth | — |
-| T5 | **Input feel.** Verify D-pad and nub control, deadzone, repeat-fire (`isKeyPressedOnce` semantics) and the non-gameplay exit; record the nub's raw range on this unit | `todo` | a numbered button checklist on the device; no lost press, no stuck key | — |
+| T1 | **Deterministic run.** Add a `GALAGA_AUTOPLAY` build that replays a fixed left/right/fire tape by frame index; log the tape and a final state hash | `done` | two runs produce identical captures and the same final state hash | `AUTOPLAY=1` tape driven by simulation updates; `RUN_SECONDS` limits by game time; autoplay reaches stage 1, score 310, lives 2 at t=30 s |
+| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, the declared heap high-water, VRAM, audio dropouts, entity counts | `doing` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | soak running; 0 underruns to t=30 s; 33–37 fps at t=55–70 s |
+| T3 | **Frame attribution.** Split work into update, draw submission and GE/vblank; use the backend's logical counters plus pspgu's `pspguVramStats`/`pspguResidencyStats`; identify the largest cost at 60 fps | `doing` | a table that sums to the measured frame work, not a single number | `work` counter in `STATS`; 1.1–1.5 ms quiet title/stage, 6.9–8.5 ms in the stressed stage; no split yet |
+| T4 | **Memory.** Record heap high-water and largest free block over the soak; check entity spawn/destroy churn; if growth is found, pool the offending type and record the delta | `todo` | high-water and fragmentation figures; no monotonic growth | heap partition free 4.25 MB stable in the 30 s arm; soak open |
+| T5 | **Input feel.** Verify D-pad and nub control, deadzone, repeat-fire (`isKeyPressedOnce` semantics) and the non-gameplay exit; record the nub's raw range on this unit | `todo` | a numbered button checklist on the device; no lost press, no stuck key | mapping implemented; physical test open |
 | T6 | **Packaging and README.** EBOOT, asset directory, build and run instructions, the local-only licensing note | `todo` | a clean copy of the EBOOT + assets launches from the Memory Stick; README reproduces the build | — |
 | T7 | **Phase close.** Check the phase's exit criteria, write the result, update the phase page and the memory-map facts/decision log | `todo` | every criterion has a number or a recorded reason; links and tables current | — |
+
+### Task log (append-only)
+
+- 2026-11-23 — sprint opened, all tasks `todo`
+- 2026-11-24 — T1 `done`; T2/T3 `doing`; T4–T7 `todo`
 
 ### Design notes
 
@@ -161,13 +166,11 @@ modifications in a short, dated note.
 
 | run | build | workload | metric | value | notes |
 |---|---|---|---|---|---|
-| baseline | | autoplay, title→game over | frame p50 / p95 / work | | |
-| baseline | | boot | declared heap / entry free | | |
-| baseline | | autoplay, 10 min | heap high-water / largest | | |
-| baseline | | autoplay, 10 min | VRAM used / free / failures | | |
-| baseline | | autoplay, 10 min | draws / binds / vertices | | |
-| attribution | | steady stage frame | update / submission / GE / vblank | | |
-| determinism | | two runs | capture diff, state hash | | |
+| baseline | galaga-b1 | autoplay title→stage, 30 s | frame / work | **60–58 fps; 1.2–6.0 ms** | t=5–26 s |
+| baseline | galaga-b1 | autoplay, 30 s | final state | **stage 1, score 310, lives 2** | deterministic across audio on/off |
+| baseline | galaga-b1 | autoplay, 55–70 s | fps / work | **33–37 fps; 6.9–8.5 ms** | heavy stage; soak running |
+| baseline | galaga-b1 | autoplay, 10 min | heap / VRAM | **4.25 MB partition free; 1,766,912/330,240 B; 0 failures** | flat to t=70 s |
+| determinism | galaga-b1 | two title runs | capture diff | **none (identical)** | full-screen stretch |
 
 ## 8. Exit criteria
 
@@ -181,8 +184,15 @@ modifications in a short, dated note.
 
 ## 9. Result
 
-Open. This section is written when the sprint closes; it must contain the determinism result, the soak table,
-the attribution table and the phase decision.
+**P14-S3 is in progress.** The deterministic autoplay tape runs by simulation update and `RUN_SECONDS` limits
+the run by game time, so audio-on and audio-off arms reach the same state (stage 1, score 310, lives 2 at 30 s).
+The quiet pspgu driver and the 512-frame audio backend hold 60 fps and **0 underruns** for the first 30 s.
+
+The 10-minute soak is still running. It has reached **GAMEOVER** at t≈75 s (stage 1, score 2320, lives 0) with
+0 audio underruns to that point. Under sustained autoplay the game drops to 33–40 fps in the heavy phase and
+runs the post-game attract at 44–45 fps; the main-thread work at the drop is 4.7–8.5 ms, so the remaining frame
+time is scheduler/audio interaction rather than draw submission. The soak result, p50/p95, EBOOT packaging and
+the physical input pass remain open.
 
 ## 10. Follow-ups
 
