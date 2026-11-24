@@ -526,7 +526,8 @@ had no way to build a callable sub-list without a hand-written RET opcode. That 
 type (`pspgu.h:295`) and `samples/gu/doublelist:157-160` builds two callable sub-lists with
 `sceGuStart(GU_CALL, list[i])` + `sceGuFinish()` before `sceGuCallList` is ever used. The measurement below stands —
 it measures the command emission a CALL would replace — but the implementation path is the documented one, not an
-opcode hack.
+opcode hack. The probe therefore measures the thing a CALL list replaces: emitting N draw commands over static
+vertices.
 
 | arm | draws | CPU build | GE | list bytes |
 |---|---|---|---|---|
