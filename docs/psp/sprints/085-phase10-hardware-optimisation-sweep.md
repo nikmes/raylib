@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 8/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6), T6 dropped (§9.7), T7 done (§9.8); T2b/T5 dropped on prior evidence |
+| Tasks | **9/9 — closed** 2026-11-24: T1/T3/T7 done, T2/T4/T5b/T6/T6a dropped, T2b/T5 dropped on prior evidence; no default change |
 
 ## 0. Handover
 
@@ -289,13 +289,17 @@ Every task keeps these green; a speed claim with a pixel change is a drop.
 
 ## 8. Exit criteria
 
-- [ ] T1's split is reproducible and used by every adoption decision
-- [ ] every active task (T1-T4, T5b, T6, T6a, T7, T8) has a measured adopt/drop with a number and a pixel result
+- [x] T1's split is reproducible and used by every adoption decision — §9.1, repeated to 1 µs
+- [x] every active task (T1-T4, T5b, T6, T6a, T7, T8) has a measured adopt/drop with a number and a pixel result
+      — §9.1-§9.8; T2/T4/T5b/T6/T6a dropped, T1/T3/T7 done, T8 this section
 - [x] T2b and T5 are dropped with their prior numbers; no code is restored
-- [ ] adopted changes: `b38`, gate table 0, pair re-run, docs updated
-- [ ] dropped changes: recorded here and in the Phase 10 table; no code left behind
-- [ ] full gates and a strict docs build pass
-- [ ] driver state at close is explicit (pspgu or pspGL)
+- [x] adopted changes: **none**. No default behaviour changed, so there is no `b38`; the only code added is behind
+      `PSPGU_REPLAY` and `PSPGU_LIST_VERTICES`, both compiled out, and the installed driver is byte-identical to the
+      gated control (`9798af84e81b269e`)
+- [x] dropped changes: recorded in §9 and in the Phase 10 table; no code left behind (both flags default to 0)
+- [x] full gates and a strict docs build pass — docs `--strict` passes; the shipped binary is the gated control
+      byte for byte, and the re-run gates below agree with their recorded values
+- [x] driver state at close is explicit: **pspgu** installed (`9798af84e81b269e`), `libraylib.a c2004b266a6c3291`
 
 ## 9. Result
 
@@ -572,6 +576,40 @@ not deterministic even when the frame content is.
 
 Verdict: verified, **no code change**. The only anomaly is the single 46.8 ms first-frame outlier, which is texture
 upload at first use, not coherence — it appears once and never returns in 600 frames.
+
+### 9.9 T8 — gates and close (`done`, 2026-11-24)
+
+**Nothing shipped changed.** The sprint adopted no lever, so the installed driver is byte-identical to the gated
+control: pspgu content hash `9798af84e81b269e`, `libraylib.a c2004b266a6c3291`. That is the strongest form of the
+gate argument — the binary under the gates is the binary that was always gated — and it is checked, not assumed.
+
+**Gates re-run on the shipped build.**
+
+| gate | expected | measured |
+|---|---|---|
+| `batch_check` | 613 colours | **613** distinct 5-6-5 colours from a fresh capture |
+| `clip_probe EDGE_X=150` | 237/720 | captured, 5,000 non-black pixels; 237/720 is a row-sampled figure from the original run and is not re-derived here |
+| `arenaOverflows` | 0 | 0 in every run of the sprint (§9.1, §9.6, §9.8) |
+| full GE wait | none | none in the driver (§9.7 audit) |
+
+**Closing pair** (`p10s15-close`, same driver and library as the control, two runs per point):
+
+| sample | avg ms | fps | work ms | swap ms | control |
+|---|---|---|---|---|---|
+| `psp_showcase` (3D) | 33.548 | 29.8 | 32.071 | 1.477 | 33.569 / 32.059 |
+| `psp_2d_showcase` (2D) | 33.803 | 29.6 | 21.590 | 12.213 | 33.803 / 21.593 |
+
+3D sits 0.06 % below the control and 2D is identical to three decimals: the harness's measurement floor, and the
+expected result of a sprint that changed no default.
+
+**Verdict.** Five levers dropped with numbers (T2, T4, T5b, T6, T6a), two completed (T1, T7), one measured with a
+follow-up (T3). The sprint bought a map rather than speed:
+
+- the 3D frame is CPU-bound at 30.1 ms against 13.1 ms of GE, and the 2D frame is GE-bound at 29.2 against 19.5;
+- the GE-side levers — vertex format, CLUT, slicing, strips — cannot move the 3D frame, and strips only pay on
+  offline-baked static meshes;
+- the only CPU cost with headroom is the index run copy, ≈0.45 ms/frame, which belongs to its own sprint;
+- uncached list-local vertices save 1.49 ms of CPU but cannot serve a frame that reopens its list.
 
 ## 10. Follow-ups
 
