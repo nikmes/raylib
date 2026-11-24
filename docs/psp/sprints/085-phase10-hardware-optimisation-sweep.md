@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 1/9 active — T1 done (GE/CPU split, §9.1); T2b/T5 dropped on prior evidence |
+| Tasks | 2/9 active — T1 done (GE/CPU split, §9.1), T2 dropped (§9.2); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -142,7 +142,7 @@ and the adoption threshold are unchanged.
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `done` | GE + CPU + swap reconstructs the fresh control pair within the harness repeatability; two runs agree; no game change | §9.1 — probe repeats within 1 µs; 3D CPU-bound 30.1 vs 13.1 ms, 2D GE-bound 19.5 vs 29.2 ms |
-| T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `todo` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | — |
+| T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `dropped` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | §9.2 — GE 1,852→1,681 µs (−0.171 ms, 9.2 %) on 36,000 verts, but 59,538/130,560 pixels differ: s8 quantises a screen-wide mesh to ~1.8 px |
 | T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `dropped` | 079 T4 through mode slower; 077 T5 compact 2D; 061 s16 UV 37 px; b36 removed the path | prior numbers |
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `todo` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | — |
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `todo` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | — |
@@ -353,6 +353,35 @@ Reading:
 
 Consequence for the sprint: T2/T3/T6a act on the 3D CPU side (the 30 ms), T4/T5b on the 2D GE side (the 29 ms).
 A lever on the short side of a 13/30 (3D) or 19/29 (2D) split cannot reach the 0.05 ms adoption bar.
+
+### 9.2 T2 — S8 positions (`dropped`, 2026-11-24)
+
+Workload: 12,000 triangles (36,000 vertices) tiling the screen once, unlit, no depth test, no culling, one draw, in
+the same `GU_SEND` replay as T1. Both arms use one model matrix (scale 7×4, translate z=−10) and store the same
+geometry in [−1,1]: `x*32767` as s16 and `x*127` as s8, which the GE normalises back to that range.
+
+| arm | GE | CPU build | vertex |
+|---|---|---|---|
+| s16 (`GU_VERTEX_16BIT`) | 1,852 µs | 12 µs | 12 B |
+| s8 (`GU_VERTEX_8BIT`) | 1,681 µs | 12 µs | 8 B |
+
+The vertex-bound GE time drops **0.171 ms (9.2 %)**, the first measured GE-side win in the sprint. It is dropped on
+the parity gate: **59,538 of 130,560 pixels differ** (58,968 non-black in the s16 frame). The step is about
+`screen_width/128` ≈ 1.8 px for a mesh that spans the screen, and no scale matrix changes that — 8 bits over the
+visible extent is what sets it. A control draw of the 400-cube scene produced 22,644 non-black pixels through the
+same readback, so the capture path was proven before the mesh numbers were believed; the first attempt measured a
+black frame and was discarded.
+
+Two earlier versions of the arms were wrong and are worth recording:
+
+- `sceGumLoadMatrix` only updates pspgum's CPU-side stack; the matrices reach the GE through `sceGumDrawArray`.
+  Used with `sceGuDrawArray`, both arms drew nothing (`nonblack=0`) and still reported a plausible 1.8 ms.
+- `ScePspFMatrix4` has no `.m[]` in pspsdk; the basis columns are `.x/.y/.z/.w` and the translation lives in `.w`.
+
+Why it is also the wrong trade here: the app holds float vertices, so packing to s8 costs CPU per vertex every frame,
+and T1 puts the 3D frame's CPU at 30.1 ms against 13.1 ms of GE — the saving lands on the short side. A content
+pipeline could bake s8 once offline for small props (a 100-px-wide model quantises to ≈0.78 px), but that is an
+asset decision with its own pixel gate, not a renderer default.
 
 ## 10. Follow-ups
 

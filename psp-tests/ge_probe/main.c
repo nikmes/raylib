@@ -37,14 +37,29 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 #define CUBES 400
 #define CUBE_VERTS (CUBES*36)
 
+// T2: a vertex-bound mesh - 12,000 triangles that tile the screen once, so fill is
+// ~130k pixels but the GE transforms 36,000 vertices. Same geometry in s16 and s8.
+#define MESH_COLS 120
+#define MESH_ROWS 100
+#define MESH_TRIS (MESH_COLS*MESH_ROWS)
+#define MESH_VERTS (MESH_TRIS*3)
+
 static unsigned int list[LIST_BYTES/4] __attribute__((aligned(64)));
 
 typedef struct { float u, v; unsigned int color; float x, y, z; } V2;
 typedef struct { unsigned int color; float nx, ny, nz; float x, y, z; } V3;
+typedef struct { unsigned int color; short x, y, z, pad; } V16;
+typedef struct { unsigned int color; signed char x, y, z, pad; } V8;
 
 static V2 sprites[SPRITES*2] __attribute__((aligned(64)));
 static V3 cubes[CUBE_VERTS] __attribute__((aligned(64)));
 static unsigned short cubeIndex[CUBE_VERTS] __attribute__((aligned(64)));
+static V16 mesh16[MESH_VERTS] __attribute__((aligned(64)));
+static V8  mesh8[MESH_VERTS] __attribute__((aligned(64)));
+
+// Captures for the T2 parity check: the same frame drawn with each vertex format.
+static unsigned short cap16[SCR_W*SCR_H] __attribute__((aligned(64)));
+static unsigned short cap8[SCR_W*SCR_H] __attribute__((aligned(64)));
 
 static unsigned long long nowUs(void)
 {
@@ -118,6 +133,89 @@ static void makeScene(void)
     }
 
     for (i = 0; i < CUBE_VERTS; i++) cubeIndex[i] = (unsigned short)i;
+}
+
+// T2 mesh: unit-square coordinates in [-1,1] stored as s16 (x*32767) and s8 (x*127); the
+// GE normalises both back to [-1,1]. A model matrix maps that to a 14x8 quad at z=-10, so
+// the two arms draw identical geometry and only the vertex size differs.
+static void makeMesh(void)
+{
+    int k = 0;
+
+    for (int r = 0; r < MESH_ROWS; r++)
+    {
+        for (int c = 0; c < MESH_COLS; c++)
+        {
+            float x0 = -1.0f + 2.0f*(float)c/MESH_COLS;
+            float x1 = -1.0f + 2.0f*(float)(c+1)/MESH_COLS;
+            float y0 = -1.0f + 2.0f*(float)r/MESH_ROWS;
+            float y1 = -1.0f + 2.0f*(float)(r+1)/MESH_ROWS;
+            float pt[3][2] = { { x0, y0 }, { x1, y0 }, { x0, y1 } };
+            unsigned int color = ((r + c) & 1)? 0xFF7A96C8 : 0xFF5A78B4;
+
+            for (int t = 0; t < 3; t++, k++)
+            {
+                mesh16[k] = (V16){ color,
+                                   (short)lrintf(pt[t][0]*32767.0f),
+                                   (short)lrintf(pt[t][1]*32767.0f), 0, 0 };
+                mesh8[k]  = (V8){ color,
+                                  (signed char)lrintf(pt[t][0]*127.0f),
+                                  (signed char)lrintf(pt[t][1]*127.0f), 0, 0 };
+            }
+        }
+    }
+}
+
+static void loadMeshModel(void)
+{
+    ScePspFMatrix4 m;
+
+    // Column-major, as GU expects: x/y/z are the basis columns, w carries translation.
+    memset(&m, 0, sizeof(m));
+    m.x.x = 7.0f;
+    m.y.y = 4.0f;
+    m.z.z = 1.0f;
+    m.w.z = -10.0f;
+    m.w.w = 1.0f;
+    sceGumMatrixMode(GU_MODEL);
+    sceGumLoadMatrix(&m);
+}
+
+static void emitMesh(unsigned int fmt, const void *verts)
+{
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDisable(GU_BLEND);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuDisable(GU_LIGHTING);
+    sceGuDisable(GU_FOG);
+    loadMeshModel();
+    // sceGumDrawArray uploads the matrix stack the GU draw needs; sceGuDrawArray would use
+    // whatever the previous draw left in the GE.
+    sceGumDrawArray(GU_TRIANGLES, fmt | GU_TRANSFORM_3D, MESH_VERTS, NULL, verts);
+}
+
+static unsigned int buildMesh16(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitMesh(GU_COLOR_8888 | GU_VERTEX_16BIT, mesh16);
+    return (unsigned int)sceGuFinish();
+}
+
+static unsigned int buildMesh8(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitMesh(GU_COLOR_8888 | GU_VERTEX_8BIT, mesh8);
+    return (unsigned int)sceGuFinish();
+}
+
+// Read the draw buffer straight out of EDRAM (uncached), after the GE has finished.
+static void capture(unsigned short *dst)
+{
+    const unsigned short *src = (const unsigned short *)sceGeEdramGetAddr();
+
+    for (int y = 0; y < SCR_H; y++)
+        memcpy(dst + (size_t)y*SCR_W, src + (size_t)y*STRIDE, SCR_W*2);
 }
 
 static void initGu(void)
@@ -309,9 +407,12 @@ static void bench(const char *name, unsigned int (*build)(void))
 int main(void)
 {
     makeScene();
+    makeMesh();
     sceKernelDcacheWritebackRange(sprites, sizeof(sprites));
     sceKernelDcacheWritebackRange(cubes, sizeof(cubes));
     sceKernelDcacheWritebackRange(cubeIndex, sizeof(cubeIndex));
+    sceKernelDcacheWritebackRange(mesh16, sizeof(mesh16));
+    sceKernelDcacheWritebackRange(mesh8, sizeof(mesh8));
 
     initGu();
     printf("GE_PROBE sprites=%d cubes=%d list=%d bytes\n",
@@ -322,6 +423,50 @@ int main(void)
     bench("sprites", buildSprites);
     bench("cubes", buildCubes);
     bench("frame", buildFrame);
+    bench("mesh16", buildMesh16);
+    bench("mesh8", buildMesh8);
+
+    // T2 parity: same geometry and colours, one format per frame; count differing pixels.
+    // Both nonblack counts are printed so an all-black frame cannot pass as "0 diff".
+    {
+        unsigned int used;
+
+        used = buildClear();  sendAndWait(used);
+        used = buildMesh16(); sendAndWait(used);
+        capture(cap16);
+
+        used = buildClear();  sendAndWait(used);
+        used = buildMesh8();  sendAndWait(used);
+        capture(cap8);
+
+        unsigned int diff = 0, nb16 = 0, nb8 = 0, nbCube = 0;
+
+        // Instrument control: the cubes are known to draw, so a zero here means the
+        // capture path is broken and neither mesh number can be trusted.
+        used = buildClear(); sendAndWait(used);
+        used = buildCubes(); sendAndWait(used);
+        capture(cap8);
+        for (int i = 0; i < SCR_W*SCR_H; i++) if (cap8[i] != 0) nbCube++;
+
+        used = buildClear();  sendAndWait(used);
+        used = buildMesh16(); sendAndWait(used);
+        capture(cap16);
+
+        used = buildClear();  sendAndWait(used);
+        used = buildMesh8();  sendAndWait(used);
+        capture(cap8);
+
+        for (int i = 0; i < SCR_W*SCR_H; i++)
+        {
+            if (cap16[i] != cap8[i]) diff++;
+            if (cap16[i] != 0) nb16++;
+            if (cap8[i] != 0) nb8++;
+        }
+
+        printf("MESH_PARITY diff=%u of %d nonblack16=%u nonblack8=%u cubes_nonblack=%u\n",
+               diff, SCR_W*SCR_H, nb16, nb8, nbCube);
+        fflush(stdout);
+    }
 
     printf("GE_DONE\n");
     fflush(stdout);
