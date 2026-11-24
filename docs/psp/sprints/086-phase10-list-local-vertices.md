@@ -8,7 +8,7 @@
 | Started / closed | 2026-11-24 (written) / folded |
 | Status | **folded into [sprint 087](087-phase10-adopt-measured-wins.md)** as workstream A; §6 stands as the design reference |
 | Build number(s) | pspgu `b38` **only if adopted**; the arm stays `PSPGU_LIST_VERTICES=1`, default 0 |
-| Tasks | 0/7 — T1 is a diagnosis; adoption is gated on the pair and the pixel table |
+| Tasks | **folded** into [087](087-phase10-adopt-measured-wins.md) as workstream A |
 
 ## 0. Handover
 

@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `2400a097` (088 closed; 087 open, 0/15) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | measurement arms only: `PSPGU_LIST_VERTICES=0|1|2` × `PSPGU_SUBMIT=dual|single` |
-| Tasks | 0/7 — no default change until V6 |
+| Tasks | **7/7 done** (V6 dropped) — arena kept, §9.4 |
 
 ## 0. Handover
 

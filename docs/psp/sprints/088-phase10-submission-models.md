@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `0d1a4c05` (085 closed; 087 written, 0/15) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | **measurement builds only**: `PSPGU_SUBMIT=single` and `PSPGU_SUBMIT=dual`; no default change is expected |
-| Tasks | 0/7 — S0's guard is shared with 087 A2/A3 |
+| Tasks | **7/7 done** (S5 dropped) — single-list rejected, §9.5 |
 
 ## 0. Handover
 
