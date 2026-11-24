@@ -5,7 +5,8 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S16 |
 | Branch / base commit | `master` @ `beff3574` (085 closed; pspgu `9798af84e81b269e`, `libraylib.a c2004b266a6c3291`) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / folded |
+| Status | **folded into [sprint 087](087-phase10-adopt-measured-wins.md)** as workstream A; §6 stands as the design reference |
 | Build number(s) | pspgu `b38` **only if adopted**; the arm stays `PSPGU_LIST_VERTICES=1`, default 0 |
 | Tasks | 0/7 — T1 is a diagnosis; adoption is gated on the pair and the pixel table |
 
