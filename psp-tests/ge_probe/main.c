@@ -37,6 +37,14 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 #define CUBES 400
 #define CUBE_VERTS (CUBES*36)
 
+// T4: the same 64x64 image uploaded three ways - 5650, 8888 and CLUT8 (T8 + 256-entry
+// palette). Every colour is exactly representable in all three, so any pixel difference
+// is a decode bug, not quantisation.
+#define TEX8888_OFF (TEX_OFF + 0x4000)
+#define TEX8_OFF    (TEX8888_OFF + 0x4000)
+#define CLUT_OFF    (TEX8_OFF + 0x1000)
+#define TEX_COLORS 64
+
 // T2: a vertex-bound mesh - 12,000 triangles that tile the screen once, so fill is
 // ~130k pixels but the GE transforms 36,000 vertices. Same geometry in s16 and s8.
 #define MESH_COLS 120
@@ -67,6 +75,12 @@ static V16 mesh16[MESH_VERTS] __attribute__((aligned(64)));
 static V8  mesh8[MESH_VERTS] __attribute__((aligned(64)));
 static V16 listMesh[LIST_VERTS] __attribute__((aligned(64)));
 static V16 stripMesh[STRIP_VERTS] __attribute__((aligned(64)));
+
+// T4 texture source: one image, three encodings, one palette.
+static unsigned short tex5650[64*64] __attribute__((aligned(64)));
+static unsigned int   tex8888[64*64] __attribute__((aligned(64)));
+static unsigned char  tex8[64*64] __attribute__((aligned(64)));
+static unsigned int   clut[256] __attribute__((aligned(64)));
 
 // Captures for the T2 parity check: the same frame drawn with each vertex format.
 static unsigned short cap16[SCR_W*SCR_H] __attribute__((aligned(64)));
@@ -337,6 +351,44 @@ static void benchIndexCopy(void)
     fflush(stdout);
 }
 
+static unsigned int expand5650(unsigned short w)
+{
+    unsigned int r5 = w & 0x1F, g6 = (w >> 5) & 0x3F, b5 = (w >> 11) & 0x1F;
+    unsigned int r8 = (r5 << 3)|(r5 >> 2);
+    unsigned int g8 = (g6 << 2)|(g6 >> 4);
+    unsigned int b8 = (b5 << 3)|(b5 >> 2);
+
+    return 0xFF000000u | (b8 << 16) | (g8 << 8) | r8;   // ABGR words, as GU stores 8888
+}
+
+static unsigned short makeColor5650(int idx)
+{
+    return (unsigned short)((idx & 0x1F) | (((idx*3) & 0x3F) << 5) | (((idx*7) & 0x1F) << 11));
+}
+
+static void makeTextures(void)
+{
+    unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
+
+    for (int k = 0; k < 256; k++) clut[k] = expand5650(makeColor5650(k % TEX_COLORS));
+
+    for (int y = 0; y < 64; y++)
+    {
+        for (int x = 0; x < 64; x++)
+        {
+            int idx = (((x >> 3) & 7)*8 + ((y >> 3) & 7)) % TEX_COLORS;
+
+            tex8[y*64 + x] = (unsigned char)idx;
+            tex8888[y*64 + x] = expand5650(makeColor5650(idx));
+            tex5650[y*64 + x] = makeColor5650(idx);
+        }
+    }
+
+    memcpy(edram + TEX_OFF, tex5650, sizeof(tex5650));
+    memcpy(edram + TEX8888_OFF, tex8888, sizeof(tex8888));
+    memcpy(edram + TEX8_OFF, tex8, sizeof(tex8));
+}
+
 static void initGu(void)
 {
     unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
@@ -381,14 +433,23 @@ static void initGu(void)
     sceGuDisplay(GU_TRUE);
 }
 
-static void emitSprites(void)
+static void emitSpritesTex(unsigned int psm, unsigned int texOff, int clut8)
 {
+    unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
+
     sceGuDisable(GU_DEPTH_TEST);
     sceGuEnable(GU_BLEND);
     sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
     sceGuEnable(GU_TEXTURE_2D);
-    sceGuTexMode(GU_PSM_5650, 0, 0, GU_FALSE);
-    sceGuTexImage(0, 64, 64, 64, (void *)((unsigned char *)sceGeEdramGetAddr() + TEX_OFF));
+
+    if (clut8)
+    {
+        sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
+        sceGuClutLoad(8, clut);          // 8 blocks of 32 entries = 256
+    }
+
+    sceGuTexMode(psm, 0, 0, GU_FALSE);
+    sceGuTexImage(0, 64, 64, 64, (void *)(edram + texOff));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(GU_NEAREST, GU_NEAREST);
     sceGuTexScale(1.0f, 1.0f);
@@ -397,6 +458,25 @@ static void emitSprites(void)
     sceGuDrawArray(GU_SPRITES,
                    GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
                    SPRITES*2, NULL, sprites);
+}
+
+static void emitSprites(void)
+{
+    emitSpritesTex(GU_PSM_5650, TEX_OFF, 0);
+}
+
+static unsigned int buildSprites8888(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitSpritesTex(GU_PSM_8888, TEX8888_OFF, 0);
+    return (unsigned int)sceGuFinish();
+}
+
+static unsigned int buildSprites8(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitSpritesTex(GU_PSM_T8, TEX8_OFF, 1);
+    return (unsigned int)sceGuFinish();
 }
 
 static void emitCubes(void)
@@ -537,12 +617,15 @@ int main(void)
     sceKernelDcacheWritebackRange(stripMesh, sizeof(stripMesh));
 
     initGu();
+    makeTextures();          // after initGu's checker: all texture arms share one image
     printf("GE_PROBE sprites=%d cubes=%d list=%d bytes\n",
            SPRITES, CUBES, LIST_BYTES);
     fflush(stdout);
 
     bench("clear", buildClear);
     bench("sprites", buildSprites);
+    bench("sprites8888", buildSprites8888);
+    bench("sprites8", buildSprites8);
     bench("cubes", buildCubes);
     bench("frame", buildFrame);
     bench("mesh16", buildMesh16);
@@ -613,6 +696,31 @@ int main(void)
         printf("STRIP_PARITY diff=%u of %d nonblack_strip=%u nonblack_list=%u "
                "verts_strip=%d verts_list=%d\n",
                sdiff, SCR_W*SCR_H, nbStrip, nbList, STRIP_VERTS, LIST_VERTS);
+        fflush(stdout);
+
+        // T4: the same 2,000 sprites through 5650, 8888 and CLUT8.
+        unsigned int d8888 = 0, d8 = 0, nbTex = 0;
+
+        used = buildClear();         sendAndWait(used);
+        used = buildSprites();       sendAndWait(used);
+        capture(cap16);
+
+        used = buildClear();         sendAndWait(used);
+        used = buildSprites8888();   sendAndWait(used);
+        capture(cap8);
+        for (int i = 0; i < SCR_W*SCR_H; i++) if (cap16[i] != cap8[i]) d8888++;
+
+        used = buildClear();         sendAndWait(used);
+        used = buildSprites8();      sendAndWait(used);
+        capture(cap8);
+        for (int i = 0; i < SCR_W*SCR_H; i++)
+        {
+            if (cap16[i] != cap8[i]) d8++;
+            if (cap16[i] != 0) nbTex++;
+        }
+
+        printf("TEX_PARITY diff_5650_8888=%u diff_5650_t8=%u nonblack=%u "
+               "(vram 5650=8K 8888=16K t8=4K+1K)\n", d8888, d8, nbTex);
         fflush(stdout);
     }
 

@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 3/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3: strip win, index-copy follow-up); T2b/T5 dropped on prior evidence |
+| Tasks | 4/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -145,7 +145,7 @@ and the adoption threshold are unchanged.
 | T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `dropped` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | §9.2 — GE 1,852→1,681 µs (−0.171 ms, 9.2 %) on 36,000 verts, but 59,538/130,560 pixels differ: s8 quantises a screen-wide mesh to ~1.8 px |
 | T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `dropped` | 079 T4 through mode slower; 077 T5 compact 2D; 061 s16 UV 37 px; b36 removed the path | prior numbers |
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `done` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | §9.3 — strips −1.073 ms GE (−58 %) at 0/130,560 px for +46 µs CPU build; index copy 31 µs per 1,000 (≈0.45 ms/frame in 3D) → follow-up |
-| T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `todo` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | — |
+| T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `dropped` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | §9.4 — T8 5,825 vs 5650 5,847 µs (no GE gain), 0 px diff, VRAM 5 KB vs 8 KB: saves VRAM, not time; unswizzled 8888 151.9 ms shows swizzle is mandatory (driver does it) |
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `dropped` | 079 T2 0.265→0.268 ms; bunnymark 4.706→4.702; 0 diff; b36 removed the flag | prior numbers |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
@@ -417,6 +417,34 @@ only real fix is to stop copying: cache an index run while the merged run is unc
 
 That cache must survive two lists in flight and invalidate when the merge changes, which is a driver change with
 its own lifetime proof, not a measurement. It goes to §10 as a follow-up sprint rather than into this one.
+
+### 9.4 T4 — CLUT8 (`dropped`, 2026-11-24)
+
+T1 puts the GE-bound path in 2D (29.2 ms GE against 19.5 ms CPU), so the texture format was tested on the sprite
+scene rather than on a 3D mesh: 2,000 blended 32×32 sprites from one 64×64 image uploaded three ways. Every colour
+is exactly representable in 5650, 8888 and a 256-entry 8888 palette, so any pixel difference is a decode error.
+
+| texture | bytes/texel | VRAM | GE |
+|---|---|---|---|
+| 5650 | 2 | 8 KB | 5,847 µs |
+| CLUT8 (`GU_PSM_T8` + `sceGuClutLoad(8, …)`) | 1 | 4 KB + 1 KB palette | 5,825 µs |
+| 8888, **unswizzled** | 4 | 16 KB | 151,903 µs |
+
+**No GE-time win.** Halving the texel size moved the sprite scene by 22 µs, inside run-to-run noise: the 2D GE time
+is fill and blend bound, not texture-bandwidth bound. That is the same conclusion T2 reached from the other side.
+Dropped on the sprint's rule (no fetch/bandwidth win), with exact parity — 0 differing pixels of 130,560 for both
+comparisons, 124,380 non-black.
+
+**CLUT8 is still a VRAM win**: 5 KB against 8 KB (5650) and 16 KB (8888) at 0 px diff. It belongs with T2/T3a as an
+offline asset option, never a default.
+
+**The 8888 arm is the useful accident.** Unswizzled 8888 is **26× slower** (151.9 ms): the texture cache reads a
+line per texel. The pspgu driver swizzles by default (gl_texture.c:282, 4 bytes per texel counted in `bpp`), so this
+is not a renderer defect — but any new upload path that forgets `GU_TRUE` in `sceGuTexMode` will look like a hang
+rather than a slow frame.
+
+Consequence for T5b: sprite slicing targets the texture cache, and this workload shows no texture-bandwidth
+sensitivity at all. Expect it to be null; measure it cheaply rather than building it.
 
 ## 10. Follow-ups
 
