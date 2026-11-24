@@ -38,6 +38,7 @@ build() {
     [ -n "${PSPGU_FAST_CLEAR:-}" ] && args+=("PSPGU_FAST_CLEAR=${PSPGU_FAST_CLEAR}")
     [ -n "${PSPGU_VFPU:-}" ] && args+=("PSPGU_VFPU=${PSPGU_VFPU}")
     [ -n "${PSPGU_VFPU_CLIP:-}" ] && args+=("PSPGU_VFPU_CLIP=${PSPGU_VFPU_CLIP}")
+    [ -n "${PSPGU_REPLAY:-}" ] && args+=("PSPGU_REPLAY=${PSPGU_REPLAY}")
     [ -n "${PSPGU_CLIP_PLANES:-}" ] && args+=("PSPGU_CLIP_PLANES=${PSPGU_CLIP_PLANES}")
     [ -n "${PSPGU_DITHER_ADDITIVE:-}" ] && args+=("PSPGU_DITHER_ADDITIVE=${PSPGU_DITHER_ADDITIVE}")
     [ -n "${PSPGU_TEXSYNC_FIRST:-}" ] && args+=("PSPGU_TEXSYNC_FIRST=${PSPGU_TEXSYNC_FIRST}")

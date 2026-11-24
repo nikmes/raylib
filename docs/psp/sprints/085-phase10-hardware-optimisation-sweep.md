@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 0/9 active — T2b/T5 dropped on prior evidence; T1 probe to add |
+| Tasks | 1/9 active — T1 done (GE/CPU split, §9.1); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -83,8 +83,9 @@ the Media Engine, audio, streaming, and any change to the 2D `batch_check` pixel
 - [x] pspgu `b37` installed; the installed `libraylib.a` is `c2004b26...` (P10-S13 T1); the b37 pair is historical
 - [x] main tree clean except `ai-memory.db-shm`; no isolated worktree required
 - [x] PSPLink is available for this session; coordinate if another session owns it
-- [ ] the fresh control pair on `c2004b26...` is recorded before T1 is compared
-- [ ] the T1 probe is produced by T1; it is not a precondition
+- [x] the fresh control pair on `c2004b26...` is recorded before T1 is compared — 3D **33.569** (work 32.059,
+      swap 1.51), 2D **33.803** (work 21.593, swap 12.21); `psp-tests/bench/results/p10s15-control.json`
+- [x] the T1 probe is produced by T1; it is not a precondition — `psp-tests/ge_probe`, §9.1
 
 ## 4a. Readiness review (2026-11-24)
 
@@ -140,7 +141,7 @@ and the adoption threshold are unchanged.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `todo` | GE + CPU + swap reconstructs the fresh control pair within the harness repeatability; two runs agree; no game change | — |
+| T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `done` | GE + CPU + swap reconstructs the fresh control pair within the harness repeatability; two runs agree; no game change | §9.1 — probe repeats within 1 µs; 3D CPU-bound 30.1 vs 13.1 ms, 2D GE-bound 19.5 vs 29.2 ms |
 | T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `todo` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | — |
 | T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `dropped` | 079 T4 through mode slower; 077 T5 compact 2D; 061 s16 UV 37 px; b36 removed the path | prior numbers |
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `todo` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | — |
@@ -298,7 +299,60 @@ Every task keeps these green; a speed claim with a pixel change is a drop.
 
 ## 9. Result
 
-Pending — no device runs yet.
+### 9.1 T1 — GE/CPU attribution (`done`, 2026-11-24)
+
+**Control pair** (`p10s15-control`, pspgu `9798af84...`, `libraylib.a c2004b26...`, git `34e057b4`, two runs):
+
+| sample | avg ms | fps | work ms | swap ms | draws |
+|---|---|---|---|---|---|
+| `psp_showcase` (3D) | 33.569 | 29.8 | 32.059 | 1.51 | 4 |
+| `psp_2d_showcase` (2D) | 33.803 | 29.6 | 21.593 | 12.21 | 6 |
+
+**Probe.** `psp-tests/ge_probe` (raw GU, no raylib/pspgu): 2,000 32×32 blended sprites and 400 lit indexed cubes
+built in a `GU_SEND` list, enqueued with `sceGeListEnQueue` and waited with `sceGeListSync(id, PSP_GE_LIST_DONE)`
+while the CPU is idle. Three defects had to be fixed before the numbers were real, and they are recorded because
+each one produced a believable lie:
+
+- the list is built with cached CPU stores; the GE reads it from RAM, so `sceGuFinish()` must be followed by
+  `sceKernelDcacheWritebackRange(list, used)` before the enqueue (pspsdk `samples/gu/doublelist` does exactly this);
+- `sceGeListEnQueue(list, list, ...)` sets the stall address to byte 0 and holds the GE at the start of the list;
+  the second argument must be `NULL`;
+- a stale `main.o`: the patched source was 22 s newer than the object, so the first "measurements" (15-17 µs) were
+  the old binary. `strings main.o` is the cheap check.
+
+| category | CPU build | GE | list bytes |
+|---|---|---|---|
+| clear | 8 µs | 465 µs | 64 |
+| 2,000 sprites | 14 µs | 5,838 µs | 104 |
+| 400 cubes (14,400 verts, one indexed draw) | 16 µs | 5,071 µs | 140 |
+| frame (clear + sprites + cubes) | 36 µs | 11,215 µs | 292 |
+
+The categories are additive: 465 + 5,838 + 5,071 = 11,374 µs against 11,215 µs for the combined frame (1.4 %). A
+second run reproduced every value within 1 µs (464 / 5,838 / 5,068 / 11,214). `sceGeListDeQueue` after a completed
+list returns `0x80008061`; the entry is already retired, so the return is ignored.
+
+**Driver split.** A compile-time `PSPGU_REPLAY=1` mode (not the default, `tools/pspgu-build.sh` with
+`PSPGU_REPLAY=1`) queues the demo's own frame as a `GU_SEND` list, writes it back, enqueues and waits, and logs
+`REPLAY n=50 build=… ge=…` per 50-frame window. Same binaries, same scene, 400/300 frames:
+
+| sample | CPU build | GE | vblank | avg | control work |
+|---|---|---|---|---|---|
+| `psp_showcase` (3D) | 30.1 ms | 13.1 ms | 6.9 ms | 50.1 | 32.06 |
+| `psp_2d_showcase` (2D) | 19.5 ms | 29.2 ms | 1.3 ms | 50.5 | 21.59 |
+
+Reading:
+
+- **3D is CPU-bound.** The CPU spends 30.1 ms building the frame and the GE 13.1 ms drawing it. In the control the
+  GE work hides under the next frame's CPU build, which is why the pipelined pair is 33.6 ms and not 43 ms:
+  `max(build, GE) + swap` = 31.6 ms against 33.6 ms measured.
+- **2D is GE-bound.** 29.2 ms of GE against 19.5 ms of CPU; the control average 33.8 ms is close to the GE time
+  alone. A 2D CPU-side change can only recover the part of 19.5 ms that does not overlap.
+- `swap` absorbs the GE wait in replay mode because `pspguEndFrame()` runs inside the wrapped `eglSwapBuffers`
+  (egl.c:792): 3D reports 19.8 ms = 13.1 GE + 6.7 vblank, 2D 30.5 = 29.2 + 1.3. `work = avg - swap` therefore lands
+  on the CPU build, which is the independent check that the two measurements agree.
+
+Consequence for the sprint: T2/T3/T6a act on the 3D CPU side (the 30 ms), T4/T5b on the 2D GE side (the 29 ms).
+A lever on the short side of a 13/30 (3D) or 19/29 (2D) split cannot reach the 0.05 ms adoption bar.
 
 ## 10. Follow-ups
 

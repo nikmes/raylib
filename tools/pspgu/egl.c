@@ -15,6 +15,15 @@
 PspGuContext pspgu;
 int pspguWarnedNoContext = 0;
 
+#ifdef PSPGU_REPLAY
+// P10-S15 T1: serial replay. The frame is built as a queued (GU_SEND) list and waited for
+// with the CPU idle, so the wait is GE time and sceGuStart..sceGuFinish is the CPU
+// list-build cost. Rolling 50-frame windows are logged; steady state is the last one.
+static unsigned long long pspguReplayStartUs;
+static unsigned long long pspguReplayBuildUs, pspguReplayGeUs;
+static unsigned int pspguReplayCount;
+#endif
+
 // GU needs EDRAM offsets, not addresses: 0 is the start of video memory
 #define EDRAM(offset) ((void *)(offset))
 
@@ -443,6 +452,10 @@ static void pspguInitGu(void)
                  (pspgu.depthOffset != NULL)? (pspgu.fbBytes/1024) : 0,
                  pspgu.listBytes/1024, pspgu.arenaBytes/1024);
     pspguVramReport("boot");
+
+#ifdef PSPGU_REPLAY
+    pspguLog("REPLAY MODE: frames are queued (GU_SEND) and waited for; GE and build time are logged per 50 frames");
+#endif
 }
 
 // Start a list if none is open. Every emitter calls this; it is free when already open.
@@ -481,8 +494,15 @@ void pspguBeginFrame(void)
     pspgu.listIndex = next;
     pspgu.arenaUsed[next] = 0;
 
+#ifdef PSPGU_REPLAY
+    // A queued list is submitted by pspguEndFrame(); the CPU build window opens here.
+    int res = sceGuStart(GU_SEND, pspgu.listMem[next]);
+    pspgu.listQid[next] = -1;
+    pspguReplayStartUs = pspguNowUs();
+#else
     int res = sceGuStart(GU_DIRECT, pspgu.listMem[next]);
     pspgu.listQid[next] = (res >= 0)? ge_list_executed[0] : -1;
+#endif
     pspgu.listOpen = 1;
 }
 
@@ -493,6 +513,36 @@ void pspguEndFrame(void)
     if (!pspgu.current || !pspgu.listOpen) return;
 
     unsigned int used = sceGuFinish();
+
+#ifdef PSPGU_REPLAY
+    {
+        // The list is built with cached CPU stores; the GE reads it from RAM.
+        unsigned long long built = pspguNowUs();
+        pspguWriteback(pspgu.listMem[pspgu.listIndex], used);
+
+        PspGeListArgs args;
+        memset(&args, 0, sizeof(args));
+        args.size = sizeof(args);
+
+        int qid = sceGeListEnQueue(pspgu.listMem[pspgu.listIndex], NULL, -1, &args);
+        if (qid >= 0) sceGeListSync(qid, PSP_GE_LIST_DONE);
+
+        unsigned long long done = pspguNowUs();
+        pspgu.listQid[pspgu.listIndex] = qid;
+
+        pspguReplayBuildUs += built - pspguReplayStartUs;
+        pspguReplayGeUs += done - built;
+
+        if (++pspguReplayCount == 50)
+        {
+            pspguLog("REPLAY n=50 build=%.3f ms ge=%.3f ms",
+                     pspguReplayBuildUs/50000.0, pspguReplayGeUs/50000.0);
+            pspguReplayBuildUs = 0;
+            pspguReplayGeUs = 0;
+            pspguReplayCount = 0;
+        }
+    }
+#endif
 
     pspgu.listOpen = 0;
     pspgu.listSubmits++;

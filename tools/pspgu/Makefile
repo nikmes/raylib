@@ -25,6 +25,12 @@ CFLAGS += -DPSPGU_VERBOSE=$(PSPGU_VERBOSE)
 ifdef PSP_GU_DEPTH
     CFLAGS += -DPSP_GU_DEPTH=$(PSP_GU_DEPTH)
 endif
+
+# P10-S15 T1: serial replay - queue the frame as a GU_SEND list and wait for it with the
+# CPU idle, logging CPU build and GE time per 50-frame window. Measurement build only.
+ifdef PSPGU_REPLAY
+    CFLAGS += -DPSPGU_REPLAY=1
+endif
 ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif
