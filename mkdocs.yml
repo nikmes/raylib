@@ -137,6 +137,15 @@ nav:
               - P10-S13 — 2D state scoping and colour gates: psp/sprints/080-phase10-2d-state-and-colour-gates.md
               - P10-S14 — Reference ideas, verified and measured: psp/sprints/081-phase10-reference-ideas-verified.md
               - P10-S15 — Hardware optimisation sweep: psp/sprints/085-phase10-hardware-optimisation-sweep.md
+              - P10-S16 — List-local vertices (folded into S17): psp/sprints/086-phase10-list-local-vertices.md
+              - P10-S17 — Adopting the measured wins: psp/sprints/087-phase10-adopt-measured-wins.md
+              - P10-S18 — Submission models: psp/sprints/088-phase10-submission-models.md
+              - P10-S19 — Vertex memory 2x2: psp/sprints/089-phase10-vertex-memory-2x2.md
+              - P10-S20 — Clean-object draws skip the clip scan: psp/sprints/090-phase10-clean-draw-fast-path.md
+              - P10-S21 — Thin call surface: psp/sprints/091-phase10-thin-call-surface.md
+              - P10-S22 — Object-space baked meshes: psp/sprints/092-phase10-baked-mesh-path.md
+              - P10-S23 — World-space bake and the merge decision: psp/sprints/093-phase10-static-bake-and-merge-decision.md
+              - P10-S24 — Thin 3D close: psp/sprints/094-phase10-thin-3d-close.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
