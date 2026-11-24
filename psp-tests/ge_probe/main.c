@@ -3,8 +3,9 @@
  *
  * The driver uses GU_DIRECT, so sceGeDrawSync() cannot report GE time: it sees the
  * whole CPU render phase. This probe builds a representative frame in a GU_SEND list,
- * sends it, and waits with the CPU idle. CPU build time is measured around
- * sceGuStart/sceGuFinish; GE time is the sceGuSendList + sceGuSync interval.
+ * writes it back, enqueues it and waits with the CPU idle. CPU build time is measured
+ * around sceGuStart/sceGuFinish; GE time is writeback + sceGeListEnQueue +
+ * sceGeListSync(PSP_GE_LIST_DONE).
  *
  * Categories: clear, 2D sprites (2,000), 3D lit cubes (400, one indexed draw), frame.
  * No raylib/pspgu: the point is the GE, not the driver's direct-list overlap.
