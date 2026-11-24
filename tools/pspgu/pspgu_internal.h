@@ -196,6 +196,8 @@ typedef struct {
     unsigned int listVertexBytes;           // budget of one block
     unsigned int listVertexUsedMax;         // largest reservation actually consumed
     unsigned long long listVertexFellBack;  // allocations that used the arena instead
+    unsigned long long listVertexCallsTotal; // P10-S19: sceGuGetMemory calls (one stall each)
+    unsigned long long listVertexAllocTotal; // P10-S19: bytes taken from the list
 
     unsigned int fbBytes;                   // one framebuffer, bytes
     void *fbOffset[PSP_GU_FB_COUNT];         // the rotating framebuffers, EDRAM offsets
@@ -352,18 +354,11 @@ static inline void pspguWriteback(const void *addr, unsigned int bytes)
     if ((addr == NULL) || (bytes == 0)) return;
 
 #if PSPGU_LIST_VERTICES
-    // T6a: a sceGuGetMemory block lives in the list's uncached alias (sceGuStart maps the
+    // A block from sceGuGetMemory lives in the list's uncached alias (sceGuStart maps the
     // list with | 0x40000000), so its stores are already visible to the GE. Writing back
-    // costs a range call and is not just redundant — it would flush the cached alias of a
-    // block the GE is reading through the other one.
-    for (int i = 0; i < 2; i++)
-    {
-        const unsigned char *b = (const unsigned char *)pspgu.listVertexBase[i];
-
-        if ((b != NULL) && ((const unsigned char *)addr >= b) &&
-            ((const unsigned char *)addr < b + pspgu.listVertexBytes))
-            return;
-    }
+    // would flush the cached alias over data the GE is reading through the other one.
+    // Both modes test the alias rather than a block range: mode 2 has no single block.
+    if ((unsigned int)(unsigned long)addr >= 0x40000000u) return;
 #endif
 
     sceKernelDcacheWritebackRange(addr, bytes);

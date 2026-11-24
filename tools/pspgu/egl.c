@@ -264,8 +264,10 @@ static void pspguInitGu(void)
     pspgu.fbBytes = fb;
     pspgu.listBytes = alignedListBytes(PSP_GU_LIST_BYTES);
     pspgu.arenaBytes = PSP_GU_ARENA_BYTES;
-#if PSPGU_LIST_VERTICES
+#if PSPGU_LIST_VERTICES == 1
     pspgu.listVertexBytes = PSPGU_LIST_VERTEX_BYTES;
+#elif PSPGU_LIST_VERTICES == 2
+    pspgu.listVertexBytes = pspgu.listBytes - PSPGU_LIST_COMMAND_HEADROOM;
 #endif
 
     // Two of each. Frame N fills one list and one arena; frame N+1 the other pair. A list
@@ -481,14 +483,19 @@ static void pspguInitGu(void)
     pspguLog("REPLAY MODE: frames are queued (GU_SEND) and waited for; GE and build time are logged per 50 frames");
 #endif
 
-#if PSPGU_LIST_VERTICES
-    pspguLog("LIST-VERTICES: %u KiB per list via sceGuGetMemory, arena is the fallback",
+#if PSPGU_LIST_VERTICES == 1
+    pspguLog("VERTEX MEMORY: mode=1 reserve %u KiB in the list, arena is the fallback",
+             (pspgu.listBytes - PSPGU_LIST_COMMAND_HEADROOM)/1024);
+#elif PSPGU_LIST_VERTICES == 2
+    pspguLog("VERTEX MEMORY: mode=2 per-draw sceGuGetMemory, soft budget %u KiB, arena is the fallback",
              pspgu.listVertexBytes/1024);
+#else
+    pspguLog("VERTEX MEMORY: mode=0 arena only");
 #endif
 
 #if PSPGU_SUBMIT_SINGLE
-    pspguLog("SUBMIT: single list (%u KiB), vertices in the list, full wait in endFrame, arena=%u",
-             pspgu.listBytes/1024, pspgu.arenaBytes);
+    pspguLog("SUBMIT: single list (%u KiB), full wait in endFrame, arena=%u, vertex mode=%d",
+             pspgu.listBytes/1024, pspgu.arenaBytes, (int)PSPGU_LIST_VERTICES);
 #else
     pspguLog("SUBMIT: dual lists (%u KiB each), one %u KiB arena per list",
              pspgu.listBytes/1024, pspgu.arenaBytes/1024);
@@ -554,13 +561,17 @@ void pspguBeginFrame(void)
 #endif
     pspgu.listOpen = 1;
 
-#if PSPGU_LIST_VERTICES
-    // One reserve per list, sized from the list rather than fixed: the commands that follow
-    // always have PSPGU_LIST_COMMAND_HEADROOM, and pspguArenaAlloc refuses past the block.
+#if PSPGU_LIST_VERTICES == 1
+    // Mode 1: one reserve per list, sized from the list rather than fixed, so the commands
+    // that follow always have PSPGU_LIST_COMMAND_HEADROOM.
     unsigned int budget = pspgu.listBytes - PSPGU_LIST_COMMAND_HEADROOM;
 
     pspgu.listVertexBytes = budget;
     pspgu.listVertexBase[next] = sceGuGetMemory(budget);
+    pspgu.listVertexUsed[next] = 0;
+#elif PSPGU_LIST_VERTICES == 2
+    // Mode 2 (P10-S19): no reserve. Each allocation takes exactly what the draw needs, as
+    // the reference engines do; the list is never wasted on a worst-case block.
     pspgu.listVertexUsed[next] = 0;
 #endif
 }
@@ -638,9 +649,15 @@ void pspguEndFrame(void)
                  pspgu.displayWaits, davg, pspgu.displayWaitMaxUs,
                  pspgu.listUsedMax, pspgu.arenaBytes, pspgu.arenaOverflows);
 
-#if PSPGU_LIST_VERTICES
-        pspguLog("list-vertices: reserve=%u used_max=%u fell_back=%llu",
+#if PSPGU_LIST_VERTICES == 1
+        pspguLog("list-vertices: mode=1 reserve=%u used_max=%u fell_back=%llu",
                  pspgu.listVertexBytes, pspgu.listVertexUsedMax, pspgu.listVertexFellBack);
+#elif PSPGU_LIST_VERTICES == 2
+        pspguLog("list-vertices: mode=2 allocs=%llu bytes=%llu used_max=%u fell_back=%llu "
+                 "budget=%u (per %llu submits)",
+                 pspgu.listVertexCallsTotal, pspgu.listVertexAllocTotal,
+                 pspgu.listVertexUsedMax, pspgu.listVertexFellBack,
+                 pspgu.listVertexBytes, pspgu.listSubmits);
 #endif
     }
 }
@@ -725,9 +742,9 @@ void *pspguArenaAlloc(unsigned int bytes)
 
     if ((i < 0) || !pspgu.listOpen) return NULL;
 
-#if PSPGU_LIST_VERTICES
-    // T6a: 4-byte bump allocation inside the per-list sceGuGetMemory block. No writeback is
-    // needed (the block is uncached), so the 64-byte line rule below does not apply here.
+#if PSPGU_LIST_VERTICES == 1
+    // Mode 1: 4-byte bump allocation inside the per-list sceGuGetMemory block. No writeback
+    // is needed (the block is uncached), so the 64-byte line rule below does not apply.
     {
         unsigned int off4 = (pspgu.listVertexUsed[i] + 3) & ~3u;
 
@@ -737,6 +754,27 @@ void *pspguArenaAlloc(unsigned int bytes)
             if (pspgu.listVertexUsed[i] > pspgu.listVertexUsedMax)
                 pspgu.listVertexUsedMax = pspgu.listVertexUsed[i];
             return (unsigned char *)pspgu.listVertexBase[i] + off4;
+        }
+
+        pspgu.listVertexFellBack++;
+    }
+#elif PSPGU_LIST_VERTICES == 2
+    // Mode 2 (P10-S19): allocate exactly this draw's bytes from the list, as openTRI, PGE and
+    // the SDK samples do. sceGuGetMemory has no bounds check, so the driver keeps a soft
+    // budget; the call itself performs the stall update, which is the cost being measured.
+    {
+        unsigned int need = (bytes + 3u) & ~3u;
+
+        if ((pspgu.listVertexUsed[i] + need) <= pspgu.listVertexBytes)
+        {
+            void *block = sceGuGetMemory((int)need);
+
+            pspgu.listVertexUsed[i] += need;
+            if (pspgu.listVertexUsed[i] > pspgu.listVertexUsedMax)
+                pspgu.listVertexUsedMax = pspgu.listVertexUsed[i];
+            pspgu.listVertexCallsTotal++;
+            pspgu.listVertexAllocTotal += need;
+            return block;
         }
 
         pspgu.listVertexFellBack++;

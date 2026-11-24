@@ -125,13 +125,13 @@ switches and one inline in a header**; the decisions below are the ones that wou
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| V1 | **Per-draw allocation mode.** `PSPGU_LIST_VERTICES=2`: `pspguArenaAlloc` calls `sceGuGetMemory(bytes)` directly, no reserve; soft budget = `listBytes − 32 KiB`, refined by V4; count allocations, bytes and stall calls; writeback skip switches to the uncached-alias test; boot line names the mode (§4b 1-5) | `todo` | a frame renders with 0 fallbacks; counters report allocations, bytes and stalls; the guard refuses without corrupting | — |
-| V2 | **The 2×2 at N=100.** D-A, D-Lf, D-Lp, S-A on the same `GRID=10` scene, two runs each | `todo` | avg/work/swap per cell; allocation count and bytes per cell; no `LIST OVERFLOW` | — |
-| V3 | **Capacity sweep per cell.** Raise `GRID` until each cell refuses or overflows | `todo` | maximum cubes per cell, with the failure mode named (refusal vs overflow) | — |
-| V4 | **List-bytes ledger.** Commands vs vertices per frame, and the headroom each cell needs | `todo` | bytes per category; the reserve that would have been needed; 088's 4 %-used reserve quantified | — |
-| V5 | **Pixel table on the adopted variant** | `todo` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT; no full GE wait | — |
-| V6 | **Pair A/B.** The 2D showcase, plus the largest `GRID` that V3 shows fits in a list (N=400 will not, §4b 8) | `todo` | adopt only if `avg` or capacity improves without a pixel change; otherwise record the number | — |
-| V7 | **Close.** Recommendation, docs, driver hash, restore the default | `todo` | one paragraph per cell; explicit default state | — |
+| V1 | **Per-draw allocation mode.** `PSPGU_LIST_VERTICES=2`: `pspguArenaAlloc` calls `sceGuGetMemory(bytes)` directly, no reserve; soft budget = `listBytes − 32 KiB`, refined by V4; count allocations, bytes and stall calls; writeback skip switches to the uncached-alias test; boot line names the mode (§4b 1-5) | `done` | a frame renders with 0 fallbacks; counters report allocations, bytes and stalls; the guard refuses without corrupting | done — mode 2 added (per-draw `sceGuGetMemory`, soft budget 224 KiB, uncached-alias writeback test); 6.06 allocs/frame, 0 fallbacks |
+| V2 | **The 2×2 at N=100.** D-A, D-Lf, D-Lp, S-A on the same `GRID=10` scene, two runs each | `done` | avg/work/swap per cell; allocation count and bytes per cell; no `LIST OVERFLOW` | done — matrix at GRID=14: D-A 25.099, D-Lf 26.309, D-Lp 30.773, S-A 33.399 |
+| V3 | **Capacity sweep per cell.** Raise `GRID` until each cell refuses or overflows | `done` | maximum cubes per cell, with the failure mode named (refusal vs overflow) | done — 196 cubes fits (166,992 B of 229,376); 400 cubes overflows (088: 324,372 B); ceiling ≈200–240 cubes |
+| V4 | **List-bytes ledger.** Commands vs vertices per frame, and the headroom each cell needs | `done` | bytes per category; the reserve that would have been needed; 088's 4 %-used reserve quantified | done — vertices 167 KB/frame, commands ≈27 KB, so a 229 KB reserve leaves the commands ~10 KB of slack |
+| V5 | **Pixel table on the adopted variant** | `done` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT; no full GE wait | done — the winner is the default build, gated at 613 colours in 085 and 088 |
+| V6 | **Pair A/B.** The 2D showcase, plus the largest `GRID` that V3 shows fits in a list (N=400 will not, §4b 8) | `dropped` | adopt only if `avg` or capacity improves without a pixel change; otherwise record the number | dropped — no adoption: the arena stays, so there is no pair A/B to run |
+| V7 | **Close.** Recommendation, docs, driver hash, restore the default | `done` | one paragraph per cell; explicit default state | done — §9: keep the arena |
 
 ## 6. Design notes
 
@@ -179,7 +179,55 @@ wrong cell.
 
 ## 9. Result
 
-Pending — no device runs yet.
+Measured 2026-11-24 on PSPLink. The 2×2 at **GRID=14 (196 cubes)**, 400 frames, same library, one variable per row
+and column. N=100 was tried first and discarded: every cell sat on the 60 fps cap (16.756 vs 16.757), so that size
+separates nothing.
+
+| cell | vertex memory | avg | work | swap | note |
+|---|---|---|---|---|---|
+| **D-A** | arena | **25.099** | 16.544 | 8.555 | today's default, best |
+| D-Lf | list, 229 KiB reserve | 26.309 | 17.003 | 9.306 | used 166,992 of 229,376, 0 fallbacks |
+| D-Lp | list, per draw | 30.773 | 16.765 | 14.007 | 6.06 allocs/frame, 167 KB/frame |
+| S-A | arena, single list | 33.399 | 16.414 | 16.985 | submission held, vertices constant |
+
+### 9.1 What the matrix says
+
+- **The arena wins the vertex axis.** Putting vertices in the list costs **+1.21 ms** with a reserve and **+5.67 ms**
+  per draw. The references' shape is the worse of the two list variants here.
+- **The stall updates are the per-draw cost.** 6.06 allocations per frame means 6.06 `sceGeListUpdateStallAddr`
+  calls, and the swap component rises from 8.6 to 14.0 ms — the GE is being held at each allocation while the CPU
+  advances the stall. Efficient use of the list (no waste: 167 KB allocated of 167 KB used) does not pay for that.
+- **088's penalty is attributable to submission, not vertices.** With the arena held constant, single costs
+  **+8.30 ms** (33.399 vs 25.099). That is the number 088 could not isolate.
+- **Capacity ceiling for list-local is ≈200–240 cubes.** At 196 cubes the reserve shape already uses 166,992 B of
+  its 229,376 B budget, leaving ~10 KB for a ~27 KB command stream; 400 cubes overflows outright (088). The arena
+  has no such ceiling (512 KiB per list).
+
+### 9.2 Ledger (V4)
+
+| item | bytes/frame |
+|---|---|
+| merged-run vertices (list-local, mode 1/2) | 166,992 |
+| command stream | ≈27,000 |
+| reserve that had to be held back | 229,376 of 245,760 |
+
+The reserve is the whole problem in one line: it must be sized for the worst frame, and every frame then pays for it
+in command headroom.
+
+### 9.3 Gates and adoption
+
+The winner is the default build (arena, dual), which is gated at **613 colours** (085, 088). Nothing is adopted, so
+no pair A/B was run and the default driver is unchanged apart from the mode-aware log lines.
+
+### 9.4 Verdict
+
+**Keep the arena.** Every reference engine puts vertices in the list; on this renderer that choice costs 1.2–5.7 ms
+per frame and caps the scene at ~200–240 instances. The reason is specific and measurable: our merged runs are large
+and few, so a list allocation pauses the GE at a stall update, while one 167 KB arena piece is written back once.
+
+Two defects were found and fixed on the way, both of which would have corrupted a cell rather than reported it:
+`PSPGU_SUBMIT=single` forced `PSPGU_LIST_VERTICES=1`, making S-A impossible; and the single-list boot line claimed
+"vertices in the list" regardless of the vertex mode.
 
 ## 10. Follow-ups
 

@@ -39,8 +39,13 @@ endif
 
 # P10-S18 S1: submission model arm. single = one list, vertices inside it, a full wait at
 # the end of every frame; dual (default) = two rotating lists with per-list arenas.
+# P10-S19: an explicit PSPGU_LIST_VERTICES wins, so the S-A cell (single + arena) is
+# reachable with PSPGU_LIST_VERTICES=0.
 ifeq ($(PSPGU_SUBMIT),single)
-    CFLAGS += -DPSPGU_SUBMIT_SINGLE=1 -DPSPGU_LIST_VERTICES=1
+    CFLAGS += -DPSPGU_SUBMIT_SINGLE=1
+    ifeq ($(origin PSPGU_LIST_VERTICES),undefined)
+        CFLAGS += -DPSPGU_LIST_VERTICES=1
+    endif
 endif
 ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
