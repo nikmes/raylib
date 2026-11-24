@@ -79,6 +79,11 @@ int main(void)
     rlpspMaterial(GE_RGBA(70, 70, 70, 255), GE_RGBA(255, 255, 255, 255),
                   GE_RGBA(90, 90, 90, 255), 0, 8.0f);
 
+    // P10-S13: lighting/fog are 3D-only requests. BeginMode3D applies them and
+    // EndMode3D clears them before the 2D HUD; no per-frame toggles.
+    rlpspEnableFog(1);
+    rlpspFog(12.0f, 48.0f, GE_RGBA(10, 14, 28, 255));
+
     TraceLog(LOG_INFO, "COLOURS cool=%06x warm=%06x",
              (unsigned int)(cool.maps[MATERIAL_MAP_DIFFUSE].color.r << 16 | cool.maps[MATERIAL_MAP_DIFFUSE].color.g << 8 | cool.maps[MATERIAL_MAP_DIFFUSE].color.b),
              (unsigned int)(warm.maps[MATERIAL_MAP_DIFFUSE].color.r << 16 | warm.maps[MATERIAL_MAP_DIFFUSE].color.g << 8 | warm.maps[MATERIAL_MAP_DIFFUSE].color.b));
@@ -97,20 +102,13 @@ int main(void)
         BeginDrawing();
             ClearBackground((Color){ 10, 14, 28, 255 });
 
-            // HUD, then an explicit 2D flush: this fork's BeginMode3D does not flush the
-            // batch, so 2D vertices added here would otherwise be transformed by the camera.
             DrawRectangle(8, 8, 212, 62, (Color){ 6, 10, 22, 210 });
             DrawRectangleLines(8, 8, 212, 62, (Color){ 90, 140, 210, 255 });
             DrawText("PSP-1000  GE  pspgu", 14, 14, 10, (Color){ 150, 190, 240, 255 });
             DrawText(TextFormat("%d cubes merged", GRID*GRID), 14, 28, 10, RAYWHITE);
             DrawText(TextFormat("%d fps", GetFPS()), 14, 42, 10, (Color){ 120, 220, 160, 255 });
-            rlDrawRenderBatchActive();
 
-            rlpspEnableLighting(1);
             BeginMode3D(cam);
-
-                rlpspEnableFog(1);
-                rlpspFog(12.0f, 48.0f, GE_RGBA(10, 14, 28, 255));
 
                 DrawMesh(ground, gmat, MatrixTranslate(0.0f, -0.55f, 0.0f));
 
@@ -142,9 +140,7 @@ int main(void)
                     }
                 }
 
-                rlpspEnableFog(0);
             EndMode3D();
-            rlpspEnableLighting(0);     // 2D has no normals; lit sprites go black
 
 
 

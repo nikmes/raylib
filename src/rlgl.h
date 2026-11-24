@@ -1388,6 +1388,15 @@ static bool isGpuReady = false;
 static float rlCullDistanceNear = RL_CULL_DISTANCE_NEAR;
 static float rlCullDistanceFar = RL_CULL_DISTANCE_FAR;
 
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+// P10-S13: lighting and fog are 3D state. The request is remembered here and applied
+// only between BeginMode3D and EndMode3D, so a 2D pass cannot inherit it (a sprite has
+// no normals and lit sprites go black).
+static int rlpspLightingRequested = 0;
+static int rlpspFogRequested = 0;
+static int rlpsp3DActive = 0;
+#endif
+
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
 static rlglData RLGL = { 0 };
 #endif
@@ -2323,7 +2332,17 @@ static void rlpspToFloats(unsigned int c, GLfloat *f)
     f[3] = (GLfloat)((c >> 24) & 0xFF)/255.0f;
 }
 
-void rlpspEnableLighting(int enable) { if (enable) glEnable(GL_LIGHTING); else glDisable(GL_LIGHTING); }
+void rlpspEnableLighting(int enable)
+{
+    rlpspLightingRequested = (enable != 0)? 1 : 0;
+
+    // Outside a 3D block only the request is recorded; BeginMode3D applies it.
+    if (rlpsp3DActive)
+    {
+        if (enable) glEnable(GL_LIGHTING);
+        else glDisable(GL_LIGHTING);
+    }
+}
 
 void rlpspLight(int index, int directional, float x, float y, float z,
                 unsigned int diffuse, unsigned int specular,
@@ -2377,7 +2396,17 @@ void rlpspMaterial(unsigned int ambient, unsigned int diffuse, unsigned int spec
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
 }
 
-void rlpspEnableFog(int enable) { if (enable) glEnable(GL_FOG); else glDisable(GL_FOG); }
+void rlpspEnableFog(int enable)
+{
+    rlpspFogRequested = (enable != 0)? 1 : 0;
+
+    // Outside a 3D block only the request is recorded; BeginMode3D applies it.
+    if (rlpsp3DActive)
+    {
+        if (enable) glEnable(GL_FOG);
+        else glDisable(GL_FOG);
+    }
+}
 
 void rlpspFog(float start, float end, unsigned int color)
 {

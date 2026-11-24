@@ -992,6 +992,16 @@ void BeginMode3D(Camera camera)
     rlMultMatrixf(MatrixToFloat(matView));      // Multiply modelview matrix by view matrix (camera)
 
     rlEnableDepthTest();            // Enable DEPTH_TEST for 3D
+
+#if defined(PLATFORM_PSP)
+    // P10-S13: lighting and fog are scoped to the 3D block. Apply the remembered request
+    // here; EndMode3D turns both off before any 2D pass.
+    rlpsp3DActive = 1;
+    if (rlpspLightingRequested) glEnable(GL_LIGHTING);
+    else glDisable(GL_LIGHTING);
+    if (rlpspFogRequested) glEnable(GL_FOG);
+    else glDisable(GL_FOG);
+#endif
 }
 
 // End 3D mode and returns to default 2D orthographic mode
@@ -1008,6 +1018,14 @@ void EndMode3D(void)
     if (rlGetActiveFramebuffer() == 0) rlMultMatrixf(MatrixToFloat(CORE.Window.screenScale)); // Apply screen scaling if required
 
     rlDisableDepthTest();           // Disable DEPTH_TEST for 2D
+
+#if defined(PLATFORM_PSP)
+    // P10-S13: leave the 3D block with both switches off. The request stays in
+    // rlpspLightingRequested/rlpspFogRequested and the next BeginMode3D applies it again.
+    rlpsp3DActive = 0;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+#endif
 }
 
 // Initializes render texture for drawing

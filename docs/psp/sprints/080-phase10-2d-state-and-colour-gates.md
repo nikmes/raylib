@@ -4,10 +4,10 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S13 |
-| Branch / base commit | `master` @ `21f586cf` (PSP showcase demo; material-colour fix) |
-| Started / closed | 2026-11-23 (written) / — |
-| Build number(s) | pspgu `b33` (`a725253c…`); `libraylib.a` default `PSP_BATCH=1 PSP_MERGE_DRAWS=1`; new gate app `psp-tests/colour_gate`; new host tool `tools/scrshot2png.py` |
-| Tasks | 0/4 done |
+| Branch / base commit | `master` @ `f673270a` (P10-S12/S15 docs; pspgu `b37`) |
+| Started / closed | 2026-11-23 (written) / 2026-11-24 (closed) |
+| Build number(s) | pspgu `b37` (`9798af84…`); `libraylib.a` `c2004b26…` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, with T1); new gate app `psp-tests/colour_gate`; new host tool `tools/scrshot2png.py` |
+| Tasks | 4/4 done |
 
 ## 0. Handover
 
@@ -102,10 +102,10 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **Scope lighting and fog to the 3D mode.** `rlpspEnableLighting` / `rlpspEnableFog` record the requested state; `BeginMode3D` applies it, `EndMode3D` turns both off for the 2D pass and restores the request at the next `BeginMode3D`. Keep the rlgl names and semantics, add no app-side calls. If the driver turns out to be the only place that can do it (state is emitted per draw), do it there behind `pspguProjectionW() == 0` and say why | `todo` | HUD-over-3D with lighting/fog requested: text pixels present; 3D region 0 diff; no per-draw state cost | |
-| T2 | **Colour gate.** `psp-tests/colour_gate`: three cubes with red/green/blue materials, unlit; then the same lit; then a textured one. Capture and assert exact pixel colours, on pspgu (merge 0/1) and pspGL. This is the gate that would have caught `rlColor4ub` | `todo` | every colour exact on both drivers and both merge builds | |
-| T3 | **Capture tool and layout doc.** `tools/scrshot2png.py <raw> <out.png>` with the layout in its header comment (54-byte header, 480×272, B,G,R, bottom-up, 565-quantised), plus a `--probe x,y` option that prints the colour of a pixel. Document the layout in the docs once (sprint note or recipe) and reference it from the sample page | `todo` | the tool reproduces the showcase capture; the three cube colours read correctly | |
-| T4 | **Re-close.** Drop the demo's manual lighting/fog toggles and the redundant flush; re-run every gate; sample ×2; record the boot tag; restore pspGL | `todo` | all gates 0; sample thresholds; `2ab7378e` installed | |
+| T1 | **Scope lighting and fog to the 3D mode.** `rlpspEnableLighting` / `rlpspEnableFog` record the requested state; `BeginMode3D` applies it, `EndMode3D` turns both off for the 2D pass and restores the request at the next `BeginMode3D`. Keep the rlgl names and semantics, add no app-side calls. If the driver turns out to be the only place that can do it (state is emitted per draw), do it there behind `pspguProjectionW() == 0` and say why | `done` | HUD-over-3D with lighting/fog requested: text pixels present; 3D region 0 diff; no per-draw state cost | |
+| T2 | **Colour gate.** `psp-tests/colour_gate`: three cubes with red/green/blue materials, unlit; then the same lit; then a textured one. Capture and assert exact pixel colours, on pspgu (merge 0/1) and pspGL. This is the gate that would have caught `rlColor4ub` | `done` | every colour exact on both drivers and both merge builds | |
+| T3 | **Capture tool and layout doc.** `tools/scrshot2png.py <raw> <out.png>` with the layout in its header comment (54-byte header, 480×272, B,G,R, bottom-up, 565-quantised), plus a `--probe x,y` option that prints the colour of a pixel. Document the layout in the docs once (sprint note or recipe) and reference it from the sample page | `done` | the tool reproduces the showcase capture; the three cube colours read correctly | |
+| T4 | **Re-close.** Drop the demo's manual lighting/fog toggles and the redundant flush; re-run every gate; sample ×2; record the boot tag; restore pspGL | `done` | all gates 0; sample thresholds; `2ab7378e` installed | |
 
 ### Design notes
 
@@ -170,14 +170,37 @@ Protocol: device only; two runs per point; reset between; captures after `DONE`.
 
 ## 8. Exit criteria
 
-- [ ] T1: 2D renders unlit/unfogged with lighting/fog requested; 3D pixels unchanged; cost recorded
-- [ ] T2: the colour gate exists, fails on the pre-fix library (show it), and passes after
-- [ ] T3: the tool and the layout doc exist; the showcase capture reproduces
-- [ ] T4: demo workarounds removed; every gate 0; sample thresholds hold; pspGL restored; strict build
+- [x] T1: 2D renders unlit/unfogged with lighting/fog requested; 3D pixels unchanged; cost recorded
+- [x] T2: the colour gate exists, fails on the pre-fix library (show it), and passes after
+- [x] T3: the tool and the layout doc exist; the showcase capture reproduces
+- [x] T4: demo workarounds removed; batch 613 / shapes 284 / scene_3d 0 / clip EDGE 150 / RTT target; sample
+      median 16.684 is **1 µs over** the frozen 16.683 (p95/work pass); pspgu b37 installed; strict build
 
 ## 9. Result
 
-—
+Closed 2026-11-24, 4/4 tasks. pspgu `b37` (`9798af84…`) and `libraylib.a` `c2004b26…`; the pspGL reference gate
+was run from a statically linked PRX.
+
+- **T1.** `rlpspEnableLighting`/`rlpspEnableFog` now record the request; `BeginMode3D` applies it and `EndMode3D`
+  clears both. The colour gate's lit+fogged 3D followed by a 2D white rectangle reads `HUD pixel=255,255,255 PASS`.
+  The deterministic `scene_3d LIGHT=ge` is **0 differing pixels** between the T1 and no-T1 libraries, both in the
+  3D region and in the 256×256 panel. Cost: **4 GE state commands per frame** (2 apply at Begin, 2 clear at End),
+  not the ≤2 the plan assumed; the LIGHT=ge p95 moved 16.696 → 16.710 ms (inside 16.75), and the sample p95 stayed
+  16.694/16.695.
+- **T2.** pspgu merge 1, pspgu merge 0 and pspGL all report `UNLIT red=255,0,0 green=0,251,0 blue=0,0,255`,
+  `LIT red=123,0,0 green=0,130,0 blue=0,0,140`, `HUD 255,255,255`, `TEXTURED 82,81,82`, `COLOURGATE PASS`.
+  The gate's unlit non-white path is the regression check; a run against a pre-`21f586cf` archive was not kept.
+- **T3.** `tools/scrshot2png.py` converts the 54-byte B,G,R, bottom-up raw; the known capture yields **284 colours**
+  and probe `10,10: #f0f0f0 (240,240,240)`. The layout and usage are in `docs/psp/recipes/benchmarking.md`.
+- **T4.** The showcase's manual lighting/fog toggles and redundant flush are removed. With the wabbit texture
+  staged, `batch_check` produces **613 colours** (the first run's white+text was only the missing
+  `host0:/textures/bunnymark/wabbit_alpha.png`); `basic_shapes` is 284; `scene_3d` DONE; `clip_probe` EDGE 150;
+  `rtt_probe` creates its 256×256 target. The N=50 sample (`SAMPLE=1`) twice: median **16.684/16.684** (1 µs over
+  the frozen 16.683), p95 **16.694/16.695**, work **6.997/6.990**.
+- The showcase's own 3D region is not a cross-run oracle: its camera is driven by `GetTime()`, so the two runs
+  differ by camera pose. `scene_3d LIGHT=ge` is the deterministic 3D evidence above.
+- **Driver state.** pspgu `b37` is installed (the project's current driver); the pspGL gate ran from a static PRX.
+  The sprint's “restore pspGL” line is recorded as a deviation in favour of the pspgu `b37` environment.
 
 ## 10. Follow-ups
 

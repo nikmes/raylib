@@ -48,8 +48,11 @@ change of more than ~0.05 ms in work is real.
 ## Captures
 
 The demos print `DONE` and sleep when built with `FRAMES>0`, which is when `scrshot` is safe. The raw format is a
-54-byte header followed by 480×272 pixels in **B,G,R** order, **bottom-up**, 5-6-5 quantised — see the note in
-sprint 080 T3. A converter that gets both of those right is still a follow-up.
+54-byte header followed by 480×272 pixels in **B,G,R** order, **bottom-up**, 5-6-5 quantised. The header length is
+derived as `len − 480×272×3`, so another capture size fails loudly instead of being shifted.
+
+`tools/scrshot2png.py <raw> <out.png> [--probe X,Y]` converts and probes it. The tool's header comment and the
+sprint 080 T3 note are the single source of truth for the layout; do not read the body as top-down RGB.
 
 ## What is not measured
 
