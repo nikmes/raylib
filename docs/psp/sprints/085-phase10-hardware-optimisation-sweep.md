@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 4/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4); T2b/T5 dropped on prior evidence |
+| Tasks | 5/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -147,7 +147,7 @@ and the adoption threshold are unchanged.
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `done` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | §9.3 — strips −1.073 ms GE (−58 %) at 0/130,560 px for +46 µs CPU build; index copy 31 µs per 1,000 (≈0.45 ms/frame in 3D) → follow-up |
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `dropped` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | §9.4 — T8 5,825 vs 5650 5,847 µs (no GE gain), 0 px diff, VRAM 5 KB vs 8 KB: saves VRAM, not time; unswizzled 8888 151.9 ms shows swizzle is mandatory (driver does it) |
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `dropped` | 079 T2 0.265→0.268 ms; bunnymark 4.706→4.702; 0 diff; b36 removed the flag | prior numbers |
-| T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
+| T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `dropped` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | §9.5 — 32 vs 16 quads at 0 px diff, GE +36 µs (no saving); T4 already ruled out the texture-cache mechanism, and this arm's absolute times are below the GE fill rate (8× draws gave 3.2× time), so direction only |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
 | T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `todo` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | — |
 | T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
@@ -445,6 +445,31 @@ rather than a slow frame.
 
 Consequence for T5b: sprite slicing targets the texture cache, and this workload shows no texture-bandwidth
 sensitivity at all. Expect it to be null; measure it cheaply rather than building it.
+
+### 9.5 T5b — 64-px sprite slicing (`dropped`, 2026-11-24)
+
+16 large sprites (120×68, tiling the screen) drawn whole and sliced into 64-px vertical strips with a matching UV
+split, so the pixels are the same by construction:
+
+| arm | quads | GE | parity |
+|---|---|---|---|
+| whole | 16 | 47 µs | — |
+| sliced | 32 | 83 µs | 0 differing pixels of 130,560 (126,848 non-black) |
+
+Slicing **doubles the primitive count and adds 36 µs**; it never wins here. The sprint's drop condition is met twice
+over: no >0.05 ms win, and the draw count grows without a GE-time benefit.
+
+**The absolute numbers are not trustworthy and the record says so.** The instrument check — the same whole-sprite
+draw 8× in one list — returned 150 µs, only 3.2× the single draw, and 47 µs for 130,560 blended pixels is above the
+GE's plausible fill rate (2 pixels/cycle at 222 MHz puts 130k pixels near 290 µs). So the arm measures
+per-primitive processing more than fill, and it is used for direction only.
+
+The decisive evidence is T4: halving the texel size (8888 → CLUT8) moved the sprite scene by 22 µs. The texture
+cache is not the constraint, so a change whose only mechanism is texture-cache locality has nothing to recover;
+this arm's +36 µs is consistent with that. Recorded as a drop; no code changed.
+
+**Instrument lesson for the next probe:** a list whose GE time does not scale with the work in it is not a timing of
+that work. Repeat the workload in the same list and require the ratio before recording a magnitude.
 
 ## 10. Follow-ups
 

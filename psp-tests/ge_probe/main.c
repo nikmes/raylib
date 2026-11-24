@@ -76,6 +76,14 @@ static V8  mesh8[MESH_VERTS] __attribute__((aligned(64)));
 static V16 listMesh[LIST_VERTS] __attribute__((aligned(64)));
 static V16 stripMesh[STRIP_VERTS] __attribute__((aligned(64)));
 
+// T5b: large sprites drawn whole vs sliced into 64-px vertical strips. Same UV mapping,
+// same pixels; only the quad count changes (16 vs 32 on this grid).
+#define BIG_N 16
+#define BIG_SLICES 2
+
+static V2 bigWhole[BIG_N*6] __attribute__((aligned(64)));
+static V2 bigSlice[BIG_N*BIG_SLICES*6] __attribute__((aligned(64)));
+
 // T4 texture source: one image, three encodings, one palette.
 static unsigned short tex5650[64*64] __attribute__((aligned(64)));
 static unsigned int   tex8888[64*64] __attribute__((aligned(64)));
@@ -389,6 +397,44 @@ static void makeTextures(void)
     memcpy(edram + TEX8_OFF, tex8, sizeof(tex8));
 }
 
+static void makeBigSprites(void)
+{
+    int w = 0, s = 0;
+
+    for (int r = 0; r < 4; r++)
+    {
+        for (int c = 0; c < 4; c++)
+        {
+            float x = (float)c*120.0f, y = (float)r*68.0f;
+            unsigned int color = (((r + c) & 1)? 0x80C0E0FF : 0x8040A0FF);
+
+            V2 p0 = { 0.0f, 0.0f, color, x, y, 0.0f };
+            V2 p1 = { 0.0f, 68.0f, color, x, y + 68.0f, 0.0f };
+            V2 p2 = { 120.0f, 0.0f, color, x + 120.0f, y, 0.0f };
+            V2 p3 = { 120.0f, 68.0f, color, x + 120.0f, y + 68.0f, 0.0f };
+
+            bigWhole[w++] = p0; bigWhole[w++] = p1; bigWhole[w++] = p2;
+            bigWhole[w++] = p2; bigWhole[w++] = p1; bigWhole[w++] = p3;
+
+            // Two 64-px strips: [0,64) and [64,120); the UV split matches the pixel split.
+            float cuts[3] = { 0.0f, 64.0f, 120.0f };
+
+            for (int k = 0; k < BIG_SLICES; k++)
+            {
+                float u0 = cuts[k], u1 = cuts[k+1];
+                float dx0 = x + u0, dx1 = x + u1;
+                V2 q0 = { u0, 0.0f, color, dx0, y, 0.0f };
+                V2 q1 = { u0, 68.0f, color, dx0, y + 68.0f, 0.0f };
+                V2 q2 = { u1, 0.0f, color, dx1, y, 0.0f };
+                V2 q3 = { u1, 68.0f, color, dx1, y + 68.0f, 0.0f };
+
+                bigSlice[s++] = q0; bigSlice[s++] = q1; bigSlice[s++] = q2;
+                bigSlice[s++] = q2; bigSlice[s++] = q1; bigSlice[s++] = q3;
+            }
+        }
+    }
+}
+
 static void initGu(void)
 {
     unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
@@ -433,7 +479,7 @@ static void initGu(void)
     sceGuDisplay(GU_TRUE);
 }
 
-static void emitSpritesTex(unsigned int psm, unsigned int texOff, int clut8)
+static void emitSpriteTexState(unsigned int psm, unsigned int texOff, int clut8)
 {
     unsigned char *edram = (unsigned char *)sceGeEdramGetAddr();
 
@@ -455,9 +501,47 @@ static void emitSpritesTex(unsigned int psm, unsigned int texOff, int clut8)
     sceGuTexScale(1.0f, 1.0f);
     sceGuTexOffset(0.0f, 0.0f);
     sceGuTexFlush();
+}
+
+static void emitSpritesTex(unsigned int psm, unsigned int texOff, int clut8)
+{
+    emitSpriteTexState(psm, texOff, clut8);
     sceGuDrawArray(GU_SPRITES,
                    GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
                    SPRITES*2, NULL, sprites);
+}
+
+static unsigned int buildBigWhole(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitSpriteTexState(GU_PSM_5650, TEX_OFF, 0);
+    sceGuDrawArray(GU_TRIANGLES,
+                   GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+                   BIG_N*6, NULL, bigWhole);
+    return (unsigned int)sceGuFinish();
+}
+
+static unsigned int buildBigSlice(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitSpriteTexState(GU_PSM_5650, TEX_OFF, 0);
+    sceGuDrawArray(GU_TRIANGLES,
+                   GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+                   BIG_N*BIG_SLICES*6, NULL, bigSlice);
+    return (unsigned int)sceGuFinish();
+}
+
+// Instrument check: the same whole-sprite draw 8 times. If GE time does not scale with
+// this, the 40 us reading is a timer artefact and the T5b comparison is meaningless.
+static unsigned int buildBigWhole8x(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitSpriteTexState(GU_PSM_5650, TEX_OFF, 0);
+    for (int k = 0; k < 8; k++)
+        sceGuDrawArray(GU_TRIANGLES,
+                       GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+                       BIG_N*6, NULL, bigWhole);
+    return (unsigned int)sceGuFinish();
 }
 
 static void emitSprites(void)
@@ -608,6 +692,7 @@ int main(void)
     makeScene();
     makeMesh();
     makeQuadMesh();
+    makeBigSprites();
     sceKernelDcacheWritebackRange(sprites, sizeof(sprites));
     sceKernelDcacheWritebackRange(cubes, sizeof(cubes));
     sceKernelDcacheWritebackRange(cubeIndex, sizeof(cubeIndex));
@@ -615,6 +700,8 @@ int main(void)
     sceKernelDcacheWritebackRange(mesh8, sizeof(mesh8));
     sceKernelDcacheWritebackRange(listMesh, sizeof(listMesh));
     sceKernelDcacheWritebackRange(stripMesh, sizeof(stripMesh));
+    sceKernelDcacheWritebackRange(bigWhole, sizeof(bigWhole));
+    sceKernelDcacheWritebackRange(bigSlice, sizeof(bigSlice));
 
     initGu();
     makeTextures();          // after initGu's checker: all texture arms share one image
@@ -626,6 +713,9 @@ int main(void)
     bench("sprites", buildSprites);
     bench("sprites8888", buildSprites8888);
     bench("sprites8", buildSprites8);
+    bench("big", buildBigWhole);
+    bench("bigslice", buildBigSlice);
+    bench("big8x", buildBigWhole8x);
     bench("cubes", buildCubes);
     bench("frame", buildFrame);
     bench("mesh16", buildMesh16);
@@ -721,6 +811,27 @@ int main(void)
 
         printf("TEX_PARITY diff_5650_8888=%u diff_5650_t8=%u nonblack=%u "
                "(vram 5650=8K 8888=16K t8=4K+1K)\n", d8888, d8, nbTex);
+        fflush(stdout);
+
+        // T5b: large sprites whole vs 64-px sliced.
+        unsigned int dslice = 0, nbBig = 0;
+
+        used = buildClear();     sendAndWait(used);
+        used = buildBigWhole();  sendAndWait(used);
+        capture(cap16);
+
+        used = buildClear();     sendAndWait(used);
+        used = buildBigSlice();  sendAndWait(used);
+        capture(cap8);
+
+        for (int i = 0; i < SCR_W*SCR_H; i++)
+        {
+            if (cap16[i] != cap8[i]) dslice++;
+            if (cap16[i] != 0) nbBig++;
+        }
+
+        printf("SLICE_PARITY diff=%u of %d nonblack=%u quads_whole=%d quads_sliced=%d\n",
+               dslice, SCR_W*SCR_H, nbBig, BIG_N, BIG_N*BIG_SLICES);
         fflush(stdout);
     }
 
