@@ -4,17 +4,17 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S15 |
-| Branch / base commit | `master` @ `21f6ac50` (pspgu `b37`; docs commits on top of the b37 driver) |
+| Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
-| Build number(s) | pspgu `b38` for any adopted driver change; `libraylib.a` `9a1d97210d7a1df6` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`); new probes opt-in |
-| Tasks | 0/11 done |
+| Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
+| Tasks | 0/11 done — T2b/T5 blocked on b36-removed code; T1 probe to add |
 
 ## 0. Handover
 
 **Situation.** Phase 10 closed at P10-S12 and the two follow-up sprints (P10-S13/P10-S14) added state and
-reference-idea checks. The b37 driver is the current baseline: 3D showcase **33.677 ms** work, 2D showcase
-**21.578 ms** work, driver hash `9798af84e81b269e`, library `9a1d97210d7a1df6` (`psp-tests/bench/results/b37.json`).
-The 2D/3D gates are 0 diff and the launcher embeds both showcases.
+reference-idea checks. The b37 driver and the P10-S13 T1 library `c2004b26...` are the current baseline. The
+historical b37 pair (3D **33.677** / 2D **21.578 ms**, driver `9798af84...`) predates the lighting/fog scoping
+(4 GE state commands/frame), so it is not the control. The 2D/3D gates are 0 diff and the launcher embeds both.
 
 A new list of PSP optimisations has arrived from a general hardware guide. Most of it is already adopted here, or
 was measured and dropped for a specific workload. This sprint is therefore **not** a re-run of the list. It isolates
@@ -22,8 +22,9 @@ the few untested paths, gives each a workload where the claimed bottleneck could
 pixel-clean, repeatable win. Every speed claim needs T1's GE/CPU split; today the harness has `work` and `swap` but
 not GE time.
 
-**The b37 baseline is the control.** Do not compare a new build against historical b35/b36 rows without re-running
-the pair. One tag per sprint (`b38`), forced object removal before every driver build, and two runs per point.
+**The current T1 pair is the control.** Re-run `tools/psp-bench.sh` on `c2004b26...` before any task comparison;
+the b37 pair is historical. One tag per sprint (`b38`), forced object removal before every driver build, and two
+runs per point.
 
 ### What the list asks for, and what is already true here
 
@@ -78,22 +79,70 @@ the Media Engine, audio, streaming, and any change to the 2D `batch_check` pixel
 
 ## 4. Preconditions
 
-- [x] pspgu `b37` installed and the b37 pair recorded (`psp-tests/bench/results/b37.json`)
-- [x] clean `libraylib.a` (`9a1d97210d7a1df6`) staged with headers
-- [x] PSPLink session and the memory card install are stable; ask for approval before each device session
-- [ ] working tree isolated from unrelated launcher/docs changes before the first commit
-- [ ] the T1 probe exists and reproduces the b37 work/swap pair
+- [x] pspgu `b37` installed; the installed `libraylib.a` is `c2004b26...` (P10-S13 T1); the b37 pair is historical
+- [x] main tree clean except `ai-memory.db-shm`; no isolated worktree required
+- [x] PSPLink is available for this session; coordinate if another session owns it
+- [ ] the fresh control pair on `c2004b26...` is recorded before T1 is compared
+- [ ] the T1 probe is produced by T1; it is not a precondition
+
+## 4a. Readiness review (2026-11-24)
+
+Reviewed against `master @ 27391da3`, pspgu `b37` and `libraylib.a c2004b26...` (P10-S13 T1). The sprint is a
+measurement plan, not a set of flag flips. Verdict: **T1, T2, T3, T4, T6, T6a and T7 are startable; T2b and T5 are
+blocked** until code removed by the b36 revert is restored; the baseline is stale and must be re-recorded.
+
+**Baseline.** The §0 pair (33.677 / 21.578 ms) predates P10-S13 T1. Re-run the pair on `c2004b26...` and use it as
+the control. The P10-S13 gates (batch 613, scene_3d 0, shapes 284) are the current pixel control.
+
+**T1 — no probe exists.** `matrix_probe` has api/calls/gum/scene, all inside the driver's direct lists; there is no
+GE/SEND mode. A `GU_SEND` list cannot be opened while a `GU_DIRECT` list is open. Add a standalone raw-GU
+`psp-tests/ge_probe`: init GU, build the representative frame in a `GU_SEND` list (the 400-cube merged scene and a
+2,000-sprite batch), `sceGuSendList` + `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` with the CPU idle, and time
+the sync; build the same list CPU-only to subtract. Cut by draw category. Keep its vertex/index buffers separate
+from the driver's direct lists; report the GE time beside the direct-list work/swap.
+
+**T2b — code removed.** The b36 revert removed `PSPGU_FAST2D`, `pspguCanUseTransform2D` and
+`pspguBoundTexture2D`; there is no through-mode path to toggle. T2b requires reintroducing a scoped
+`GU_TRANSFORM_2D` path (a new flag) with the 16-bit-UV vertex, the texel-UV/scale conversion and the
+2-vertex/6-vertex split. The prior 079 T4 was slower with 32-bit UV; 061's s16-UV cost 37 px. Restore or drop
+before coding.
+
+**T5 — fast-clear code removed.** `PSPGU_FAST_CLEAR`/`GU_FAST_CLEAR_BIT` is not in the b37 driver; only the
+`pspgu.h` define remains. The control arm needs a raw-GU probe or the flag restored; the manual 32/64-px stripe
+clear is new code. 079 T2's null is the prior. Restore or drop before coding.
+
+**T2 — S8.** Add `PSPGU_VERTEX_S8`; `guVertexFormat`/`pspGePack` emit only 32/16-bit positions; the 28-byte s16
+path is the baseline. Workload: a dense single-draw mesh; the scale-128 rule; the pixel gate.
+
+**T3 — strips.** `guPrimitive` maps `GL_TRIANGLE_STRIP/FAN`; the raylib batcher does not emit them. Use a probe with
+`glDrawArrays(GL_TRIANGLE_STRIP)` and client arrays (or a raw GU list); the CPU clip only touches `GU_TRIANGLES`.
+The static index cache lives in `pspGePack`/`glDrawElements`; the app indices are static; the list lifetime applies.
+
+**T4 — CLUT.** `gl_texture.c` has no CLUT; add `GU_PSM_T4/T8`, `sceGuClutLoad`/`ClutMode` and an offline quantiser.
+Only run it if T1 shows a texture-fetch-bound 3D scene; otherwise drop with that number.
+
+**T6 — CALL lists.** The driver has no `sceGuCallList`; a static `PspGeMesh` sub-list, matrices in the parent, the
+1,000-mesh scene and the sync-site audit are the work. No full wait.
+
+**T7 — coherence.** A loader thread and a probe over the existing writeback/arena/pinning; no code unless a frame
+fails.
+
+**T6a — ready.** The flags, 160 KiB reserve, bump allocator, writeback skip, arena/no-arena arms, `listUsedMax`
+guard and workloads are specified above.
+
+**Order.** T1 first; T2/T3/T6a next; T4/T6/T7; T2b/T5 only after the restoration decision. The gate table and the
+adoption threshold are unchanged.
 
 ## 5. Tasks
 
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
-| T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `todo` | GE + CPU + swap reconstructs the b37 `avg` within one frame; two runs agree; no game change | — |
+| T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `todo` | GE + CPU + swap reconstructs the fresh control pair within the harness repeatability; two runs agree; no game change | — |
 | T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `todo` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | — |
-| T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `todo` | T1 split; 613-colour gate; drop if slower or any pixel moves | — |
+| T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `blocked` | code restoration first; then T1 split / 613-colour gate; drop if slower or any pixel moves | — |
 | T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `todo` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | — |
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `todo` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | — |
-| T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `todo` | clear-only work; 0 diff; drop if < 0.05 ms or no GE-time change | — |
+| T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `blocked` | code restoration first; then clear-only work / 0 diff; drop if < 0.05 ms or no GE-time change | — |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
 | T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `todo` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | — |
@@ -216,6 +265,8 @@ Source: <https://github.com/libcg/gLib2D>, `glib2d.c`. Ideas only; do not copy c
   only as T2b/T2 on a new workload; CLUT4/8 only as T4; blit strips remain 023's null.
 - **No full GE wait:** `arenaOverflows=0`, `listUsedMax` within the list, no gLib2D-style per-frame `sceGuSync`.
 - **Forced-clean build:** `rm -f tools/pspgu/*.o tools/pspgu/libGL.a` before every driver build; one tag (`b38`).
+- **T2b/T5 are blocked:** the b36 revert removed `PSPGU_FAST2D`/the through-mode helpers and `PSPGU_FAST_CLEAR`;
+  restore that code behind a new flag or drop the task. Do not assume the old flag exists.
 
 ## 7. Gates
 
@@ -236,6 +287,7 @@ Every task keeps these green; a speed claim with a pixel change is a drop.
 
 - [ ] T1's split is reproducible and used by every adoption decision
 - [ ] every task and sub-task (T2-T7, T2b, T5b, T6a) has a measured adopt/drop with a number and a pixel result
+- [ ] T2b and T5 are restored or explicitly dropped before close
 - [ ] adopted changes: `b38`, gate table 0, pair re-run, docs updated
 - [ ] dropped changes: recorded here and in the Phase 10 table; no code left behind
 - [ ] full gates and a strict docs build pass
@@ -251,6 +303,8 @@ Pending — no device runs yet.
 - If T3's index cache wins, revisit the 066 deferred index-buffer note.
 - If T4 finds a texture-fetch wall, an offline texture pipeline (quantise + CLUT) becomes its own sprint.
 - If T2/T3/T4 lose, record the bound: the renderer is draw-call/batcher bound, not vertex/texture-fetch bound.
+- T2b/T5: restore the b36-removed through-mode/fast-clear code or drop them before coding; T1 is the first task
+  and needs the new raw-GU probe.
 
 ## 11. References
 
