@@ -223,6 +223,39 @@ The one honest caveat: the balanced point was vblank-capped, so the crossover ra
 prediction that the models converge when `min(build, GE)` approaches the vblank interval is consistent with the data
 but not proven by it.
 
+### 9.6 Isolated re-run at N=100, and the shape of the reserve
+
+§9.1 changed two variables at once — submission **and** vertex storage (vertices in the list). To separate them the
+small scene was re-run at `GRID=10` (100 cubes), where a single list can hold the frame at all. Same library, same
+driver flags apart from the arm.
+
+| arm | list | reserve | commands | vertices from block | avg | work | swap |
+|---|---|---|---|---|---|---|---|
+| C dual | 2 × 240 KiB | — | — | — | **16.759** | 9.154 | 7.605 |
+| S single | 240 KiB | 229,376 | **~26.7 KiB** | — | **overflow: 256,100 of 245,760** | — | — |
+| S single | 255 KiB | 228,352 | 26,724 | **9,552** | **33.398** | 19.319 | 14.079 |
+
+Three findings:
+
+- **The first single-list attempt at N=100 failed on my headroom, not on the model.** The command stream alone is
+  ~26.7 KiB, larger than the 16 KiB `PSPGU_LIST_COMMAND_HEADROOM`; the list overran silently at 256,100 B. The
+  guard protects the vertex block, not the command stream — that is the same trap the reference projects hit.
+- **A fixed reservation is the wrong shape.** With a 228 KiB reserve the frame used **9,552 B** of it — 4 %. The
+  block is sized for the worst frame, and pays for it in command headroom on every frame.
+- **Even when it fits, the single model doubles the frame at N=100**: 33.398 vs 16.759 ms, a 16.6 ms serialisation
+  cost — the same order as the GE-bound 2D case in §9.1.
+
+At N=400 the single model still cannot run (324,372 B of commands+vertices against 245,760, §9.2), and at N=500
+with merging on the vertex block is barely used while the command stream is what fills the list.
+
+**Arms not run.** `V` (dual + static vertices + per-object) and `VS` (single + static + per-object) were not
+measured here: merge-off needs a `libraylib.a` rebuild with `PSP_MERGE_DRAWS=0`, and with merge off the draw path
+is the direct one (client pointer, no packing), which is the samples' model. The closest existing numbers are 078's
+N=500 pair — per-object **43.222 ms** vs merged **26.672 ms** — which is the same comparison at the larger scene.
+`PSPGU_SINGLE_ARENA_BYTES` (default 0) exists so the VS arm can be built without the full-sync fallback when it is.
+
+The `GRID` knob is now a Makefile passthrough (`make FRAMES=400 GRID=10`), so a re-run needs no source edit.
+
 ## 10. Follow-ups
 
 - If the dual model is strictly better at every ratio we can produce, that is the answer to "why not one buffer",

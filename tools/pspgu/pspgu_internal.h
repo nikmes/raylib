@@ -154,6 +154,13 @@
     #define PSPGU_LIST_COMMAND_HEADROOM (16*1024)
 #endif
 
+// P10-S18: the single-list arm has no arena by default (the reference model puts vertices
+// in the list). The VS arm needs a small one because our unsplit mesh layouts are packed
+// per draw, and without it every draw would take the full-sync fallback.
+#ifndef PSPGU_SINGLE_ARENA_BYTES
+    #define PSPGU_SINGLE_ARENA_BYTES 0
+#endif
+
 // libpspgu exposes the queue id of the last direct list it enqueued. sceGuStart()
 // enqueues immediately (with the stall address at the list start), so saving this after
 // sceGuStart identifies the list we are about to fill. That lets list reuse wait on the

@@ -285,7 +285,13 @@ static void pspguInitGu(void)
 
     if (PSPGU_SUBMIT_SINGLE)
     {
+#if PSPGU_SINGLE_ARENA_BYTES
+        // VS arm only: one small arena for layouts that have to be packed per draw.
+        pspgu.arenaBytes = PSPGU_SINGLE_ARENA_BYTES;
+        pspgu.arenaMem[0] = memalign(64, pspgu.arenaBytes);
+#else
         pspgu.arenaBytes = 0;       // the allocator and the RAM ledger both read this
+#endif
     }
     else
     {
