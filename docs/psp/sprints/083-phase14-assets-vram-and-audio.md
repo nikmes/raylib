@@ -122,10 +122,10 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 | T1 | **Budget and format.** Record the current padded texture set, free VRAM and the declared heap; choose 16-bit `--texfmt=auto`, a repack, or both; confirm zero texture allocation failures | `done` | boot line: used/free/largest; 27 textures loaded; 0 failures; declared heap / entry free | 4444/5650 auto; 1,766,912/330,240 B; 30 resident, **0 failures**; heap 16 MiB, partition free 4.25 MB |
 | T2 | **Repack and split.** Split `title_shine` (540×36) into ≤512 pieces; optionally pack the sprite sheets into one atlas. Measure draws/binds before and after | `dropped` | every sprite and frame renders; draw/bind delta recorded; adopt only if it wins | Not needed: pspgu's 512-window path renders `title_shine`; auto fits with 330 KB free and 0 failures |
 | T3 | **Text parity.** If the runtime 8 px TTF is unstable, bake the atlas offline; keep the fixed 8-pixel advance | `done` | HUD/message checklist; atlas ≤512; no default-font fallback; two identical captures | atlas 256×128 at 8 px; fixed 8 px advance; title captures identical |
-| T4 | **Audio backend and memory plan.** Classify the 17 sound clips and 6 music tracks by decoded size; load short SFX as `Sound` with alias pools, stream music and (if needed) long clips as `Music` streams; set `looping = false`, stop-previous, one `UpdateMusicStream` per frame | `done` | every enum plays; repeated shots overlap; a track stops the previous; peak heap and open-file count recorded; no blocking call in the frame | 17 Sounds + 6 Music on 16 MiB; commands queued to a 0x30 control thread; 512-frame blocks; worker 0x20; **0 underruns** in the 30 s stage arm |
+| T4 | **Audio backend and memory plan.** Classify the 17 sound clips and 6 music tracks by decoded size; load short SFX as `Sound` with alias pools, stream music and (if needed) long clips as `Music` streams; set `looping = false`, stop-previous, one `UpdateMusicStream` per frame | `done` | every enum plays; repeated shots overlap; a track stops the previous; peak heap and open-file count recorded; no blocking call in the frame | 17 Sounds + 6 Music on 16 MiB, direct phase-9 path; **audio confirmed correct by ear**; 2 underruns in the 30 s arm; main-thread stall 72–102 ms remains |
 | T5 | **Startup and load.** Measure the open count and time to first frame with the chosen load plan; stage or pack assets; no black screen longer than the measured load | `doing` | load time, open count, heap high-water in §7; no missing-file log | assets staged under `host0:/galaga/`; 0 missing-file logs; timing not yet recorded |
 | T6 | **EBOOT packaging.** PARAM.SFO, title, asset root under `ms0:/PSP/GAME/<TITLE>/`; verify beside-EBOOT paths | `todo` | EBOOT launches without PSPLink; title appears; same captures as the PRX run | — |
-| T7 | **Five-minute run.** Title → stage → game over with audio; log frame time, dropouts, heap and VRAM high-water | `doing` | 0 dropouts; 0 allocation failures; no crash; p95 frame time recorded | 10-minute soak running; 0 underruns to t=30 s; autoplay stress reached 33–37 fps at t=55–70 s |
+| T7 | **Five-minute run.** Title → stage → game over with audio; log frame time, dropouts, heap and VRAM high-water | `doing` | 0 dropouts; 0 allocation failures; no crash; p95 frame time recorded | Aggressive 10-minute soak stopped at t≈173 s after audio correction; game over at t≈75 s (score 2320); 5-minute gate not complete |
 | T8 | **Close and decide.** Record which format/atlas/packaging arms were adopted; update the phase page and §9 | `todo` | decision table in §9; phase page's state row updated | — |
 
 ### Task log (append-only)
@@ -209,9 +209,9 @@ do not scatter `#ifdef PLATFORM_PSP` through gameplay code.
 |---|---|---|---|---|---|
 | baseline | galaga-b1 | all textures | used / free / largest / failures | **1,766,912 / 330,240 / 330,240 / 0** | 30 resident |
 | T4 | galaga-b1 | 17 Sounds + 6 Music | partition free / open files | **4.25 MB free**; music files streamed | 16 MiB heap |
-| T4 | galaga-b1 | 30 s stage | audio dropouts | **0** | 512-frame blocks, worker 0x20 |
+| T4 | galaga-b1 | 30 s stage | audio dropouts | **2** | direct phase-9 path; audio confirmed correct by ear |
 | T4 | galaga-b1 | title, 5 min | audio dropouts | 4 at startup (before the queue/priority fixes) | superseded |
-| T7 | galaga-b1 | 10-minute autoplay | fps / dropouts | **33–37 fps at t=55–70 s; 0 underruns so far** | soak running |
+| T7 | galaga-b1 | 10-minute autoplay | fps / dropouts | **33–40 fps; 0 underruns to t=173 s; stopped** | audio correction; soak incomplete |
 | T6 | — | EBOOT | launch / capture parity | — | not tested |
 
 ## 8. Exit criteria
@@ -226,15 +226,15 @@ do not scatter `#ifdef PLATFORM_PSP` through gameplay code.
 
 ## 9. Result
 
-**P14-S2 is mostly implemented; packaging and the long-run performance gate remain.** The texture set fits at
-4444/5650 with 330 KB free and 0 allocation failures, so the planned repack was dropped. The 8 px font is
-stable. Audio uses 17 decoded Sounds and 6 streamed Music tracks on a 16 MiB heap; playback commands are queued
-to a control thread, the DSP block is 512 frames, and the worker runs at the game thread's priority. The 30 s
-stage arm recorded **0 underruns**.
+**P14-S2 is mostly implemented; packaging and performance remain.** The texture set fits at 4444/5650 with
+330 KB free and 0 allocation failures, so the planned repack was dropped. The 8 px font is stable. Audio uses
+17 decoded Sounds and 6 Music streams on a 16 MiB heap with the direct phase-9 `PlaySound`/`PlayMusicStream`
+path (1024-frame blocks, adaptive worker). The 512-frame/0x20/command-queue experiment was **reported broken by
+ear** and the source was reverted; the user confirmed the direct path is correct. The 30 s stage arm has 2
+underruns and a 72–102 ms main-thread audio stall late in the stage.
 
-The 10-minute autoplay soak is running. It has 0 underruns so far, but the autoplay stress drops to 33–37 fps
-after about 55 s; the main-thread work at that point is 6.9–8.5 ms, so the remaining time is scheduling/audio
-interaction rather than draw submission. EBOOT packaging and a final five-minute run are still open.
+The aggressive autoplay soak was stopped at t≈173 s after the audio correction; it had reached GAMEOVER at
+t≈75 s (score 2320) with no crash, at 33–40 fps. EBOOT packaging and the five-minute gate remain open.
 
 ## 10. Follow-ups
 

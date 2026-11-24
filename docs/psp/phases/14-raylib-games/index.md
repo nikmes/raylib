@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| State | **in progress** — P14-S1 done; P14-S2 audio/VRAM done, EBOOT and the 5-minute gate open; P14-S3 10-minute soak running. Port at `/home/psp/galaga-psp` (outside this repo) |
+| State | **in progress** — P14-S1 done; P14-S2 audio corrected to the proven phase-9 direct path, performance open; P14-S3 paused, soak stopped. Port at `/home/psp/galaga-psp` (outside this repo) |
 | Depends on | Phases 5–10 closed (renderer, textures/VRAM, input, audio, 3D); Phase 13 for the text and input paths it validated |
 | Exit criterion | one complete third-party game runs on a PSP-1000 at 60 fps from a cold launch to game over, with stable input, all sprites and text, audio without dropouts, two identical captures, and no crash in a 10-minute soak — without a change to raylib's public API; any library change is its own sprint |
 
@@ -129,16 +129,17 @@ with point filtering. `STRETCH=0` restores the 224×272 centred, pixel-perfect l
 `GetGlyphIndex`/`GetGlyphAtlasRec` with a fixed 8-pixel advance. The 540-wide `title_shine` is sampled through
 pspgu's 512-window path.
 
-**Audio.** 17 SFX are decoded `Sound`s and 6 tracks are `Music` streams on a 16 MiB heap. Playback commands
-are queued to a 0x30 control thread, so the frame loop never waits on the mixer. The PSP backend uses 512-frame
-blocks, the worker is pinned at priority 0x20 (equal to the game thread), and the startup priority raise is
-suppressed for 200 callbacks. The pspgu driver is built quiet (`PSPGU_VERBOSE=0`) for gameplay.
+**Audio.** 17 SFX are decoded `Sound`s and 6 tracks are `Music` streams on a 16 MiB heap, using the direct
+`PlaySound`/`PlayMusicStream` path and the proven phase-9 `libraylib.a` (1024-frame blocks, adaptive worker).
+The 512-frame block, 0x20 worker and command-queue experiment was **reported broken by ear**; that source was
+reverted. The pspgu driver is built quiet (`PSPGU_VERBOSE=0`) for gameplay.
 
 **Measured.** Title: 600 frames at 60 fps, two byte-identical captures, VRAM 1,766,912 B used / 330,240 free,
-30 textures resident, 0 allocation failures. Stage autoplay: 30 s game time, score 310, lives 2, main work
-6.0 ms at t=25.8 s, **0 audio underruns**. The 10-minute soak reached **GAMEOVER at t≈75 s** (stage 1, score
-2320, lives 0) with no crash and 0 audio underruns so far; the heavy phase ran at **33–40 fps**, not 60. The
-post-game title/attract ran at 44–45 fps. The soak continues; its log is `/tmp/galaga-soak.log`.
+30 textures resident, 0 allocation failures. The direct-audio stage is 60 fps for the first ~15 s, then a
+main-thread audio stall (72–102 ms, 20–30 fps at t=21–30 s); the user confirmed the audio itself is now correct.
+The aggressive autoplay soak reached **GAMEOVER at t≈75 s** (stage 1, score 2320, lives 0) with no crash, then
+ran the post-game attract at 44–45 fps; it was stopped at t≈173 s when the audio was corrected. The 10-minute
+soak is **not complete**; its log is `/tmp/galaga-soak.log`.
 
 **Fixes found by the port.** `Hud::set1UpBlinking` and `Entity::commitZOrderChange` were declared `bool` with no
 `return`; GCC let them fall through into the next function (the former crashed the stage). The game's `ol::Color`

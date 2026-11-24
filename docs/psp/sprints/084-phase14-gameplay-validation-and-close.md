@@ -105,7 +105,7 @@ Status vocabulary — `todo` · `doing` · `done` · `blocked` · `dropped`.
 | ID | task | status | verification | evidence |
 |---|---|---|---|---|
 | T1 | **Deterministic run.** Add a `GALAGA_AUTOPLAY` build that replays a fixed left/right/fire tape by frame index; log the tape and a final state hash | `done` | two runs produce identical captures and the same final state hash | `AUTOPLAY=1` tape driven by simulation updates; `RUN_SECONDS` limits by game time; autoplay reaches stage 1, score 310, lives 2 at t=30 s |
-| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, the declared heap high-water, VRAM, audio dropouts, entity counts | `doing` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | soak running; 0 underruns to t=30 s; 33–37 fps at t=55–70 s |
+| T2 | **Ten-minute soak.** Run the tape for 10 minutes; log frame p50/p95, the declared heap high-water, VRAM, audio dropouts, entity counts | `doing` | no crash; heap and VRAM flat within the recorded band; 0 dropouts | soak stopped at t≈173 s after the audio correction; GAMEOVER at t≈75 s (score 2320); 33–40 fps; 0 underruns to stop |
 | T3 | **Frame attribution.** Split work into update, draw submission and GE/vblank; use the backend's logical counters plus pspgu's `pspguVramStats`/`pspguResidencyStats`; identify the largest cost at 60 fps | `doing` | a table that sums to the measured frame work, not a single number | `work` counter in `STATS`; 1.1–1.5 ms quiet title/stage, 6.9–8.5 ms in the stressed stage; no split yet |
 | T4 | **Memory.** Record heap high-water and largest free block over the soak; check entity spawn/destroy churn; if growth is found, pool the offending type and record the delta | `todo` | high-water and fragmentation figures; no monotonic growth | heap partition free 4.25 MB stable in the 30 s arm; soak open |
 | T5 | **Input feel.** Verify D-pad and nub control, deadzone, repeat-fire (`isKeyPressedOnce` semantics) and the non-gameplay exit; record the nub's raw range on this unit | `todo` | a numbered button checklist on the device; no lost press, no stuck key | mapping implemented; physical test open |
@@ -168,8 +168,8 @@ modifications in a short, dated note.
 |---|---|---|---|---|---|
 | baseline | galaga-b1 | autoplay title→stage, 30 s | frame / work | **60–58 fps; 1.2–6.0 ms** | t=5–26 s |
 | baseline | galaga-b1 | autoplay, 30 s | final state | **stage 1, score 310, lives 2** | deterministic across audio on/off |
-| baseline | galaga-b1 | autoplay, 55–70 s | fps / work | **33–37 fps; 6.9–8.5 ms** | heavy stage; soak running |
-| baseline | galaga-b1 | autoplay, 10 min | heap / VRAM | **4.25 MB partition free; 1,766,912/330,240 B; 0 failures** | flat to t=70 s |
+| baseline | galaga-b1 | autoplay, 55–70 s | fps / work | **33–37 fps; 6.9–8.5 ms** | heavy stage; soak stopped |
+| baseline | galaga-b1 | autoplay, stopped t≈173 s | heap / VRAM | **4.25 MB partition free; 1,766,912/330,240 B; 0 failures** | flat to stop |
 | determinism | galaga-b1 | two title runs | capture diff | **none (identical)** | full-screen stretch |
 
 ## 8. Exit criteria
@@ -186,13 +186,13 @@ modifications in a short, dated note.
 
 **P14-S3 is in progress.** The deterministic autoplay tape runs by simulation update and `RUN_SECONDS` limits
 the run by game time, so audio-on and audio-off arms reach the same state (stage 1, score 310, lives 2 at 30 s).
-The quiet pspgu driver and the 512-frame audio backend hold 60 fps and **0 underruns** for the first 30 s.
+The quiet pspgu driver and the direct phase-9 audio path hold 60 fps for the first ~15 s; the user confirmed the audio is correct. The 30 s arm ends with a 72–102 ms main-thread audio stall.
 
-The 10-minute soak is still running. It has reached **GAMEOVER** at t≈75 s (stage 1, score 2320, lives 0) with
-0 audio underruns to that point. Under sustained autoplay the game drops to 33–40 fps in the heavy phase and
-runs the post-game attract at 44–45 fps; the main-thread work at the drop is 4.7–8.5 ms, so the remaining frame
-time is scheduler/audio interaction rather than draw submission. The soak result, p50/p95, EBOOT packaging and
-the physical input pass remain open.
+The aggressive 10-minute soak was stopped at t≈173 s after the audio correction, so the 10-minute gate is
+**not complete**. It reached **GAMEOVER** at t≈75 s (stage 1, score 2320, lives 0) with no crash and 0 underruns
+to that point. Under sustained autoplay it ran 33–40 fps; the post-game attract ran 44–45 fps. The direct
+phase-9 audio path is correct by ear but stalls the main thread for 72–102 ms late in the stage, so the p50/p95
+and 60 fps gate remain open. EBOOT packaging and the physical input pass also remain open.
 
 ## 10. Follow-ups
 
