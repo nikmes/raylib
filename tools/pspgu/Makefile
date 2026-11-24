@@ -31,6 +31,11 @@ endif
 ifdef PSPGU_REPLAY
     CFLAGS += -DPSPGU_REPLAY=1
 endif
+
+# P10-S15 T6a: list-local vertex memory through sceGuGetMemory (measurement arm).
+ifdef PSPGU_LIST_VERTICES
+    CFLAGS += -DPSPGU_LIST_VERTICES=$(PSPGU_LIST_VERTICES)
+endif
 ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif

@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 5/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5); T2b/T5 dropped on prior evidence |
+| Tasks | 6/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3), T4 dropped (§9.4), T5b dropped (§9.5), T6a dropped (§9.6); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -149,7 +149,7 @@ and the adoption threshold are unchanged.
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `dropped` | 079 T2 0.265→0.268 ms; bunnymark 4.706→4.702; 0 diff; b36 removed the flag | prior numbers |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `dropped` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | §9.5 — 32 vs 16 quads at 0 px diff, GE +36 µs (no saving); T4 already ruled out the texture-cache mechanism, and this arm's absolute times are below the GE fill rate (8× draws gave 3.2× time), so direction only |
 | T6 | **Static display lists and sync audit.** (a) Build a static `GU_CALL` sub-list for a `PspGeMesh` and batch kicks on a 1,000-mesh scene (cull on/off); (b) inventory every `sceGeListSync`/`sceGuTexSync`/`sceGuSync` (`egl.c:393,473,535,570,642,762`; `gl_texture.c:353,362`) and remove only a sync with a proven non-dependency | `todo` | CPU submission and `listWaits`/`displayWaits`; 0 diff; no full wait; `arenaOverflows=0` | — |
-| T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `todo` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | — |
+| T6a | **List-local vertex memory.** Public pspsdk maps the list through the uncached alias (`sceGuStart` ORs `0x40000000`), so a `sceGuGetMemory` block needs **no `pspguWriteback`**; the block is 4-byte aligned and dies when the list is refilled. It also advances the stall address for a direct list and performs **no bounds check**. Our list is 240 KiB (`PSP_GU_LIST_BYTES`), our arena is 2×512 KiB (`PSP_GU_ARENA_BYTES`), so the arm must track `listUsedMax` and fall back rather than overrun. Test one block per list vs one per batch (gLib2D's pattern) | `dropped` | T1 split; main-RAM ledger; `listUsedMax`/overflow guard; uncached-store vs cached+writeback cost; stall count; 0 diff; no full wait | §9.6 — 2D: work 21.593→20.106 ms (−1.49 ms, 0 fallbacks) but avg unchanged (GE-bound); 3D: `used_max` pinned at 161,768 B with 50 fallbacks at 160/200/208 KiB and work +0.88 ms, because the frame reopens its list mid-frame |
 | T7 | **Coherence stress.** A loader thread writes vertices/indices and a texture while the main thread submits; writeback then publish; compare captures to a single-thread control over N frames. Audit every pointer handed to `sceGuDrawArray` against the per-list arena and texture pinning | `todo` | 0 corrupted frames; if a missing writeback/alias is found, fix and re-run the gates | — |
 | T8 | **Gates and close.** Full gate table, the pair twice, docs, commit, restore the chosen driver | `todo` | §7 all green; two runs; strict docs build | — |
 
@@ -470,6 +470,43 @@ this arm's +36 µs is consistent with that. Recorded as a drop; no code changed.
 
 **Instrument lesson for the next probe:** a list whose GE time does not scale with the work in it is not a timing of
 that work. Repeat the workload in the same list and require the ratio before recording a magnitude.
+
+### 9.6 T6a — list-local vertices (`dropped`, 2026-11-24)
+
+`PSPGU_LIST_VERTICES=1` reserves one `sceGuGetMemory` block per list and sub-allocates 4-byte aligned from it;
+`pspguArenaAlloc` falls back to the arena when the block is full, and `pspguWriteback` no-ops inside the block
+(the block is in the list's uncached alias, so a writeback is both redundant and wrong). Two workloads, two answers.
+
+**2D showcase (fits, no reopen): a real CPU win.**
+
+| | work | avg | swap | block used | fallbacks |
+|---|---|---|---|---|---|
+| control | 21.593 ms | 33.803 | 12.21 | — | — |
+| T6a, 160 KiB | **20.106 ms** | 33.800 | 13.70 | 87,456 B | 0 |
+
+**−1.49 ms of list-build CPU (−6.9 %)**, `arenaOverflows=0`, no list overflow. The frame time does not move because
+2D is GE-bound at 29.2 ms (T1) — the CPU simply waits longer at the swap. That also settles the open question in the
+design note: **uncached list-local stores are faster than cached stores plus a range writeback**, by about the cost
+of the writeback itself.
+
+**3D showcase (the CPU-bound workload): cannot use it.** `used_max` stopped at exactly **161,768 bytes with 50
+fallbacks** at 160, 200 and 208 KiB budgets, and work rose to 32.94 ms against the 32.06 control (+0.88 ms). A
+budget that does not change the ceiling is not the limiter: the 3D frame **closes and reopens its list mid-frame**
+(`pspguFinishAndWait`, gl_texture.c:408, reached from the texture-eviction path), so a fixed per-list reserve is
+asked for twice on the same buffer. The public `sceGuGetMemory` has no bounds check, so this is a design limit, not
+a tuning value.
+
+Dropped as a default, for three reasons and with no code changed:
+
+- it cannot serve the only workload where the CPU is the wall;
+- the workload it does help is GE-bound, so it buys nothing measurable in the pair;
+- a correct version needs a reserve strategy that survives a mid-frame list reopen and a per-list budget that
+  adapts to the frame, which is a separate design, not this measurement.
+
+What survives is the useful fact for any future attempt: the uncached block is worth ~1.5 ms per frame on a 2D-class
+frame, and it removes the writeback but not the arena fallback. The flag, the allocator and the no-op writeback stay
+in the driver compiled out (`PSPGU_LIST_VERTICES=0`); the installed archive is byte-identical to the control
+(`9798af84e81b269e`).
 
 ## 10. Follow-ups
 

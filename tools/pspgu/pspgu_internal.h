@@ -130,6 +130,18 @@
     #define PSP_GU_ARENA_BYTES (512*1024)
 #endif
 
+// P10-S15 T6a: list-local vertex memory via sceGuGetMemory. The block lives in the list's
+// uncached alias, so it needs no writeback, and the two-list rotation gives it the same
+// lifetime the arenas have. Reserve is capped by the list: 160 KiB leaves ~80 KiB of the
+// 240 KiB list for commands. Off by default; the arena is the fallback when the block
+// would not fit.
+#ifndef PSPGU_LIST_VERTICES
+    #define PSPGU_LIST_VERTICES 0
+#endif
+#ifndef PSPGU_LIST_VERTEX_BYTES
+    #define PSPGU_LIST_VERTEX_BYTES (160*1024)
+#endif
+
 // libpspgu exposes the queue id of the last direct list it enqueued. sceGuStart()
 // enqueues immediately (with the stall address at the list start), so saving this after
 // sceGuStart identifies the list we are about to fill. That lets list reuse wait on the
@@ -159,6 +171,12 @@ typedef struct {
     unsigned int arenaUsed[2];
     unsigned int arenaBytes;                // capacity of one arena
     unsigned long long arenaOverflows;      // frames that needed the full-sync fallback
+
+    void *listVertexBase[2];                // T6a: sceGuGetMemory block per list
+    unsigned int listVertexUsed[2];         // bytes sub-allocated from that block
+    unsigned int listVertexBytes;           // budget of one block
+    unsigned int listVertexUsedMax;         // largest reservation actually consumed
+    unsigned long long listVertexFellBack;  // allocations that used the arena instead
 
     unsigned int fbBytes;                   // one framebuffer, bytes
     void *fbOffset[PSP_GU_FB_COUNT];         // the rotating framebuffers, EDRAM offsets
@@ -313,6 +331,22 @@ int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices
 static inline void pspguWriteback(const void *addr, unsigned int bytes)
 {
     if ((addr == NULL) || (bytes == 0)) return;
+
+#if PSPGU_LIST_VERTICES
+    // T6a: a sceGuGetMemory block lives in the list's uncached alias (sceGuStart maps the
+    // list with | 0x40000000), so its stores are already visible to the GE. Writing back
+    // costs a range call and is not just redundant — it would flush the cached alias of a
+    // block the GE is reading through the other one.
+    for (int i = 0; i < 2; i++)
+    {
+        const unsigned char *b = (const unsigned char *)pspgu.listVertexBase[i];
+
+        if ((b != NULL) && ((const unsigned char *)addr >= b) &&
+            ((const unsigned char *)addr < b + pspgu.listVertexBytes))
+            return;
+    }
+#endif
+
     sceKernelDcacheWritebackRange(addr, bytes);
 }
 

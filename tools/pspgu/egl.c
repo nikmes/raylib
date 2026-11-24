@@ -263,6 +263,9 @@ static void pspguInitGu(void)
     pspgu.fbBytes = fb;
     pspgu.listBytes = alignedListBytes(PSP_GU_LIST_BYTES);
     pspgu.arenaBytes = PSP_GU_ARENA_BYTES;
+#if PSPGU_LIST_VERTICES
+    pspgu.listVertexBytes = PSPGU_LIST_VERTEX_BYTES;
+#endif
 
     // Two of each. Frame N fills one list and one arena; frame N+1 the other pair. A list
     // is only rewritten after the GE has finished the frame that last used it (see
@@ -456,6 +459,11 @@ static void pspguInitGu(void)
 #ifdef PSPGU_REPLAY
     pspguLog("REPLAY MODE: frames are queued (GU_SEND) and waited for; GE and build time are logged per 50 frames");
 #endif
+
+#if PSPGU_LIST_VERTICES
+    pspguLog("LIST-VERTICES: %u KiB per list via sceGuGetMemory, arena is the fallback",
+             pspgu.listVertexBytes/1024);
+#endif
 }
 
 // Start a list if none is open. Every emitter calls this; it is free when already open.
@@ -504,6 +512,14 @@ void pspguBeginFrame(void)
     pspgu.listQid[next] = (res >= 0)? ge_list_executed[0] : -1;
 #endif
     pspgu.listOpen = 1;
+
+#if PSPGU_LIST_VERTICES
+    // One reserve per list: sceGuGetMemory emits a skip and (in a direct list) advances the
+    // stall, so reserving once costs one syscall instead of one per batch. The block is
+    // data the GE jumps over, and pspguArenaAlloc sub-allocates from it.
+    pspgu.listVertexBase[next] = sceGuGetMemory(pspgu.listVertexBytes);
+    pspgu.listVertexUsed[next] = 0;
+#endif
 }
 
 // Finish the open list and let the GE work through it. No wait: the display switch is
@@ -570,6 +586,11 @@ void pspguEndFrame(void)
                  pspgu.listSubmits, pspgu.listWaits, avg, pspgu.listWaitMaxUs,
                  pspgu.displayWaits, davg, pspgu.displayWaitMaxUs,
                  pspgu.listUsedMax, pspgu.arenaBytes, pspgu.arenaOverflows);
+
+#if PSPGU_LIST_VERTICES
+        pspguLog("list-vertices: reserve=%u used_max=%u fell_back=%llu",
+                 pspgu.listVertexBytes, pspgu.listVertexUsedMax, pspgu.listVertexFellBack);
+#endif
     }
 }
 
@@ -652,6 +673,24 @@ void *pspguArenaAlloc(unsigned int bytes)
     int i = pspgu.listIndex;
 
     if ((i < 0) || !pspgu.listOpen) return NULL;
+
+#if PSPGU_LIST_VERTICES
+    // T6a: 4-byte bump allocation inside the per-list sceGuGetMemory block. No writeback is
+    // needed (the block is uncached), so the 64-byte line rule below does not apply here.
+    {
+        unsigned int off4 = (pspgu.listVertexUsed[i] + 3) & ~3u;
+
+        if ((pspgu.listVertexBase[i] != NULL) && ((off4 + bytes) <= pspgu.listVertexBytes))
+        {
+            pspgu.listVertexUsed[i] = off4 + bytes;
+            if (pspgu.listVertexUsed[i] > pspgu.listVertexUsedMax)
+                pspgu.listVertexUsedMax = pspgu.listVertexUsed[i];
+            return (unsigned char *)pspgu.listVertexBase[i] + off4;
+        }
+
+        pspgu.listVertexFellBack++;
+    }
+#endif
 
     // 64 bytes, not 16: the PSP D-cache line is 64 bytes and the GE reads this memory
     // after sceKernelDcacheWritebackRange. An allocation that starts mid-line shares a
