@@ -51,11 +51,22 @@ typedef struct { unsigned int color; float nx, ny, nz; float x, y, z; } V3;
 typedef struct { unsigned int color; short x, y, z, pad; } V16;
 typedef struct { unsigned int color; signed char x, y, z, pad; } V8;
 
+// T3a: the same quad grid drawn two ways. A list needs 6 vertices per quad (36,000 for
+// 6,000 quads); per-row strips need 2*(COLS+1) per row (12,120 in 60 draws).
+#define QUAD_COLS 100
+#define QUAD_ROWS 60
+#define QUAD_TRIS (QUAD_COLS*QUAD_ROWS*2)
+#define LIST_VERTS (QUAD_TRIS*3)
+#define STRIP_ROW_VERTS (2*(QUAD_COLS+1))
+#define STRIP_VERTS (QUAD_ROWS*STRIP_ROW_VERTS)
+
 static V2 sprites[SPRITES*2] __attribute__((aligned(64)));
 static V3 cubes[CUBE_VERTS] __attribute__((aligned(64)));
 static unsigned short cubeIndex[CUBE_VERTS] __attribute__((aligned(64)));
 static V16 mesh16[MESH_VERTS] __attribute__((aligned(64)));
 static V8  mesh8[MESH_VERTS] __attribute__((aligned(64)));
+static V16 listMesh[LIST_VERTS] __attribute__((aligned(64)));
+static V16 stripMesh[STRIP_VERTS] __attribute__((aligned(64)));
 
 // Captures for the T2 parity check: the same frame drawn with each vertex format.
 static unsigned short cap16[SCR_W*SCR_H] __attribute__((aligned(64)));
@@ -216,6 +227,114 @@ static void capture(unsigned short *dst)
 
     for (int y = 0; y < SCR_H; y++)
         memcpy(dst + (size_t)y*SCR_W, src + (size_t)y*STRIDE, SCR_W*2);
+}
+
+static V16 mk16(unsigned int color, float x, float y)
+{
+    V16 v = { color, (short)lrintf(x*32767.0f), (short)lrintf(y*32767.0f), 0, 0 };
+    return v;
+}
+
+static void makeQuadMesh(void)
+{
+    int li = 0, si = 0;
+
+    for (int r = 0; r < QUAD_ROWS; r++)
+    {
+        float y0 = -1.0f + 2.0f*(float)r/QUAD_ROWS;
+        float y1 = -1.0f + 2.0f*(float)(r+1)/QUAD_ROWS;
+        unsigned int color = (r & 1)? 0xFF7A96C8 : 0xFF5A78B4;
+
+        for (int c = 0; c < QUAD_COLS; c++)
+        {
+            float x0 = -1.0f + 2.0f*(float)c/QUAD_COLS;
+            float x1 = -1.0f + 2.0f*(float)(c+1)/QUAD_COLS;
+            V16 a = mk16(color, x0, y0);
+            V16 b = mk16(color, x0, y1);
+            V16 d = mk16(color, x1, y0);
+            V16 e = mk16(color, x1, y1);
+
+            listMesh[li++] = a; listMesh[li++] = b; listMesh[li++] = d;
+            listMesh[li++] = d; listMesh[li++] = b; listMesh[li++] = e;
+        }
+
+        for (int c = 0; c <= QUAD_COLS; c++)
+        {
+            float x = -1.0f + 2.0f*(float)c/QUAD_COLS;
+            stripMesh[si++] = mk16(color, x, y0);
+            stripMesh[si++] = mk16(color, x, y1);
+        }
+    }
+}
+
+static void emitMeshStates(void)
+{
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDisable(GU_BLEND);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuDisable(GU_LIGHTING);
+    sceGuDisable(GU_FOG);
+    loadMeshModel();
+}
+
+static unsigned int buildStrip(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitMeshStates();
+    for (int r = 0; r < QUAD_ROWS; r++)
+        sceGumDrawArray(GU_TRIANGLE_STRIP,
+                        GU_COLOR_8888 | GU_VERTEX_16BIT | GU_TRANSFORM_3D,
+                        STRIP_ROW_VERTS, NULL, stripMesh + r*STRIP_ROW_VERTS);
+    return (unsigned int)sceGuFinish();
+}
+
+static unsigned int buildList(void)
+{
+    sceGuStart(GU_SEND, list);
+    emitMeshStates();
+    sceGumDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_16BIT | GU_TRANSFORM_3D,
+                    LIST_VERTS, NULL, listMesh);
+    return (unsigned int)sceGuFinish();
+}
+
+// T3b: what the per-draw index copy costs. The driver's run copy is the loop form
+// (`rb[i] = idx[...]`); memcpy is the ceiling if the run were contiguous.
+#define IDX_N 36000
+static unsigned short idxSrc[IDX_N] __attribute__((aligned(64)));
+static unsigned short idxDst[IDX_N] __attribute__((aligned(64)));
+
+static void benchIndexCopy(void)
+{
+    unsigned long long loop[5], mcpy[5];
+
+    for (int i = 0; i < IDX_N; i++) idxSrc[i] = (unsigned short)(i & 0x3FFF);
+
+    for (int r = 0; r < 2; r++)
+    {
+        for (int i = 0; i < IDX_N; i++) idxDst[i] = idxSrc[i];
+        memcpy(idxDst, idxSrc, sizeof(idxSrc));
+    }
+
+    for (int r = 0; r < 5; r++)
+    {
+        unsigned long long t0 = nowUs();
+        for (int i = 0; i < IDX_N; i++) idxDst[i] = idxSrc[i];
+        loop[r] = nowUs() - t0;
+    }
+
+    for (int r = 0; r < 5; r++)
+    {
+        unsigned long long t0 = nowUs();
+        memcpy(idxDst, idxSrc, sizeof(idxSrc));
+        mcpy[r] = nowUs() - t0;
+    }
+
+    qsort(loop, 5, sizeof(loop[0]), cmpU64);
+    qsort(mcpy, 5, sizeof(mcpy[0]), cmpU64);
+    printf("IDXCOPY n=%d loop_med=%llu us memcpy_med=%llu us (check %u)\n",
+           IDX_N, loop[2], mcpy[2], idxDst[7]);
+    fflush(stdout);
 }
 
 static void initGu(void)
@@ -408,11 +527,14 @@ int main(void)
 {
     makeScene();
     makeMesh();
+    makeQuadMesh();
     sceKernelDcacheWritebackRange(sprites, sizeof(sprites));
     sceKernelDcacheWritebackRange(cubes, sizeof(cubes));
     sceKernelDcacheWritebackRange(cubeIndex, sizeof(cubeIndex));
     sceKernelDcacheWritebackRange(mesh16, sizeof(mesh16));
     sceKernelDcacheWritebackRange(mesh8, sizeof(mesh8));
+    sceKernelDcacheWritebackRange(listMesh, sizeof(listMesh));
+    sceKernelDcacheWritebackRange(stripMesh, sizeof(stripMesh));
 
     initGu();
     printf("GE_PROBE sprites=%d cubes=%d list=%d bytes\n",
@@ -425,6 +547,9 @@ int main(void)
     bench("frame", buildFrame);
     bench("mesh16", buildMesh16);
     bench("mesh8", buildMesh8);
+    bench("strip", buildStrip);
+    bench("list", buildList);
+    benchIndexCopy();
 
     // T2 parity: same geometry and colours, one format per frame; count differing pixels.
     // Both nonblack counts are printed so an all-black frame cannot pass as "0 diff".
@@ -465,6 +590,29 @@ int main(void)
 
         printf("MESH_PARITY diff=%u of %d nonblack16=%u nonblack8=%u cubes_nonblack=%u\n",
                diff, SCR_W*SCR_H, nb16, nb8, nbCube);
+        fflush(stdout);
+
+        // T3a: strips vs the triangle list, same quad grid and same vertices.
+        unsigned int sdiff = 0, nbStrip = 0, nbList = 0;
+
+        used = buildClear(); sendAndWait(used);
+        used = buildStrip(); sendAndWait(used);
+        capture(cap16);
+
+        used = buildClear(); sendAndWait(used);
+        used = buildList();  sendAndWait(used);
+        capture(cap8);
+
+        for (int i = 0; i < SCR_W*SCR_H; i++)
+        {
+            if (cap16[i] != cap8[i]) sdiff++;
+            if (cap16[i] != 0) nbStrip++;
+            if (cap8[i] != 0) nbList++;
+        }
+
+        printf("STRIP_PARITY diff=%u of %d nonblack_strip=%u nonblack_list=%u "
+               "verts_strip=%d verts_list=%d\n",
+               sdiff, SCR_W*SCR_H, nbStrip, nbList, STRIP_VERTS, LIST_VERTS);
         fflush(stdout);
     }
 

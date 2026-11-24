@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `27391da3` (pspgu `b37`; P10-S13 T1; docs commits) |
 | Started / closed | 2026-11-23 (written) / — |
 | Build number(s) | pspgu `b38` for any adopted driver change; installed `libraylib.a` `c2004b26...` (`PSP_BATCH=1 PSP_MERGE_DRAWS=1`, P10-S13 T1); new probes opt-in |
-| Tasks | 2/9 active — T1 done (GE/CPU split, §9.1), T2 dropped (§9.2); T2b/T5 dropped on prior evidence |
+| Tasks | 3/9 active — T1 done (§9.1), T2 dropped (§9.2), T3 done (§9.3: strip win, index-copy follow-up); T2b/T5 dropped on prior evidence |
 
 ## 0. Handover
 
@@ -144,7 +144,7 @@ and the adoption threshold are unchanged.
 | T1 | **GE/CPU attribution.** Add a serial-replay probe: build one frame with `sceGuStart(GU_SEND, list)`, `sceGuSendList` and `sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE)` while the CPU is idle; report GE ms, CPU render ms, swap ms, and the existing per-phase counters (clip, cull, submit). Do not use `sceGeDrawSync(1)` as a GE timer | `done` | GE + CPU + swap reconstructs the fresh control pair within the harness repeatability; two runs agree; no game change | §9.1 — probe repeats within 1 µs; 3D CPU-bound 30.1 vs 13.1 ms, 2D GE-bound 19.5 vs 29.2 ms |
 | T2 | **S8 positions.** Add an opt-in `GU_VERTEX_8BIT` packed path (scale 128 about the mesh centre, same scale-matrix rule as s16). Workload: a dense mesh (≥10k vertices) drawn once per frame, not the 400-cube draw-call-bound scene. A/B S16 vs S8 | `dropped` | T1 GE time and work; pixel parity on a dedicated mesh capture; adopt only if it beats the control and 0 diff | §9.2 — GE 1,852→1,681 µs (−0.171 ms, 9.2 %) on 36,000 verts, but 59,538/130,560 pixels differ: s8 quantises a screen-wide mesh to ~1.8 px |
 | T2b | **2D through-mode 16-bit UV.** gLib2D's 20-byte textured vertex: `GU_TRANSFORM_2D` + `GU_TEXTURE_16BIT`, 32-bit position, 2-vertex `GU_SPRITES` for unrotated and 6-vertex triangles for rotated. Workload: 2,000+ sprites / `psp_2d_showcase`, where vertex copy/fetch is a measurable share. Prior: 079 T4 through mode with 32-bit UV was slower; 061's s16-UV trial cost 37 px; 077 T5 dropped compact 2D. Only the 16-bit-UV variant is tested | `dropped` | 079 T4 through mode slower; 077 T5 compact 2D; 061 s16 UV 37 px; b36 removed the path | prior numbers |
-| T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `todo` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | — |
+| T3 | **Strips and index cache.** (a) Stripify a dense mesh and draw `GU_TRIANGLE_STRIP` via a probe or a `PspGeMesh` strip path; compare vertex/index count, GE time and pixels with `GU_TRIANGLES`. (b) For static `PspGeMesh` indices, copy the index run once per mesh/list (or hand the app pointer after a writeback) instead of per draw; measure the CPU copy | `done` | T1 split; 0 diff; per-list lifetime proof; no `arenaOverflows` | §9.3 — strips −1.073 ms GE (−58 %) at 0/130,560 px for +46 µs CPU build; index copy 31 µs per 1,000 (≈0.45 ms/frame in 3D) → follow-up |
 | T4 | **CLUT4/CLUT8, 3D only.** If T1 shows a texture-fetch-bound 3D scene, quantise a texture offline to 16/256 colours, upload `GU_PSM_T4/T8` with `sceGuClutLoad`, and compare 8888/5650: VRAM, upload, GE time, pixel parity. A palette path that changes pixels is opt-in, never the default | `todo` | VRAM bytes, upload ms, T1 GE time, capture; drop with the number if no fetch/bandwidth win | — |
 | T5 | **Clear path.** A/B `sceGuClear` (control), `GU_FAST_CLEAR_BIT` (expected null, 079 T2) and a manual 32/64-px stripe clear on 5650 and an 8888 RTT target; measure with `clear_probe` and T1 | `dropped` | 079 T2 0.265→0.268 ms; bunnymark 4.706→4.702; 0 diff; b36 removed the flag | prior numbers |
 | T5b | **64-px sprite slicing.** gLib2D's `SLICE_WIDTH 64` (glib2d.c:45,428): slice large sprites into 64-px vertical strips and measure draw/bind counts and texture-cache/fetch on a large-sprite scene. Prior: 023 measured 32-64 px **blit** strips null; this is the sprite-slicing variant | `todo` | T1 split; 613-colour gate; drop if no >0.05 ms win or if draw/bind counts grow without a GE-time benefit | — |
@@ -383,9 +383,48 @@ and T1 puts the 3D frame's CPU at 30.1 ms against 13.1 ms of GE — the saving l
 pipeline could bake s8 once offline for small props (a 100-px-wide model quantises to ≈0.78 px), but that is an
 asset decision with its own pixel gate, not a renderer default.
 
+### 9.3 T3 — Strips and index copy (`done`, 2026-11-24)
+
+**(a) Strips.** One quad grid (100×60 cells) drawn two ways from the same vertex values: a triangle list (6 vertices
+per quad, 36,000 vertices, one draw) and per-row `GU_TRIANGLE_STRIP` (2*(COLS+1) per row, 12,120 vertices, 60
+draws). Both arms use the T2 model matrix.
+
+| arm | vertices | draws | GE | CPU build | list bytes |
+|---|---|---|---|---|---|
+| `GU_TRIANGLES` | 36,000 | 1 | 1,850 µs | 14 µs | 100 |
+| `GU_TRIANGLE_STRIP` | 12,120 | 60 | 777 µs | 60 µs | 1,044 |
+
+**GE −1.073 ms (−58 %) at 0 differing pixels of 130,560** (120,520 non-black in both). The strip costs 46 µs of
+extra CPU build for the 59 additional draws, so the trade is strongly positive on a vertex-bound mesh.
+
+Not adopted as a default: the driver receives triangle lists from rlgl, so a runtime strip path would have to
+stripify per frame and pay CPU on the 30.1 ms side to save GE on the 13.1 ms side. The measured win belongs to
+static asset meshes, baked offline — the same place T2's s8 could be baked. Recorded as such, not handed to the
+default renderer.
+
+**(b) Index copy.** The driver copies each run of indices before a draw (gl_draw.c:749-760), because the list may
+outlive the caller's array. Measured directly on the device:
+
+| copy | 36,000 indices |
+|---|---|
+| element loop (`rb[i] = idx[i]`) | 1,128 µs |
+| `memcpy` | 1,129 µs |
+
+≈**31 µs per 1,000 indices**, i.e. 1.13 ms for a 36k run. The 3D showcase submits 14,400 indices per frame in two
+merged runs, so the copy is ≈**0.45 ms/frame** — 1.5 % of the 30.1 ms CPU, above the 0.05 ms bar and on the side
+that binds. `memcpy` being no faster than the loop says the cost is the memory traffic, not the loop shape, so the
+only real fix is to stop copying: cache an index run while the merged run is unchanged.
+
+That cache must survive two lists in flight and invalidate when the merge changes, which is a driver change with
+its own lifetime proof, not a measurement. It goes to §10 as a follow-up sprint rather than into this one.
+
 ## 10. Follow-ups
 
 - If T1 works, add `GE ms` to `tools/psp-bench.sh` output so future sprints do not re-derive it.
+- **Index-run cache** (from T3b): 31 µs per 1,000 indices, ≈0.45 ms/frame in the 3D showcase. A per-mesh cache that
+  invalidates when the merged run changes is the only way to remove it; needs a two-lists-in-flight lifetime proof.
+- Offline asset baking (from T2/T3a): s8 positions for small props and strips for static meshes both win on the GE
+  with no format change to the runtime path. One pipeline, two wins, its own pixel gate.
 - If T3's index cache wins, revisit the 066 deferred index-buffer note.
 - If T4 finds a texture-fetch wall, an offline texture pipeline (quantise + CLUT) becomes its own sprint.
 - If T2/T3/T4 lose, record the bound: the renderer is draw-call/batcher bound, not vertex/texture-fetch bound.
