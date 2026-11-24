@@ -40,6 +40,7 @@ build() {
     [ -n "${PSPGU_VFPU_CLIP:-}" ] && args+=("PSPGU_VFPU_CLIP=${PSPGU_VFPU_CLIP}")
     [ -n "${PSPGU_REPLAY:-}" ] && args+=("PSPGU_REPLAY=${PSPGU_REPLAY}")
     [ -n "${PSPGU_LIST_VERTICES:-}" ] && args+=("PSPGU_LIST_VERTICES=${PSPGU_LIST_VERTICES}")
+    [ -n "${PSPGU_SUBMIT:-}" ] && args+=("PSPGU_SUBMIT=${PSPGU_SUBMIT}")
     [ -n "${PSPGU_CLIP_PLANES:-}" ] && args+=("PSPGU_CLIP_PLANES=${PSPGU_CLIP_PLANES}")
     [ -n "${PSPGU_DITHER_ADDITIVE:-}" ] && args+=("PSPGU_DITHER_ADDITIVE=${PSPGU_DITHER_ADDITIVE}")
     [ -n "${PSPGU_TEXSYNC_FIRST:-}" ] && args+=("PSPGU_TEXSYNC_FIRST=${PSPGU_TEXSYNC_FIRST}")

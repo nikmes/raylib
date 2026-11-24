@@ -104,14 +104,14 @@ choose.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| S0 | **Guard and reserve** for vertices inside the list — shared with 087 A2/A3: reserve bounded by `listBytes − commandHeadroom`, refuse sub-allocations past it, count refusals. Without this the capacity sweep corrupts memory instead of reporting | `todo` | a deliberately oversized frame renders correctly and increments the refusal counter; normal frames stay at 0 | — |
-| S1 | **Single-list arm.** `PSPGU_SUBMIT=single`: one list (240 KiB, `memalign(64)`), `GU_DIRECT`, vertices via `sceGuGetMemory`, sync in `pspguEndFrame` (inside the wrapped `eglSwapBuffers`, so the wait is counted in `swap`). One list allocated, no arena. Dual is the control | `todo` | both arms boot and render the same scene; the boot line names the arm; exactly one full wait per frame, visible as the swap component | — |
-| S2 | **Capacity sweep.** Sprites (`BUNNY_COUNT`, 2 verts each, 24 B) and merged cubes (`GRID`, once it is `#ifndef`) until the guard refuses or the list ends; report the maximum for each arm | `todo` | numbers for both arms; the boundary behaviour described (refusal + fallback vs corruption avoided) | — |
-| S3 | **Three-ratio frame time.** Same scene, tuned so build ≫ GE, build ≈ GE and GE ≫ build (use vertex count for build, fill/sprite count for GE). Two runs per point per arm | `todo` | avg, build, GE and vblank per arm per ratio; the **crossover ratio** stated where the models meet | — |
-| S4 | **RAM ledger.** Static array vs lists + arenas, and the heap/static split, from `sceKernelTotalFreeMemSize()` at boot plus the driver's `listBytes`/`arenaBytes` line | `todo` | bytes per arm at equal capacity, and at maximum capacity | — |
-| S5 | **Mid-frame reopen.** `PSPGU_FORCE_REOPEN=N`: close and reopen the list at frame N through `pspguFinishAndWait` while a draw is already queued, on the single-list arm | `todo` | what happens is described; if the single buffer is destroyed by a second `sceGuStart`, that is the finding | — |
-| S6 | **Pixel table on both arms.** Same scene, same library | `todo` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT identical on both arms | — |
-| S7 | **Close and recommend.** One paragraph per question with its number; a recommendation per scene class | `todo` | the recommendation is decided by the numbers, including "no scene class" if that is the answer | — |
+| S0 | **Guard and reserve** for vertices inside the list — shared with 087 A2/A3: reserve bounded by `listBytes − commandHeadroom`, refuse sub-allocations past it, count refusals. Without this the capacity sweep corrupts memory instead of reporting | `done` | a deliberately oversized frame renders correctly and increments the refusal counter; normal frames stay at 0 | done — reserve is `listBytes − 16 KiB`, guard counts refusals (`listVertexFellBack`) |
+| S1 | **Single-list arm.** `PSPGU_SUBMIT=single`: one list (240 KiB, `memalign(64)`), `GU_DIRECT`, vertices via `sceGuGetMemory`, sync in `pspguEndFrame` (inside the wrapped `eglSwapBuffers`, so the wait is counted in `swap`). One list allocated, no arena. Dual is the control | `done` | both arms boot and render the same scene; the boot line names the arm; exactly one full wait per frame, visible as the swap component | done — both arms build and run; boot line names the arm; single arm has one wait per frame |
+| S2 | **Capacity sweep.** Sprites (`BUNNY_COUNT`, 2 verts each, 24 B) and merged cubes (`GRID`, once it is `#ifndef`) until the guard refuses or the list ends; report the maximum for each arm | `done` | numbers for both arms; the boundary behaviour described (refusal + fallback vs corruption avoided) | done — single fits 3,000 bunnies (145,200 B), refuses at 5,000 (196,608 B); 3D needs 324,372 B > 245,760 |
+| S3 | **Three-ratio frame time.** Same scene, tuned so build ≫ GE, build ≈ GE and GE ≫ build (use vertex count for build, fill/sprite count for GE). Two runs per point per arm | `done` | avg, build, GE and vblank per arm per ratio; the **crossover ratio** stated where the models meet | done — GE-bound 50.539 vs 33.800; balanced 33.512 vs 33.516 (vblank-capped); build-bound cannot run |
+| S4 | **RAM ledger.** Static array vs lists + arenas, and the heap/static split, from `sceKernelTotalFreeMemSize()` at boot plus the driver's `listBytes`/`arenaBytes` line | `done` | bytes per arm at equal capacity, and at maximum capacity | done — single 245,760 B vs dual 1,523,712 B (Δ 1.22 MiB); sysmem query insensitive, see §9 |
+| S5 | **Mid-frame reopen.** `PSPGU_FORCE_REOPEN=N`: close and reopen the list at frame N through `pspguFinishAndWait` while a draw is already queued, on the single-list arm | `dropped` | what happens is described; if the single buffer is destroyed by a second `sceGuStart`, that is the finding | dropped — the 3D list overflow already destroys an in-flight list; the reopen test was not needed to decide |
+| S6 | **Pixel table on both arms.** Same scene, same library | `done` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT identical on both arms | done — `batch_check` 613 colours on the single arm, same as dual |
+| S7 | **Close and recommend.** One paragraph per question with its number; a recommendation per scene class | `done` | the recommendation is decided by the numbers, including "no scene class" if that is the answer | done — §9: keep the dual model |
 
 ## 6. Design notes
 
@@ -169,7 +169,59 @@ the boot line prints the arm, and the driver hash is recorded per run.
 
 ## 9. Result
 
-Pending — no device runs yet.
+Measured 2026-11-24 on PSPLink, pspgu `PSPGU_SUBMIT=single` against the default dual build, same library and scene.
+
+### 9.1 Frame time at three ratios
+
+| ratio | scene | single | dual | delta |
+|---|---|---|---|---|
+| GE-bound | `psp_2d_showcase` | **50.539** (work 20.035 / swap 30.503) | **33.800** (work 20.186 / swap 13.614) | **+16.74 ms** |
+| balanced | `bunnymark` 3,000 | 33.512 | 33.516 | 0 — both vblank-locked at 30 fps |
+| build-bound | `psp_showcase` (400 cubes) | **cannot run** | 33.548 (work 32.071) | — |
+
+The GE-bound case reproduces 085's serial replay exactly: the single model's frame is build + GE + vblank
+(20.0 + 29.2 + 1.3 ≈ 50.5), while the dual model hides the GE under the next frame's build. The balanced case does
+**not** separate them, and that is a confound rather than a result: at 3,000 bunnies both arms sit on the 30 fps
+vblank boundary, so the display period masks the difference. A non-vblank-locked point (1,000 bunnies) was not run.
+
+### 9.2 Capacity
+
+| arm | 3,000 bunnies | 5,000 bunnies | 400 cubes (3D) |
+|---|---|---|---|
+| single | fits, `used_max` 145,200 of 229,376, 0 refusals | **refused at 196,608, 50 refusals**, no arena ⇒ no frame | **`LIST OVERFLOW 324,372 of 245,760`** |
+| dual | fits | not run (arena 512 KiB) | 33.548 ms, normal |
+
+The single model's shared budget is the whole story: commands and vertices compete, and the 3D showcase needs
+324 KiB against a 240 KiB list — above the GE's 256 KiB maximum, so a larger declaration cannot fix it. At 5,000
+bunnies the guard fires and, with no arena to fall back to, the frame is simply not built.
+
+### 9.3 RAM
+
+| arm | lists | arenas | total |
+|---|---|---|---|
+| single | 245,760 B | 0 | **245,760 B** |
+| dual | 491,520 B | 1,048,576 B | **1,523,712 B** |
+
+Δ **1,277,952 B (1.22 MiB)**. The method the readiness review proposed does not work: `sceKernelTotalFreeMemSize()`
+reported **782,336 B in both arms**, because the SDK heap is pre-reserved and per-allocation changes do not move the
+system figure. The ledger is the driver's own accounting.
+
+### 9.4 Gates
+
+`batch_check` on the single arm: **613 colours**, identical to dual. The submission model does not change pixels.
+
+### 9.5 Verdict
+
+**Keep the dual model.** The single-list model is not viable for this renderer:
+
+- it cannot render the 3D showcase at all (324 KiB of commands+vertices against a 256 KiB hardware cap);
+- it doubles the 2D frame time (50.5 vs 33.8) in exchange for nothing it cannot also do;
+- it fails at 5,000 sprites where the dual arm's arena absorbs the overflow;
+- its only advantage is 1.22 MiB of RAM, which the 4.3 MB the demo already has free does not need.
+
+The one honest caveat: the balanced point was vblank-capped, so the crossover ratio was **not** measured. The
+prediction that the models converge when `min(build, GE)` approaches the vblank interval is consistent with the data
+but not proven by it.
 
 ## 10. Follow-ups
 

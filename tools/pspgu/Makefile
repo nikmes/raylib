@@ -36,6 +36,12 @@ endif
 ifdef PSPGU_LIST_VERTICES
     CFLAGS += -DPSPGU_LIST_VERTICES=$(PSPGU_LIST_VERTICES)
 endif
+
+# P10-S18 S1: submission model arm. single = one list, vertices inside it, a full wait at
+# the end of every frame; dual (default) = two rotating lists with per-list arenas.
+ifeq ($(PSPGU_SUBMIT),single)
+    CFLAGS += -DPSPGU_SUBMIT_SINGLE=1 -DPSPGU_LIST_VERTICES=1
+endif
 ifeq ($(PSP_GU_TEXFMT),auto)
     CFLAGS += -DPSPGU_TEXFMT_AUTO=1
 endif

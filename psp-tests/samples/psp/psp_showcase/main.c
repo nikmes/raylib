@@ -30,7 +30,9 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
     #define SHOWCASE_FRAMES 0
 #endif
 
-#define GRID 20                 // GRID x GRID cubes
+#ifndef GRID
+#define GRID 20                 // GRID x GRID cubes, overridable for the P10-S18 sweep
+#endif
 #define SPACING 1.15f
 
 // GE colours are 0xAABBGGRR, not raylib's RGBA.

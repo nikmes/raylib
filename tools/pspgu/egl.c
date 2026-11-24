@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
+#include <pspsysmem.h>
 
 #include "pspgu_internal.h"
 
@@ -270,12 +271,26 @@ static void pspguInitGu(void)
     // Two of each. Frame N fills one list and one arena; frame N+1 the other pair. A list
     // is only rewritten after the GE has finished the frame that last used it (see
     // pspguBeginFrame), so its vertex memory is never overwritten under the hardware.
-    for (int i = 0; i < 2; i++)
+    //
+    // P10-S18: the single-list arm allocates one list and no arena, which is what the
+    // reference model costs. The comparison must not inherit our memory layout.
+    const int listCount = PSPGU_SUBMIT_SINGLE ? 1 : 2;
+
+    for (int i = 0; i < listCount; i++)
     {
         pspgu.listMem[i] = memalign(64, pspgu.listBytes);
         pspgu.listQid[i] = -1;
-        pspgu.arenaMem[i] = memalign(64, pspgu.arenaBytes);
         pspgu.arenaUsed[i] = 0;
+    }
+
+    if (PSPGU_SUBMIT_SINGLE)
+    {
+        pspgu.arenaBytes = 0;       // the allocator and the RAM ledger both read this
+    }
+    else
+    {
+        for (int i = 0; i < 2; i++)
+            pspgu.arenaMem[i] = memalign(64, pspgu.arenaBytes);
     }
     pspgu.listIndex = -1;
 
@@ -464,6 +479,19 @@ static void pspguInitGu(void)
     pspguLog("LIST-VERTICES: %u KiB per list via sceGuGetMemory, arena is the fallback",
              pspgu.listVertexBytes/1024);
 #endif
+
+#if PSPGU_SUBMIT_SINGLE
+    pspguLog("SUBMIT: single list (%u KiB), vertices in the list, full wait in endFrame, arena=%u",
+             pspgu.listBytes/1024, pspgu.arenaBytes);
+#else
+    pspguLog("SUBMIT: dual lists (%u KiB each), one %u KiB arena per list",
+             pspgu.listBytes/1024, pspgu.arenaBytes/1024);
+#endif
+
+    // P10-S18 S4: the RAM ledger. Driver allocations are known from the lines above; this
+    // is what the user partition actually has left, so two arms can be compared directly.
+    pspguLog("RAM: free=%u max=%u bytes",
+             (unsigned int)sceKernelTotalFreeMemSize(), (unsigned int)sceKernelMaxFreeMemSize());
 }
 
 // Start a list if none is open. Every emitter calls this; it is free when already open.
@@ -486,7 +514,14 @@ void pspguBeginFrame(void)
         pspgu.frameActive = 1;
     }
 
-    int next = (pspgu.listIndex == 0)? 1 : 0;
+    int next;
+
+#if PSPGU_SUBMIT_SINGLE
+    // One buffer: every frame refills the same list, so it must be free before we start.
+    next = 0;
+#else
+    next = (pspgu.listIndex == 0)? 1 : 0;
+#endif
 
     if (pspgu.listQid[next] >= 0)
     {
@@ -514,10 +549,12 @@ void pspguBeginFrame(void)
     pspgu.listOpen = 1;
 
 #if PSPGU_LIST_VERTICES
-    // One reserve per list: sceGuGetMemory emits a skip and (in a direct list) advances the
-    // stall, so reserving once costs one syscall instead of one per batch. The block is
-    // data the GE jumps over, and pspguArenaAlloc sub-allocates from it.
-    pspgu.listVertexBase[next] = sceGuGetMemory(pspgu.listVertexBytes);
+    // One reserve per list, sized from the list rather than fixed: the commands that follow
+    // always have PSPGU_LIST_COMMAND_HEADROOM, and pspguArenaAlloc refuses past the block.
+    unsigned int budget = pspgu.listBytes - PSPGU_LIST_COMMAND_HEADROOM;
+
+    pspgu.listVertexBytes = budget;
+    pspgu.listVertexBase[next] = sceGuGetMemory(budget);
     pspgu.listVertexUsed[next] = 0;
 #endif
 }
@@ -529,6 +566,14 @@ void pspguEndFrame(void)
     if (!pspgu.current || !pspgu.listOpen) return;
 
     unsigned int used = sceGuFinish();
+
+#if PSPGU_SUBMIT_SINGLE
+    // P10-S18: the single-buffer model's only lifetime guarantee. This runs inside
+    // pspguEndFrame, which the platform calls from eglSwapBuffers, so the wait is counted
+    // in the harness's `swap` and `work` stays pure list build.
+    if (pspgu.listQid[pspgu.listIndex] >= 0)
+        sceGeListSync(pspgu.listQid[pspgu.listIndex], PSP_GE_LIST_DONE);
+#endif
 
 #ifdef PSPGU_REPLAY
     {

@@ -142,6 +142,18 @@
     #define PSPGU_LIST_VERTEX_BYTES (160*1024)
 #endif
 
+// P10-S18: submission model. single = one list, vertices inside it, a full wait at the end
+// of every frame; dual (default) = two rotating lists with a per-list arena.
+#ifndef PSPGU_SUBMIT_SINGLE
+    #define PSPGU_SUBMIT_SINGLE 0
+#endif
+
+// Room left for commands when the vertex block is reserved from the list. The demos
+// measured 1.5-4.7 KiB of commands per fill; 16 KiB is headroom, not a limit.
+#ifndef PSPGU_LIST_COMMAND_HEADROOM
+    #define PSPGU_LIST_COMMAND_HEADROOM (16*1024)
+#endif
+
 // libpspgu exposes the queue id of the last direct list it enqueued. sceGuStart()
 // enqueues immediately (with the stall address at the list start), so saving this after
 // sceGuStart identifies the list we are about to fill. That lets list reuse wait on the
