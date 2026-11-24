@@ -158,11 +158,11 @@ vertex storage; 089 exists because of it).
 
 | sprint | scope | tasks (est.) | needs | killed by |
 |---|---|---|---|---|
-| [P10-S20](../sprints/090-phase10-clean-draw-fast-path.md) | matched baseline on one layout (M3D-lessons E6) + **clean hint**: `DrawMesh` passes the classifier's answer, the driver skips `clipNeeds` for a clean per-object draw | 5 | — | clip is <20 % of the slope |
-| [P10-S21](../sprints/091-phase10-thin-call-surface.md) | **thin call surface**: matrix epoch, cached MVP reused for the draw, skip pointer/texture setup when unchanged | 6 | S20 (for the baseline) | no measurable change |
-| [P10-S22](../sprints/092-phase10-baked-mesh-path.md) | **object-space baked mesh** + `pspguDrawBakedMesh` (§3.6 `sceGuSetMatrix`), loader/bake integration, memory ledger | 9 | S21 | >60 µs/cube |
-| [P10-S23](../sprints/093-phase10-static-bake-and-merge-decision.md) | **world-space bake arm** for static sets + **merge re-decision** at 400/800/1,200 | 6 | S22 | neither path wins by >0.05 ms |
-| [P10-S24](../sprints/094-phase10-thin-3d-close.md) | **close**: matched ceiling sweep, arena/replay check, full gates, docs, default state | 4 | S23 | any gate not 0 diff |
+| [P10-S20](../../sprints/090-phase10-clean-draw-fast-path.md) | matched baseline on one layout (M3D-lessons E6) + **clean hint**: `DrawMesh` passes the classifier's answer, the driver skips `clipNeeds` for a clean per-object draw | 5 | — | clip is <20 % of the slope |
+| [P10-S21](../../sprints/091-phase10-thin-call-surface.md) | **thin call surface**: matrix epoch, cached MVP reused for the draw, skip pointer/texture setup when unchanged | 6 | S20 (for the baseline) | no measurable change |
+| [P10-S22](../../sprints/092-phase10-baked-mesh-path.md) | **object-space baked mesh** + `pspguDrawBakedMesh` (§3.6 `sceGuSetMatrix`), loader/bake integration, memory ledger | 9 | S21 | >60 µs/cube |
+| [P10-S23](../../sprints/093-phase10-static-bake-and-merge-decision.md) | **world-space bake arm** for static sets + **merge re-decision** at 400/800/1,200 | 6 | S22 | neither path wins by >0.05 ms |
+| [P10-S24](../../sprints/094-phase10-thin-3d-close.md) | **close**: matched ceiling sweep, arena/replay check, full gates, docs, default state | 4 | S23 | any gate not 0 diff |
 
 Total ≈ **30 tasks**. Three of the five are conditional: S21-S24 happen only if the previous phase's number holds, so
 a failed assumption costs one sprint, not five.
