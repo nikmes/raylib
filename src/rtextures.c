@@ -5356,7 +5356,7 @@ Color ColorFromHSV(float hue, float saturation, float value)
     k = (t < k)? t : k;
     k = (k < 1)? k : 1;
     k = (k > 0)? k : 0;
-    color.r = (unsigned char)((value - value*saturation*k)*255.0f);
+    color.r = (unsigned char)((value - value*saturation*k)*255.0f + 0.5f);
 
     // Green channel
     k = fmodf((3.0f + hue/60.0f), 6);
@@ -5364,7 +5364,7 @@ Color ColorFromHSV(float hue, float saturation, float value)
     k = (t < k)? t : k;
     k = (k < 1)? k : 1;
     k = (k > 0)? k : 0;
-    color.g = (unsigned char)((value - value*saturation*k)*255.0f);
+    color.g = (unsigned char)((value - value*saturation*k)*255.0f + 0.5f);
 
     // Blue channel
     k = fmodf((1.0f + hue/60.0f), 6);
@@ -5372,7 +5372,7 @@ Color ColorFromHSV(float hue, float saturation, float value)
     k = (t < k)? t : k;
     k = (k < 1)? k : 1;
     k = (k > 0)? k : 0;
-    color.b = (unsigned char)((value - value*saturation*k)*255.0f);
+    color.b = (unsigned char)((value - value*saturation*k)*255.0f + 0.5f);
 
     return color;
 }
