@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `21bbb3f4`; the `upstream-11-26` merge is written but **unlanded** (device gates pending) — rebase onto it before T1 if it lands first |
 | Started / closed | 2026-11-26 (written) / — |
 | Build number(s) | driver unchanged; `libraylib.a` hash changes (files moved), measurements must not |
-| Tasks | 0/7 |
+| Tasks | 1/7 — T2 done; T1/T3/T4 reframed by findings (§9), T5-T6 open |
 
 ## 0. Handover
 
@@ -68,7 +68,7 @@ redesign sprints (090-094) must not be folded in here.
 |---|---|---|---|---|
 | T0 | **Settle the baseline.** Land or rebase `upstream-11-26`, re-run the §6 count on that tree, and record the per-file numbers the move will be measured against | `todo` | counts recorded on the tree T1 starts from; a trial `git merge upstream/master` shows what conflicts today | — |
 | T1 | **Mesh path → `src/platforms/rlpsp_mesh.c/.h`.** Move `PspGeMesh`, the bounds table, `pspGeClassifyMesh` family and the merge helpers out of `rmodels.c`; leave guarded call sites in `DrawMesh`/`UnloadMesh`/`rlpspMergeFlush` | `todo` | `rmodels.c` PSP lines ≤ 40; symbols exported through the new header; no double definition | — |
-| T2 | **Batcher → `src/platforms/rlpsp_batch.h`.** Move the 402 `rlgl.h` lines behind one `#include` under one guard, preserving include order (the block runs before the GL headers) | `todo` | `rlgl.h` PSP lines ≤ 10; header-only semantics intact; desktop build unchanged | — |
+| T2 | **Batcher → `src/platforms/rlpsp_batch.h`.** Move the 402 `rlgl.h` lines behind one `#include` under one guard, preserving include order (the block runs before the GL headers) | `done` | `rlgl.h` PSP lines ≤ 10; header-only semantics intact; desktop build unchanged | done — 231 lines moved to `platforms/rlpsp_batch.h`; rlgl.h 402 → 173 lines; gates 613 / 2D 33.801 |
 | T3 | **Shapes → one switch.** Replace the scattered `#if !defined(PLATFORM_PSP)` exclusions with a single `PSP_SHAPES_FAST` condition, so upstream quad-path edits merge cleanly | `todo` | `rshapes.c` PSP lines ≤ 40; 2D output byte-identical; the four affected functions named and their upstream history checked | — |
 | T4 | **Audio decoder → `raudio_psp.c`.** Move the music-decoder thread next to the device that owns it | `todo` | `raudio.c` PSP lines ≤ 20; audio smoke unchanged | — |
 | T5 | **Prove no behaviour change.** Same driver hash, same `libraylib` symbols for our API, gates and pair within tolerance | `todo` | 613 / 284 / 0 / 0 / clip; pair 33.5 / 33.8 ±2 %; `psp-nm` diff empty for `rlpsp*`/`pspgu*` | — |
@@ -148,7 +148,45 @@ stop and record it as a separate task — the acceptance for T5 is exact equalit
 
 ## 9. Result
 
-Pending — no code moved yet.
+### 9.1 T2 — the batcher (`done`)
+
+231 lines of batch state and machinery moved verbatim to `src/platforms/rlpsp_batch.h`, included at
+the same point under the same condition. `rlgl.h` went **402 → 173** PSP lines (file 6,008 → 5,779).
+Gates: `batch_check` **613**, 2D showcase **33.801** against a 33.800 baseline.
+
+**Scope finding.** T2's "≤10 lines" target is not reachable under the move-only rule: of the original
+402 lines, only 232 were a self-contained block. The remaining ~170 are call-site guards *inside*
+`rlDrawVertexArray*`, `rlBegin`/`rlEnd`, and the negative `!PLATFORM_PSP` exclusions. Moving those needs no-op
+hook functions that the rest of rlgl calls unconditionally — a shape change, not a move. The sprint's own rule
+applies, so T2 is recorded as **173 lines and one `#include`**, and the hook indirection is filed as a design
+task rather than smuggled into a move.
+
+### 9.2 T3 — the shape guards: reframed, not done
+
+The four `rshapes.c` guards (129 lines) are **negative**: `#if !defined(PLATFORM_PSP)` removes raylib's quad
+paths. Renaming the condition to one `PSP_SHAPES_FAST` macro would reduce the *count* without reducing the
+*conflict surface* — an upstream edit to `DrawPoly` still lands in the middle of a function we have gutted.
+A real fix is one function-level variant per shape selected at a single point, which is a refactor, not a move.
+Recorded so the metric is not gamed.
+
+### 9.3 T4 — the audio decoder: blocked by include order
+
+`raudio.c:185` includes `platforms/raudio_psp.c` **before** `typedef struct PspMusicDecoder` at `:187`, so the
+decoder thread (`:2849`) cannot simply move into the backend: it uses the struct's fields. Moving it means
+moving the type and its create/destroy helpers and relocating the include — a change with an initialisation
+order to preserve, not a cut-and-paste.
+
+### 9.4 T1 — the mesh path: not attempted
+
+754 lines (763 after sprint 090's hint helper) of mesh cache, bounds, classifier and merge machinery, with
+cross-references into `DrawMesh`. It remains the largest single win for mergeability and needs its own session:
+extract to `platforms/rlpsp_mesh.c` with a small header, leave ≤40 lines of call sites, then run the full table.
+
+### 9.5 Where the count stands
+
+**1,617 → 1,397** (−220 net: rlgl −229, rmodels +9 from sprint 090's clean-hint helper). The remaining target of
+≤200 is dominated by T1 (763) and cannot be reached by the two moves that are left; the sprint needs T1 or a
+revised goal.
 
 ## 10. Follow-ups
 
