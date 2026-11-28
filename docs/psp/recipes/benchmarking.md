@@ -38,7 +38,23 @@ The script:
 Repeatability on the current build: two consecutive runs of the same label differ by **0.001–0.005 ms**, so a
 change of more than ~0.05 ms in work is real.
 
-**Two consoles on one PC.** Each console has its own `usbhostfs_pc` on its own base port, and `HOSTFS` must be that
+**Two consoles on one PC — use two lanes.** A lane is the tuple that must not be shared: the console's port, the
+`host0:` root its bridge serves, and the `$PSPDEV` the session installs into. Sharing the first two means two clients
+drive one console; sharing the toolchain means one session silently links the other's `libraylib.a`/`libGL.a`.
+`tools/psp-lane.sh` pins all three, refuses while a client is attached to that lane's port, and takes an `flock`
+around install-and-run:
+
+```sh
+./tools/psp-lane.sh --lane a check          # PSP-1000, port 11000, /home/psp/pspdev
+eval "$(./tools/psp-lane.sh --lane a env)"
+./tools/psp-lane.sh --lane a run foo.prx 20
+```
+
+Measured cost of getting this wrong, on the same binary: work at COUNT=270 read 15.29 ms in one batch and 15.81 in
+another while a sibling session shared the console, and the ceilings read 250/570 against 270/610 — a session-level
+drift larger than any change the pair was built to detect.
+
+Without the script, each console still has its own `usbhostfs_pc` on its own base port, and `HOSTFS` must be that
 instance's root. `pspsh` defaults to port 10000, so name the console explicitly:
 
 ```sh

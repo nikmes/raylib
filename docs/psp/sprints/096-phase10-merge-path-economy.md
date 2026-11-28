@@ -307,6 +307,11 @@ merging. It stays parked with this number, not pursued.
 
 ### 9.8 The ceiling, measured — the step-free metric this sprint deferred to (2026-11-28)
 
+> **Correction, same day.** A second PSPLink client (a sibling session, same host root) was sharing this console. On a
+> quiet console the sweep below re-read **270 at 60 fps and 610 at 30 fps**, and b33 re-read at master's number. The
+> table and the regression paragraph that follow are the *first* measurement; the corrected values and the withdrawn
+> claim are in §9.9. Only the method survives: adjacent counts, p95 as the criterion, and never compare across sessions.
+
 The ceiling sweep the close deferred (T2b/T3). Tool: `psp-tests/matrix_probe MODE=scene PROBE=0`, the same one 078 used,
 so the numbers are comparable to its 270. `COUNT` cubes in a 10-wide grid, `FRAMES=200`, **two runs per point**, reset
 between; a point holds when the median is at the period **and** p95 does not drop.
@@ -348,3 +353,26 @@ of one cube is 57 µs of work, so the resolution is fine enough to see the copy 
 - sprint 085 §9.3 (strips and the index-copy measurement), §9.1 (the split)
 - sprint 091 §9.1-9.4 (the per-call split and T4b), 089 §9.1 (the lifetime proof the cache needs)
 - `tools/pspgu/gl_draw.c:749-793` (index copy sites), `src/rmodels.c` (merge expansion), `tools/pspgu/pspgu_internal.h`
+
+### 9.9 The ceiling re-measured on a quiet lane (2026-11-28, PSP-1000)
+
+The sibling session was driving port 11000 with the same `host0:` root, so §9.8's numbers were taken with a second
+client on the console. Master's library and driver were re-installed and every point re-run with a guard that refuses
+while any `pspsh` is attached:
+
+| point | runs (median / p95) | work | verdict |
+|---|---|---|---|
+| 270 | 16.683 / 16.700, 16.683 / 16.708 | 15.81 / 15.90 | **holds 60 fps** |
+| 271 | 33.371 / 33.375, 33.370 / 33.376 | 17.34 / 17.44 | fails |
+| 610 | 33.370 / 33.384, 33.370 / 33.381 | 32.32 / 31.97 | **holds 30 fps** |
+| 615 | 50.050, mixed 33.385 / 50.060 | 33.6 / 33.2 | fails |
+
+**Ceilings: 270 and 610.** The §9.8 values (250 / 570) were the same binary measured while another client shared the
+console, and the difference is larger than anything the pair detects.
+
+**The 078 regression is withdrawn.** b33 (`d4310135`) re-measured under the same quiet conditions reads **15.807 /
+15.806 / 15.815** at COUNT=270 — master reads 15.81. The earlier 15.29 came from the same shared session that produced
+250/570. What is left is a session-level drift of ~3–4 % in `work` and ~8 % in the ceiling, and the rule that follows
+from it: **absolute numbers are comparable only inside one quiet session.** See 097 for the withdrawn bisect and
+`docs/psp/recipes/benchmarking.md` for the lane setup that keeps the next session quiet.
+
