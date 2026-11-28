@@ -190,15 +190,7 @@ exec_run() {
 
 case "$CMD" in
     env)
-        echo "while [ $# -gt 0 ]; do
-    case "$1" in
-        --purpose) PURPOSE=${2:-}; shift 2 ;;
-        --owner)   OWNER=${2:-};   shift 2 ;;
-        *) break ;;
-    esac
-done
-
-export PSPDEV=$PSPDEV_LANE"
+        echo "export PSPDEV=$PSPDEV_LANE"
         echo "export PSP_LANE=$LANE"
         echo "export PSP_LANE_NAME=$NAME"
         echo "export PSP_PORT=$PORT"
