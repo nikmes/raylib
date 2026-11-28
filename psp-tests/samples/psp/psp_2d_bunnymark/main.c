@@ -38,7 +38,9 @@
 #endif
 
 PSP_MODULE_INFO("psp_2d_bunnymark", 0, 1, 1);
-PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
+// VFPU on purpose: rotation != 0 (MODE 3) makes DrawTexturePro call rlpsp_sincosf, and a
+// thread that touches the VFPU without this attribute corrupts its state across switch.
+PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
 #ifndef COUNT
     #define COUNT 7000

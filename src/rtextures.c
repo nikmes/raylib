@@ -4915,9 +4915,8 @@ void DrawTexturePro(Texture2D texture, Rectangle srcrec, Rectangle dstrec, Vecto
         // per sprite, sprint 100). Every other case falls through to the generic path below.
         if ((rotation == 0.0f) && (srcrec.width > 0.0f) && (srcrec.height > 0.0f))
         {
-            rlpspDrawQuad(texture.id,
-                          srcrec.x/width, srcrec.y/height,
-                          (srcrec.x + srcrec.width)/width, (srcrec.y + srcrec.height)/height,
+            rlpspDrawQuad(texture.id, srcrec.x, srcrec.y, srcrec.width, srcrec.height,
+                          width, height,
                           dstrec.x - origin.x, dstrec.y - origin.y,
                           dstrec.x - origin.x + dstrec.width, dstrec.y - origin.y + dstrec.height,
                           tint.r, tint.g, tint.b, tint.a);

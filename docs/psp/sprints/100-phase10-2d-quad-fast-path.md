@@ -157,6 +157,18 @@ before today include unoptimised demo loops and should be re-taken before they a
 The core diff is exactly what the budget allowed: one `#if defined(PLATFORM_PSP) && defined(RLPSP_BATCH_ENABLED) &&
 (RLPSP_FAST_QUAD == 1)` block of 12 lines in `DrawTexturePro`, calling one seam function.
 
+### 8.1 The residual, attacked and bounded
+
+`DrawTexturePro` divided `srcrec.x`, `srcrec.y` and both edges by the texture size — four float divisions per sprite,
+the same four PSPRuntime's `DrawTextureSpriteRecEx` does and that its `-ffast-math` folds into one reciprocal. Moving
+one reciprocal into the seam (pixels in, UVs out) changed 7,000 sprites from **28.94 to 28.71 ms work** — 0.8 %, not
+the 1.8 µs. So the remaining cost is the **call and argument setup of a non-inlined raylib API invoked 7,000 times**,
+not arithmetic, not the body's maths, and not our seam's stores. That is a shape limit of the API: the only way past it
+is fewer calls per sprite, which is exactly what the prebuilt arm (16.0 ms) does.
+
+The reciprocal stays (it is free and matches what a fast-math build would emit), and the 1.8 µs is recorded as
+unreachable from inside this seam.
+
 ## 9. References
 
 - [099 — the third benchmark](099-phase10-third-benchmark.md) §2 (45.4 vs 23.4 ms), §7.1 (list-local bought nothing)

@@ -243,11 +243,24 @@ static inline void rlPspPushVertex(float x, float y, float z)
 // raylib's DrawTexturePro builds the same two vertices through rlBegin/rlVertex2f; this
 // takes the four corners it already has and writes the pair once. The triangle fallback
 // keeps the alternation budget honest for scenes that mix rotated quads.
-static inline void rlpspDrawQuad(unsigned int tex, float u0, float v0, float u1, float v1,
+static inline void rlpspDrawQuad(unsigned int tex, float sx, float sy, float sw, float sh,
+                                 float texW, float texH,
                                  float x0, float y0, float x1, float y1,
                                  unsigned char r, unsigned char g, unsigned char b, unsigned char a)
 {
     RLPspVertex *v;
+    float u0, v0, u1, v1;
+
+    // One reciprocal here instead of four divisions at the call site: DrawTexturePro divides
+    // srcrec.x, srcrec.y, and both edges by the texture size on every sprite, and a float
+    // division on this CPU is not free (sprint 100's residual 1.8 us/sprite).
+    {
+        float invW = 1.0f/texW;
+        float invH = 1.0f/texH;
+
+        u0 = sx*invW;  v0 = sy*invH;
+        u1 = (sx + sw)*invW;  v1 = (sy + sh)*invH;
+    }
 
     rlpsp.pendTex = tex;                    // rlPspReserve settles it (and flushes if it changed)
 
