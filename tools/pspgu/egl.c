@@ -644,10 +644,10 @@ void pspguEndFrame(void)
                                   pspgu.displayWaitUs/pspgu.displayWaits : 0;
         pspguLog("lists: submits=%llu waits=%llu avg_wait=%llu us max_wait=%llu us | "
                  "display waits=%llu avg=%llu us max=%llu us | list_used_max=%u "
-                 "arena_bytes=%u arena_overflows=%llu",
+                 "arena_bytes=%u arena_overflows=%llu clean_skips=%u",
                  pspgu.listSubmits, pspgu.listWaits, avg, pspgu.listWaitMaxUs,
                  pspgu.displayWaits, davg, pspgu.displayWaitMaxUs,
-                 pspgu.listUsedMax, pspgu.arenaBytes, pspgu.arenaOverflows);
+                 pspgu.listUsedMax, pspgu.arenaBytes, pspgu.arenaOverflows, pspgu.cleanSkips);
 
 #if PSPGU_LIST_VERTICES == 1
         pspguLog("list-vertices: mode=1 reserve=%u used_max=%u fell_back=%llu",
