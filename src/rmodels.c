@@ -72,6 +72,7 @@
 #if defined(PLATFORM_PSP) && defined(PSP_CALL_PROBE)
     unsigned long long rlpspProbeDrawMeshUs;
     unsigned long long rlpspProbeDriverUs;
+    unsigned long long rlpspProbeStateUs;     // texture enable + pointer setup (T4a's target)
 
     // Sprint 091 T1: the counters existed from 078 but nothing printed them, so the split
     // could not be read. One line per 2,000 calls, then reset: per-call averages of the
@@ -85,12 +86,13 @@
         double cull = (double)rlpspProbeCullUs/n;
         double driver = (double)rlpspProbeDriverUs/n;
 
-        TraceLog(LOG_INFO, "CALLPROBE calls=%u drawmesh=%.1f us cull=%.1f driver=%.1f self=%.1f compose=%.1f mult=%.1f",
+        TraceLog(LOG_INFO, "CALLPROBE calls=%u drawmesh=%.1f us cull=%.1f driver=%.1f self=%.1f compose=%.1f mult=%.1f state=%.1f",
                  rlpspProbeCalls, total, cull, driver, total - cull - driver,
-                 (double)rlpspProbeComposeUs/n, (double)rlpspProbeMultUs/n);
+                 (double)rlpspProbeComposeUs/n, (double)rlpspProbeMultUs/n,
+                 (double)rlpspProbeStateUs/n);
 
         rlpspProbeDrawMeshUs = 0; rlpspProbeDriverUs = 0; rlpspProbeCullUs = 0;
-        rlpspProbeComposeUs = 0; rlpspProbeMultUs = 0;
+        rlpspProbeComposeUs = 0; rlpspProbeMultUs = 0; rlpspProbeStateUs = 0;
         rlpspProbeDraws = 0; rlpspProbeCalls = 0;
     }
 
@@ -2228,6 +2230,9 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     if (pspClass == 0) { PSP_CALL_DONE(); rlDisableTexture(); return; }
 #endif
 
+#if defined(PSP_CALL_PROBE)
+    SceInt64 _st0 = rlpspProbeNow();
+#endif
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
     // A colour array added after upload (a bake) must reach the generic path.
@@ -2264,6 +2269,10 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 
         if (mesh.colors != NULL) rlEnableStatePointer(GL_COLOR_ARRAY, mesh.colors);
     }
+
+#if defined(PSP_CALL_PROBE)
+    rlpspProbeStateUs += (unsigned long long)(rlpspProbeNow() - _st0);
+#endif
 
     rlPushMatrix();
 #if defined(PLATFORM_PSP)

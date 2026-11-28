@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `33e7f18f` — decision: [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-28 (written) / — |
 | Build number(s) | pspgu `b38` only if a driver change is adopted; the index cache is a driver + raylib change |
-| Tasks | 0/6 |
+| Tasks | 1/6 — T1 done (§9.1); the merge-first decision stands |
 
 ## 0. Handover
 
@@ -57,7 +57,7 @@ attribution names one (T4); gates and pair (T5); close (T6).
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **The last breakdown.** One probe run splitting the ~48 µs of unexplained per-object surface (pointer/state, push/pop, texture enable, DrawMesh bookkeeping). No code change unless a counter is missing | `todo` | the 48 µs is allocated or declared unallocatable; **≥30 µs removable ⇒ stop the merge-first decision and re-open the thin entry** | — |
+| T1 | **The last breakdown.** One probe run splitting the ~48 µs of unexplained per-object surface (pointer/state, push/pop, texture enable, DrawMesh bookkeeping). No code change unless a counter is missing | `done` | the 48 µs is allocated or declared unallocatable; **≥30 µs removable ⇒ stop the merge-first decision and re-open the thin entry** | §9.1: `state` 14.5 µs (≈10.6 real), below the bar; merge-first stands |
 | T2 | **Index-run cache.** Cache a run's indices in a persistent pool keyed by `(pointer, count, first)`, written back once; a key change is a miss; the pool never overwrites a block whose list is in flight | `todo` | copies/frame fall; the 3D showcase keeps correct pixels; hit/miss counters; `arenaOverflows=0` | — |
 | T3 | **Static-mesh strips.** Stripify at load for meshes flagged static (not the merge path), draw `GU_TRIANGLE_STRIP`, and measure against the list on a mesh-heavy scene | `todo` | 0 diff; strip vertex count and GE time reported; if it cannot be used by the merge path, say so and record the ceiling | — |
 | T4 | **Expansion attribution.** Probe the merge expansion line by line (transform, pack, arena copy, index rebase) and improve the largest line only if one dominates | `todo` | attribution sums to the measured expansion ±10 %; one measured change or none | — |
@@ -104,7 +104,30 @@ skipped block so a dead feature is visible as dead.
 
 ## 9. Result
 
-Pending — no device runs yet.
+### 9.1 T1 — the last breakdown (`done`)
+
+One probe run, GRID=14, merge off, hint on, with a new `state=` leg (texture enable + the three pointer setups):
+
+| leg | µs/call |
+|---|---|
+| `DrawMesh` total | 125-127 |
+| cull | 25.0 |
+| driver | 26.9 |
+| surface (residual) | 73.7 |
+| compose | 4.4 |
+| mult | 8.4 |
+| **state** (texture + pointers) | **14.5** |
+
+`state` is 14.5 µs and carries one timing pair of its own (~4 µs), so the block a state-skip could remove is **~10–11 µs**
+— well under the 30 µs the reversal rule required. **The merge-first decision stands.**
+
+The residual after subtracting the measured legs is still ~46 µs, of which ~15 is instrument overhead; the remaining
+~30 µs sits in push/pop, colour, the four `rlDisableStatePointer` calls and DrawMesh's own bookkeeping. No single
+removable block in it reaches the bar either, so it is recorded as unattributed rather than as an invitation for
+another thinning sprint.
+
+**Consequence for 091:** T4a (state skip) is worth ~10 µs/call on a path that is opt-in and still ~40 % above
+merging. It stays parked with this number, not pursued.
 
 ## 10. Follow-ups
 
