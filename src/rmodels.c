@@ -85,8 +85,9 @@
         double cull = (double)rlpspProbeCullUs/n;
         double driver = (double)rlpspProbeDriverUs/n;
 
-        TraceLog(LOG_INFO, "CALLPROBE calls=%u drawmesh=%.1f us cull=%.1f driver=%.1f self=%.1f",
-                 rlpspProbeCalls, total, cull, driver, total - cull - driver);
+        TraceLog(LOG_INFO, "CALLPROBE calls=%u drawmesh=%.1f us cull=%.1f driver=%.1f self=%.1f compose=%.1f mult=%.1f",
+                 rlpspProbeCalls, total, cull, driver, total - cull - driver,
+                 (double)rlpspProbeComposeUs/n, (double)rlpspProbeMultUs/n);
 
         rlpspProbeDrawMeshUs = 0; rlpspProbeDriverUs = 0; rlpspProbeCullUs = 0;
         rlpspProbeComposeUs = 0; rlpspProbeMultUs = 0;
@@ -1356,6 +1357,7 @@ typedef struct {
     unsigned int stride;
     float cx, cy, cz;
     float K;
+    float model[16];                    // P10-S21 T4b: the constant scale+centre product
     float bmin[3], bmax[3];
 } PspGeMesh;
 
@@ -1987,6 +1989,14 @@ static void pspGePack(Mesh *mesh, bool dynamic)
     pspGe[pspGeCount].stride = stride;
     pspGe[pspGeCount].cx = cx; pspGe[pspGeCount].cy = cy; pspGe[pspGeCount].cz = cz;
     pspGe[pspGeCount].K = K;
+    {
+        // Scale(32768/K) * Translate(centre), stored once so a draw composes one matrix.
+        float sc = 32768.0f/K;
+        float *mm = pspGe[pspGeCount].model;
+        for (int i = 0; i < 16; i++) mm[i] = 0.0f;
+        mm[0] = sc; mm[5] = sc; mm[10] = sc; mm[15] = 1.0f;
+        mm[12] = sc*cx; mm[13] = sc*cy; mm[14] = sc*cz;
+    }
     pspGe[pspGeCount].bmin[0] = minx; pspGe[pspGeCount].bmin[1] = miny; pspGe[pspGeCount].bmin[2] = minz;
     pspGe[pspGeCount].bmax[0] = maxx; pspGe[pspGeCount].bmax[1] = maxy; pspGe[pspGeCount].bmax[2] = maxz;
     pspGeCount++;
@@ -2262,12 +2272,11 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 #if defined(PSP_MATRIX_PROBE)
             SceInt64 _m0 = rlpspProbeNow();
 #endif
-            float sc = 32768.0f/pg->K;
-            // Row-vector composition: quantised position is scaled, moved to the mesh
-            // centre, then transformed by the caller's model matrix.
-            Matrix drawMat = MatrixMultiply(MatrixMultiply(MatrixScale(sc, sc, sc),
-                                             MatrixTranslate(pg->cx, pg->cy, pg->cz)),
-                                            transform);
+            // P10-S21 T4b: the bake's scale+centre product is constant, so a draw composes
+            // one matrix instead of building scale and translate and multiplying twice.
+            Matrix pgModel;
+            memcpy(&pgModel, pg->model, sizeof(pgModel));
+            Matrix drawMat = MatrixMultiply(pgModel, transform);
 #if defined(PSP_MATRIX_PROBE)
             rlpspProbeComposeUs += (unsigned long long)(rlpspProbeNow() - _m0);
             _m0 = rlpspProbeNow();

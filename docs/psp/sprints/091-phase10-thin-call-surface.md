@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `6a03bce9` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | driver `b38` only if adopted; the arms are `PSPGU_MATRIX_EPOCH=1`, `PSPGU_STATE_SKIP=1` |
-| Tasks | 0/6 — T3 reframed and T4 promoted by the readiness review (§4b) |
+| Tasks | 2/7 — T1 and T4b done; T4a open; T2/T3 conditional |
 
 ## 0. Handover
 
@@ -78,7 +78,8 @@ adoption bar stays "beats the control by >0.05 ms with 0 diff".
 | T1 | **Instrument the surface.** Per-line cost at N=500: matrix push/mult, pointer setup, colour, texture enable, driver upload | `todo` | the lines sum to the measured delta ±10 % | — |
 | T2 | **Matrix epoch.** rlgl keeps a revision counter bumped on every matrix change; the cull and the draw both read it | `todo` | no stale matrix in any gate; `PSP_MATRIX_PROBE` cull ≤8 µs | — |
 | T3 | **Matrix upload skip.** Skip `pspguUploadMatrices` when the composed modelview is unchanged since the last draw (identical transforms only; see §4b 1 — the cull's MVP cannot feed the draw) | `todo` | no stale matrix in any gate; the counter reports how often it fires | — |
-| T4 | **State skip (promoted, §4b 3).** Skip `glEnableClientState`/`gl*Pointer`/`rlEnableTexture`/colour when the mesh and colour are unchanged since the previous draw | `todo` | no missed state change in the gates; counters report skips; measured on the 196-cube scene where one mesh repeats | — |
+| T4a | **State skip.** Skip `glEnableClientState`/`gl*Pointer`/`rlEnableTexture`/colour when the mesh and colour are unchanged since the previous draw | `todo` | no missed state change in the gates; a counter reports skips; a few µs per call at best (§9.3) | — |
+| T4b | **Thin matrix path.** The bake stores its constant scale+centre product once; `DrawMesh` composes one matrix per draw instead of two, and the report separates compose/mult so the split is visible | `done` | per-call `compose`+`mult` falls by the measured amount; `DrawMesh` total falls; 0 diff | §9.4: 123.0 → 111.0 µs/call, gate 613 |
 | T5 | **A/B + gates.** Below a vblank step and at GRID=20 for the step distance, two runs; report `work`; full pixel table | `todo` | slope falls by the measured surface cost; 0 diff | — |
 | T6 | **Close.** Adopt or drop with the number | `todo` | default state explicit | — |
 
@@ -162,14 +163,45 @@ single block at ~60 µs.
 ### 9.3 What that predicts
 
 - The prediction held: driver ~24 predicted, 27.7 measured; the surface is the largest block.
-- **T4 is the right next task**, but it will not close the gap on its own: pointer/enable skips are worth a few µs,
-  while the surface's bulk is per-draw matrix work (`rlPushMatrix`, a 4×4 `MatrixMultiply` for the bake, and
-  `rlMultMatrixf` through rlgl on a scalar path). That is the "thin entry" the redesign described, and it is larger
-  than T4 as written.
+- **T4 splits in two.** T4a (state skip) is worth a few µs. The surface's bulk is per-draw **matrix work**: a 4×4
+  `MatrixScale`, a `MatrixTranslate`, two `MatrixMultiply` calls for the bake, then `rlMultMatrixf` through rlgl on a
+  scalar path and a second multiply inside the driver. T4b collapses the bake's constant scale+centre into one stored
+  product, leaving one compose per draw — the concrete form of the redesign's "thin entry", and larger than T4 as
+  originally written.
 - The driver's remaining 28 µs is matrix upload (two 64-byte converts + two `sceGuSetMatrix`) plus emission —
   T3's territory, and the cull already composes `P*V`, which is why T3 is not free.
 
-### 9.4 Open
+### 9.4 T4b — the thin matrix path (`done`)
+
+The bake's `Scale(32768/K) * Translate(centre)` is constant, so the pack stores it once (`pspGe[].model`) and a draw
+does one `MatrixMultiply`. `CALLPROBE` now also reports the two matrix legs.
+
+| component | before T4b | after |
+|---|---|---|
+| `DrawMesh` total | 123.0 | **111.0** |
+| surface (residual) | 70.9 | 62.3 |
+| compose | — | 4.5 |
+| mult | — | 10.1 |
+| driver | 27.7 | 27.3 |
+| cull | 24.3 | 21.3 |
+
+**−12 µs per call (−10 %)**, stable across ten windows, gate `batch_check` **613** on the merge-on build.
+
+What remains inside the surface is ~48 µs that no counter explains yet — pointer/enable/colour, `rlPushMatrix`, the
+texture enable and DrawMesh's own bookkeeping. That is T4a's target, and it is now the largest unmeasured block.
+
+### 9.5 The arithmetic that puts the redesign in question
+
+These per-call wins (090 −37 µs, 092 −4 µs, T4b −12 µs) are real, but the per-object path still costs ~111 µs/call
+under the probe (≈95 µs corrected), while **merging** costs ~55 µs/cube on the same content. Even removing *all* of
+the remaining 48 µs would leave per-object at ~63 µs — still above merging.
+
+So the redesign's premise, "a thin per-object path beats CPU expansion", does not hold yet on this content, and may
+not hold at all through raylib's per-mesh layer. The next decision is not another micro-optimisation: it is whether
+to keep thinning the surface (T4a and beyond) with the expectation that it *approaches* merging, or to accept
+merging as the 3D architecture and spend the effort on the merge path and offline asset baking instead.
+
+### 9.6 Open
 
 - Re-run with the hint driver to confirm the 41 µs drop (needs the console).
 - The probe build inflates every figure above; compare arms of the same build, never across.
