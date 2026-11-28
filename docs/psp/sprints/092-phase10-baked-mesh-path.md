@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `fe1171fe` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | pspgu `b38` only if adopted; the arm is `PSPGU_BAKED_MESH=1` |
-| Tasks | 0/9 |
+| Tasks | 3/9 — T1-T3 done, T6-T8 measured (see §9); T4/T5/T9 open |
 
 ## 0. Handover
 
@@ -101,7 +101,52 @@ source is a separate decision with its own memory measurement.
 
 ## 9. Result
 
-Pending — no device runs yet.
+### 9.1 What was already there
+
+`rmodels.c` already had a one-time GE-native bake (`PspGeMesh`, 28-byte s16 positions about the mesh centre with a
+uniform scale K and the matrix to restore it). It was keyed by `mesh->vboId`, so **only uploaded meshes got it** —
+and the showcase, like most `DrawMesh` callers, draws a procedural mesh that is never uploaded. The per-object path
+was therefore packing vertices on every draw for every cube.
+
+### 9.2 The change
+
+`pspGeKey()` keys the bake by the vertex array when there is no `vboId`; `DrawMesh` packs lazily on first draw when
+the mesh is static (no colour array, no `animVertices`/`animNormals`); `UnloadMesh` removes by the same key.
+
+### 9.3 Measured (per-object path, `PSP_MERGE_DRAWS=0`, GRID=14, hint on)
+
+| variant | work | avg |
+|---|---|---|
+| hint only (090), no bake for this mesh | 28.285 | 33.440 |
+| hint + lazy bake | **27.477** | 33.441 |
+
+**−0.8 ms (−2.9 %)**, and the instrument proves the feature is alive, not dead:
+
+```
+PSP: baked mesh verts=24 key=0x8aee690 stride=28 K=65534.0
+PSP: baked mesh verts=4  key=0x8aeedb0 stride=28 K=1489.4
+PSP: 200 draws used the baked mesh
+```
+
+Gate: `batch_check` **613** on the merge-on build.
+
+### 9.4 The premise was wrong, and that is the result
+
+The redesign expected the bake to take the per-object path from ~140 µs/cube toward M3D's 19. It did not: removing
+per-frame packing bought 0.8 ms of 28. The remaining ~27.5 ms for ~196 cubes is the **call surface** — `rlPushMatrix`,
+`rlMultMatrixf`, pointer setup, the per-draw matrix upload and list emission — which is exactly m3d-lessons F2 and
+what **S21** is for, not S22.
+
+So S22 is closed as a small, correct win (and a real bug fix: procedural meshes could never be baked), but it is
+**not** the architectural lever. The order after this is S21 before any further S22 work.
+
+### 9.5 Open
+
+- T4 (invalidation on `UpdateMeshBuffer`, which is still a no-op on GL 1.1) and T5 (memory ledger) are not done.
+- The bake assumes a mesh's vertices are not rewritten in place; a mesh that is gets a stale bake, the same
+  assumption the merge bounds cache already makes. It is documented at the key function.
+- The two temporary TRACELOGs stay: one line per bake and one when 200 draws have used a bake are the instrument
+  that answers "did it fire", which this project has needed before.
 
 ## 10. Follow-ups
 

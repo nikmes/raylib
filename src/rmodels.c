@@ -1359,6 +1359,17 @@ void rlpspEnableCulling(int enable) { rlpspCulling = enable; }
 static PspGeMesh pspGe[PSP_GE_MAX];
 static int pspGeCount = 0;
 
+// P10-S22: the bake was keyed by vboId, so a procedural mesh - never uploaded, which is
+// what the showcase and most DrawMesh callers use - never got one. The key is the uploaded
+// array when there is one, else the vertex array itself. A mesh whose vertices are rewritten
+// in place invalidates this, exactly as it invalidates the merge bounds cache.
+static unsigned int *pspGeKey(Mesh *mesh)
+{
+    if (mesh == NULL) return NULL;
+    if (mesh->vboId != NULL) return mesh->vboId;
+    return (unsigned int *)mesh->vertices;
+}
+
 static PspGeMesh *pspGeFind(unsigned int *key)
 {
     if (key == NULL) return NULL;
@@ -1904,8 +1915,8 @@ static void pspGePack(Mesh *mesh, bool dynamic)
     if (dynamic || (mesh->animVertices != NULL) || (mesh->animNormals != NULL)) return;
     if (mesh->colors != NULL) return;      // baked colour lives in the float path's colour array
     if ((mesh->vertices == NULL) || (mesh->texcoords == NULL) || (mesh->normals == NULL)) return;
-    if ((mesh->vertexCount <= 0) || (mesh->vboId == NULL)) return;
-    if ((pspGeCount >= PSP_GE_MAX) || (pspGeFind(mesh->vboId) != NULL)) return;
+    if ((mesh->vertexCount <= 0) || (pspGeKey(mesh) == NULL)) return;
+    if ((pspGeCount >= PSP_GE_MAX) || (pspGeFind(pspGeKey(mesh)) != NULL)) return;
 
     float minx = mesh->vertices[0], maxx = minx;
     float miny = mesh->vertices[1], maxy = miny;
@@ -1951,7 +1962,7 @@ static void pspGePack(Mesh *mesh, bool dynamic)
 
     sceKernelDcacheWritebackRange(verts, (unsigned int)mesh->vertexCount*stride);
 
-    pspGe[pspGeCount].key = mesh->vboId;
+    pspGe[pspGeCount].key = pspGeKey(mesh);
     pspGe[pspGeCount].verts = verts;
     pspGe[pspGeCount].stride = stride;
     pspGe[pspGeCount].cx = cx; pspGe[pspGeCount].cy = cy; pspGe[pspGeCount].cz = cz;
@@ -1959,6 +1970,8 @@ static void pspGePack(Mesh *mesh, bool dynamic)
     pspGe[pspGeCount].bmin[0] = minx; pspGe[pspGeCount].bmin[1] = miny; pspGe[pspGeCount].bmin[2] = minz;
     pspGe[pspGeCount].bmax[0] = maxx; pspGe[pspGeCount].bmax[1] = maxy; pspGe[pspGeCount].bmax[2] = maxz;
     pspGeCount++;
+    TRACELOG(LOG_INFO, "PSP: baked mesh verts=%d key=%p stride=%u K=%.1f",
+             mesh->vertexCount, (void *)pspGe[pspGeCount-1].key, stride, K);
 }
 #endif
 
@@ -2185,12 +2198,26 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
     // A colour array added after upload (a bake) must reach the generic path.
-    PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(mesh.vboId) : NULL;
+    PspGeMesh *pg = (mesh.colors == NULL)? pspGeFind(pspGeKey(&mesh)) : NULL;
+
+    // P10-S22: bake on first draw. UploadMesh still bakes at upload; this covers procedural
+    // meshes, which is the case the per-object path was paying for on every frame.
+    if ((pg == NULL) && (mesh.colors == NULL) && (mesh.animVertices == NULL) && (mesh.animNormals == NULL))
+    {
+        pspGePack(&mesh, false);
+        pg = pspGeFind(pspGeKey(&mesh));
+    }
 #else
     if ((mesh.texcoords != NULL) && (material.maps[MATERIAL_MAP_DIFFUSE].texture.id > 0)) rlEnableTexture(material.maps[MATERIAL_MAP_DIFFUSE].texture.id);
 
     void *pg = NULL;
 #endif
+
+    if (pg != NULL)
+    {
+        static int pgDraws = 0;
+        if (++pgDraws == 200) TRACELOG(LOG_INFO, "PSP: %d draws used the baked mesh", pgDraws);
+    }
 
     if (pg == NULL)
     {
@@ -2756,7 +2783,7 @@ void UnloadMesh(Mesh mesh)
     rlUnloadVertexArray(mesh.vaoId);
 
 #if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
-    pspGeRemove(mesh.vboId);
+    pspGeRemove(pspGeKey(&mesh));
     pspGeRemoveBounds(mesh.vboId);
 #endif
     if (mesh.vboId != NULL) for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) rlUnloadVertexBuffer(mesh.vboId[i]);
