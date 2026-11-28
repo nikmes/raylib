@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `c6329c59`; reference: `/home/psp/ref/PSPRuntime/optimal-rendering-path.md` (7,000 bunnies, 59 fps, PSP Street) |
 | Started / closed | 2026-11-28 (written) / 2026-11-28 (measured, open for its next lever) |
 | Build number(s) | pspgu `b38`, `libraylib.a` with `PSP_MERGE_DIRECT=1` |
-| Tasks | 3/6 — the benchmark, the four arms and the attribution are done; the list-local arm, the gates and the close remain |
+| Tasks | 6/6 — benchmark, four arms, list-local arm, gates and close. The list-local arm bought nothing; the per-sprite cost stands |
 
 ## 0. Handover
 
@@ -96,9 +96,9 @@ Where alignment matters on this hardware, in the order it bites:
 | T1 | **The benchmark.** `psp_2d_bunnymark` with four arms, deterministic frame-indexed scene, STAT/SPLIT | `done` | same frame on every build; arms differ only in submission | built; arms 0/1/2/3 |
 | T2 | **Harness.** `tools/psp-bench.sh --samples` so the third benchmark can be run and recorded like the pair | `done` | default unchanged; a JSON row per run | `--samples psp_2d_bunnymark` |
 | T3 | **The four arms at 7,000**, two runs each, plus the fill control | `done` | work and presented per arm | §2 |
-| T4 | **Attribute the remaining 3.3 µs.** The list-local arm: build the 2D batch with `sceGuGetMemory` in the display list instead of the arena, as PSPRuntime does; measure the 60 fps count | `todo` | the arm moves the count; 085 T6a's 2D win re-measured with the current driver | — |
-| T5 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, and a capture of the benchmark itself | `todo` | exact, and the HUD readable in the capture | — |
-| T6 | **Close.** Adopt or drop the list-local arm; update the recipe and this sprint | `todo` | explicit state | — |
+| T4 | **Attribute the remaining 3.3 µs.** The list-local arm: build the 2D batch with `sceGuGetMemory` in the display list instead of the arena, as PSPRuntime does; measure the 60 fps count | `done` | the arm moves the count; 085 T6a's 2D win re-measured with the current driver | `PSPGU_LIST_VERTICES=2` (per-draw `sceGuGetMemory`), 7,000 sprites: **MODE=1 44.81 ms work** (arena 45.4), **MODE=2 23.37** (arena 23.4), `list_used_max=229,560 B` of 245,760, no overflow |
+| T5 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, and a capture of the benchmark itself | `done` | exact, and the HUD readable in the capture | 613 / 284 / checksum `86b1e3c2 / c4b13eb4 / 670d502c` on the restored driver (`b38`, default mode); the benchmark capture reads cleanly once the HUD sits on a panel |
+| T6 | **Close.** Adopt or drop the list-local arm; update the recipe and this sprint | `done` | explicit state | **Dropped**: no gain, and the frame's vertex volume nearly fills the list (229,560 of 245,760 B), so it cannot be the default for sprite-heavy scenes. The arena copy is **not** the cost |
 
 ## 5. Gates
 
@@ -117,7 +117,38 @@ Where alignment matters on this hardware, in the order it bites:
 - [ ] lane unlocked, driver and library left in the adopted state
 - [ ] docs strict
 
-## 7. Result (partial — see §2)
+## 7. Result
+
+### 7.1 The four arms (§2) and the list-local arm
+
+| arm, 7,000 sprites | work | per sprite |
+|---|---|---|
+| per-sprite API, arena | 45.4 ms | 6.5 µs |
+| per-sprite API, **list-local** (`PSPGU_LIST_VERTICES=2`) | **44.8 ms** | 6.4 µs |
+| prebuilt + one draw, arena | 23.4 ms | 3.3 µs |
+| prebuilt + one draw, list-local | 23.4 ms | 3.3 µs |
+
+The list-local arm was the last mechanism with a stated cause — build the batch in `sceGuGetMemory` inside the display
+list, as PSPRuntime does, instead of copying into the arena. It moves nothing: **-0.6 ms on the per-sprite arm, 0.0 on
+the one-draw arm**, and the list fills to 229,560 of 245,760 bytes, so a full 7,000-sprite frame barely fits at 24 B per
+vertex. The 3.3 µs that remain after removing raylib's call surface are therefore per-primitive in the GE/driver path,
+not the copy, and a 32-byte padded vertex would make the list fit *less*, not more.
+
+### 7.2 What this establishes
+
+- 2D at high sprite counts is **per-sprite bound** on this port: fill and texture are flat, and the cost is linear.
+- **Half of it is raylib's own call surface.** The same vertices through one `glDrawArrays` halve the frame. A scene
+  that is sprite-count-bound needs its batch built below raylib's per-sprite calls.
+- The remaining **3.3 µs/sprite** is not memory placement. PSPRuntime's ≤2.4 µs comes from a path that does not go
+  through a retention rule, a per-corner vertex API or a texture-manager check per quad; matching it is a batcher
+  rewrite, not a flag.
+
+### 7.3 The HUD was not broken
+
+The "blocky text" seen while the 7,000-sprite arm ran was 7,000 bunnies drawn under a 10-pixel HUD. A capture with ten
+bunnies shows clean glyphs, and the same capture at 7,000 becomes legible the moment the text sits on an opaque panel —
+which the benchmark now draws.
+
 
 The third benchmark exists and its first four arms are measured. The actionable finding is quantitative: **3.2 of the
 6.5 µs per sprite is raylib's per-sprite call surface** (removable only by batching at a different layer), and the

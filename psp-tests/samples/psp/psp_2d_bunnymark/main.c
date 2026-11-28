@@ -171,6 +171,9 @@ int main(void)
             }
 #endif
 
+            // A panel behind the HUD: at 7,000 sprites the scene fills the strip and text
+            // drawn straight onto it reads as noise, not as numbers.
+            DrawRectangle(4, 4, 236, 16, (Color){ 0, 0, 0, 230 });
             DrawText(TextFormat("%d bunnies  mode %d  %d fps", COUNT, MODE, GetFPS()),
                      8, 8, 10, RAYWHITE);
         EndDrawing();
