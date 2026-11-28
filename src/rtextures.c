@@ -4908,6 +4908,23 @@ void DrawTexturePro(Texture2D texture, Rectangle srcrec, Rectangle dstrec, Vecto
         }
 #endif
 
+#if defined(PLATFORM_PSP) && defined(RLPSP_BATCH_ENABLED) && defined(GRAPHICS_API_OPENGL_11) && (RLPSP_FAST_QUAD == 1)
+        // P10-S30: the common 2D case in one call. The corners are axis-aligned and share a
+        // tint, which is exactly the two-vertex GE sprite; raylib's own sequence reaches the
+        // same batcher through twelve calls and a four-corner staging array (measured 3.5 us
+        // per sprite, sprint 100). Every other case falls through to the generic path below.
+        if ((rotation == 0.0f) && (srcrec.width > 0.0f) && (srcrec.height > 0.0f))
+        {
+            rlpspDrawQuad(texture.id,
+                          srcrec.x/width, srcrec.y/height,
+                          (srcrec.x + srcrec.width)/width, (srcrec.y + srcrec.height)/height,
+                          dstrec.x - origin.x, dstrec.y - origin.y,
+                          dstrec.x - origin.x + dstrec.width, dstrec.y - origin.y + dstrec.height,
+                          tint.r, tint.g, tint.b, tint.a);
+            return;
+        }
+#endif
+
         Vector2 topLeft = { 0 };
         Vector2 topRight = { 0 };
         Vector2 bottomLeft = { 0 };

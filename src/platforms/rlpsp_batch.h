@@ -233,6 +233,44 @@ static inline void rlPspPushVertex(float x, float y, float z)
     }
 }
 
+// P10-S30: the guards on the fast quad call below. 0 restores the twelve-call path, which
+// is the A/B control for every number this feature claims.
+#ifndef RLPSP_FAST_QUAD
+    #define RLPSP_FAST_QUAD 1
+#endif
+
+// P10-S30: one axis-aligned textured quad, emitted without the four-corner staging.
+// raylib's DrawTexturePro builds the same two vertices through rlBegin/rlVertex2f; this
+// takes the four corners it already has and writes the pair once. The triangle fallback
+// keeps the alternation budget honest for scenes that mix rotated quads.
+static inline void rlpspDrawQuad(unsigned int tex, float u0, float v0, float u1, float v1,
+                                 float x0, float y0, float x1, float y1,
+                                 unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    RLPspVertex *v;
+
+    rlpsp.pendTex = tex;                    // rlPspReserve settles it (and flushes if it changed)
+
+    if (rlpsp.alternations < RLPSP_ALTERNATION_BUDGET)
+    {
+        rlPspSetMode(RLPSP_GL_SPRITES);
+        v = rlPspReserve(2);
+        v[0] = (RLPspVertex){ u0, v0, r, g, b, a, x0, y0, 0.0f };
+        v[1] = (RLPspVertex){ u1, v1, r, g, b, a, x1, y1, 0.0f };
+    }
+    else
+    {
+        rlPspSetMode(RLPSP_GL_TRIANGLES);
+        v = rlPspReserve(6);
+        v[0] = (RLPspVertex){ u0, v0, r, g, b, a, x0, y0, 0.0f };   // top-left
+        v[1] = (RLPspVertex){ u0, v1, r, g, b, a, x0, y1, 0.0f };   // bottom-left
+        v[2] = (RLPspVertex){ u1, v1, r, g, b, a, x1, y1, 0.0f };   // bottom-right
+        v[3] = v[0];
+        v[4] = v[2];
+        v[5] = (RLPspVertex){ u1, v0, r, g, b, a, x1, y0, 0.0f };   // top-right
+    }
+}
+
 static inline void rlVertex3f(float x, float y, float z) { rlPspPushVertex(x, y, z); }
 static inline void rlVertex2f(float x, float y) { rlPspPushVertex(x, y, 0.0f); }
 static inline void rlVertex2i(int x, int y) { rlPspPushVertex((float)x, (float)y, 0.0f); }

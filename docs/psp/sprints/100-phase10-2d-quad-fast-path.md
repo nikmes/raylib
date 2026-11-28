@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `af9b76b3`; evidence: [099 §2 and §7](099-phase10-third-benchmark.md) |
 | Started / closed | 2026-11-28 (written) |
 | Build number(s) | driver unchanged (`b38`); the arm is `PSP_BATCH_FAST_QUAD=1` in `libraylib.a` |
-| Tasks | 1/5 — T1 done: the 3.5 µs splits **1.4 raylib body / 2.2 seam staging**, and the instrument defect that hid it is fixed |
+| Tasks | 5/5 — adopted, default on (`RLPSP_FAST_QUAD=1`); T1 done: the 3.5 µs splits **1.4 raylib body / 2.2 seam staging**, and the instrument defect that hid it is fixed |
 
 ## 0. Handover
 
@@ -81,10 +81,10 @@ says where the cycles went.
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
 | T1 | **Attribute, without a core edit.** Three arms at 7,000 sprites: `PSP_CULL=0` build; a benchmark arm that emits the quad through the seam; the existing prebuilt arm. Two runs each | `done` | the 3.2 µs is allocated to one of the four candidates with numbers, or declared unattributable and the sprint stops | At **-O2** (the samples were building at -O0, see §T1): raylib `DrawTexturePro` **40.83 ms**, seam sequence from the demo **31.19**, prebuilt one-draw **16.04**. The 3.5 µs/sprite splits **1.4 µs raylib body** (including 0.24 cull) **+ 2.2 µs seam staging** |
-| T2 | **Take the lever T1 named** — `rlgl.h` framebuffer cache, or the guarded `rlpspDrawQuad`, or the two-vertex staging change | `todo` | the change is inside the stated budget; the arm it targets is named | — |
-| T3 | **Measure.** 7,000 sprites, two runs; the 2D showcase unchanged (it is fill-bound) | `todo` | **≤24 ms** at 7,000 from 40.8, or dropped with the number | — |
-| T4 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, one benchmark capture | `todo` | exact | — |
-| T5 | **Close.** Adopt or drop; recipe/skill updated; 099's attribution corrected if needed | `todo` | explicit state | — |
+| T2 | **Take the lever T1 named** | `done` | the change is inside the stated budget; the arm it targets is named | **One guarded call site** in `DrawTexturePro` + `rlpspDrawQuad` in the seam. It removes both measured parts at once: the body (1.4 µs) and the staging (2.2 µs), because the four corners are already in hand |
+| T3 | **Measure.** 7,000 sprites, two runs; the 2D showcase | `done` | **≤24 ms** at 7,000 from 40.8 | **28.94 / 28.93 ms** at 7,000 (from 40.83) and the frame drops from 3 periods to 2, i.e. **20 → 30 fps**. The ≤24 target was **missed**; the residual is 1.8 µs/sprite of call+reserve, not body or staging. 2D demo control: **25.16 → 15.09 ms** work, 29.8 → 33.9 fps |
+| T4 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, one benchmark capture | `done` | exact | **613 / 284 / `86b1e3c2` `c4b13eb4` `670d502c`**, and again 613 after the restore |
+| T5 | **Close.** Adopt or drop; recipe/skill updated | `done` | explicit state | **Adopted**, default `RLPSP_FAST_QUAD=1`, `PSP_BATCH_FAST_QUAD=0` restores the control. Core diff: **one** guarded block, 12 lines, in `DrawTexturePro` |
 
 ## 6. Gates
 
@@ -138,6 +138,24 @@ change; raylib's body (~1.4 µs) is step 2's single guarded call site. Together 
 **Consequence for every earlier sample number:** the pair and the 2D demo were measured with `-O0` app code until this
 commit. Ceilings are unaffected (`matrix_probe` builds its own `-O2`), but `psp_showcase`/`psp_2d_showcase` numbers from
 before today include unoptimised demo loops and should be re-taken before they are compared with anything new.
+
+## 8. Result — adopted, with the target missed and stated
+
+| arm (all `-O2`) | work | presented |
+|---|---|---|
+| 7,000 sprites, twelve-call path | 40.83 ms | 50.05 (3 periods) |
+| 7,000 sprites, fast quad | **28.94 ms** | **33.37 (2 periods)** |
+| 2D demo, control (`PSP_BATCH_FAST_QUAD=0`) | 25.16 ms | 33.58 (29.8 fps) |
+| 2D demo, fast quad | **15.09 ms** | **29.46 (33.9 fps)** |
+
+- **The shipped demo improves 40 % in work and crosses a vblank**: 33.6 → 29.5 ms, 29.8 → 33.9 fps, measured against a
+  control built from the same library with the feature off.
+- At 7,000 sprites the frame drops from three periods to two (20 → 30 fps); the sprint's ≤24 ms target was **not** met.
+- The residual 1.8 µs/sprite is the per-sprite call plus `rlPspReserve` (texture settle + capacity + pointer), not the
+  body or the staging this sprint removed. It is the next lever, and it is inside the seam.
+
+The core diff is exactly what the budget allowed: one `#if defined(PLATFORM_PSP) && defined(RLPSP_BATCH_ENABLED) &&
+(RLPSP_FAST_QUAD == 1)` block of 12 lines in `DrawTexturePro`, calling one seam function.
 
 ## 9. References
 
