@@ -113,6 +113,26 @@ no code change explains.
 - `work = avg − swap` is a difference of two quantised values; on a step it is not a measurement.
 
 
+## Ceilings
+
+The pair answers "did it get faster"; the ceiling answers "how much room is there", and it is the only metric that
+survives a step. Use `psp-tests/matrix_probe MODE=scene PROBE=0`, the tool 078 and 096 §9.8 used:
+
+```sh
+cd psp-tests/matrix_probe
+make MODE=scene PROBE=0 COUNT=250 FRAMES=200    # PROBE=0 keeps the instrument out of the build
+```
+
+`COUNT` cubes in a 10-wide grid, `STAT` giving min/median/p95/worst and `SPLIT` the work. A point **holds** when the
+median is at the period *and* p95 shows no drops; the ceiling is the last passing count with the next integer failing,
+both stable across two runs. Current shipped baseline (2026-11-28): **250 at 60 fps, 570 at 30 fps**.
+
+- One cube at 30 fps is ~57 µs of work, so a change worth less than that cannot be seen here — measure the pair or
+  free-running time instead.
+- `PROBE=1` (the default) links the matrix probes and shifts the ceiling; it is for attribution, never for a ceiling.
+- Quote the count, never an fps derived from `avg`: at the boundary the demo alternates periods, so `avg` reads a
+  value that is not a frame time.
+
 ## What is not measured
 
 Audio, memory pressure, texture streaming and the Media Engine. Those have their own harnesses (`psp-tests/audio_*`,

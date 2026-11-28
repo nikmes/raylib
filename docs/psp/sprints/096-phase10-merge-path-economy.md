@@ -305,10 +305,36 @@ another thinning sprint.
 **Consequence for 091:** T4a (state skip) is worth ~10 µs/call on a path that is opt-in and still ~40 % above
 merging. It stays parked with this number, not pursued.
 
+### 9.8 The ceiling, measured — the step-free metric this sprint deferred to (2026-11-28)
+
+The ceiling sweep the close deferred (T2b/T3). Tool: `psp-tests/matrix_probe MODE=scene PROBE=0`, the same one 078 used,
+so the numbers are comparable to its 270. `COUNT` cubes in a 10-wide grid, `FRAMES=200`, **two runs per point**, reset
+between; a point holds when the median is at the period **and** p95 does not drop.
+
+| point | 60 fps arm | 30 fps arm |
+|---|---|---|
+| pass | **250** — median 16.683, p95 16.70, work 15.56 / 15.62 | **570** — median 33.369, p95 33.38, work 32.05 / 31.92 |
+| fail | **251** — median 33.367, work 16.88 | **575** — p95 50.05, work 32.87 |
+
+Adjacent counts, both arms stable across their two runs, so these are boundaries rather than samples. **60 fps = 250,
+30 fps = 570.**
+
+**Against 078.** That sprint recorded the merged arm at **270 instances / 60 fps** with work 15.245 measured at 270.
+Today 270 reads median 33.35 with work 16.60 — 1.35 ms more work at the same count, and the ceiling is 250. Per cube
+that is 62 µs against 56 µs, a **7–10 % regression** on the path the demos ship, introduced somewhere between b33 (078)
+and `973198f1`. Candidates in that window, in the order they were measured: 079's sincos, 080's lighting scoping, 085's
+opt-in arms, 089's arena 2×2, the upstream raylib merge of 2026-11-25 (which touched `rmodels.c`/`rlgl.h`), and 090's
+clean hint. None is suspected preferentially; this is the measurement that says where to look next.
+
+**What the ceilings are for.** They are the acceptance metric for the copy removal (a 4.3 ms saving on the merged path
+is ~75 cubes at 30 fps) and for strips: an arm that does not move 250 or 570 has not earned its code. A 30 fps addition
+of one cube is 57 µs of work, so the resolution is fine enough to see the copy removal and nothing smaller.
+
 ## 10. Follow-ups
 
-- **The ceiling sweep decides T2a and T2b.** Last cube count at 30 fps and at 60 fps, one layout, checksum at 0 diff
-  (the sprint that measures the 460 KiB copy removal). It is the step-free metric the pair cannot provide (§9.7).
+- **The ceiling sweep decides T2a and T2b.** Measured (§9.8): **250 at 60 fps, 570 at 30 fps** on the shipped build.
+  The copy removal must move one of them; a 4.3 ms saving is ~75 cubes at 30 fps. The 7–10 % gap to 078's 270 at the
+  same count is the first thing to explain.
 - If T1 reverses the decision, 091 T4a and the thin entry resume and this sprint's items still stand.
 - If strips cannot serve the merge path, the GE-side lever for merged content is closed and only the CPU expansion
   remains.
