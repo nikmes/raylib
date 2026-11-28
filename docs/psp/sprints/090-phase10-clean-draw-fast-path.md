@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S20 |
 | Branch / base commit | `master` @ `fd52503f` (upstream 2026-11-25 merged 2026-11-28) — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / 2026-11-28 (closed) |
 | Build number(s) | pspgu `b38` only if adopted; the arm is `PSPGU_CLEAN_HINT=1` |
-| Tasks | 4/5 — T1 deferred (M3D tree not built), T4 one gate; T2/T3/T5 done |
+| Tasks | 5/5 — T2/T3/T4/T5 done, T1 dropped (M3D baseline moot on a parked path) |
 
 ## 0. Handover
 
@@ -81,7 +81,7 @@ means anything.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Matched baseline.** Both engines on the 20×60 layout, 200 frames: work, avg, per-cube slope, 60 fps ceiling. Run the A/B **below a vblank step** and report `work` beside `avg` (recipe landmine 7: a scene on a step turns a 2 % work change into 20 % avg) | `todo` | numbers on one layout; M3D's 760 reproduced or explained; the step distance stated for each engine | — |
+| T1 | **Matched baseline.** Both engines on the 20×60 layout, 200 frames: work, avg, per-cube slope, 60 fps ceiling. Run the A/B **below a vblank step** and report `work` beside `avg` (recipe landmine 7: a scene on a step turns a 2 % work change into 20 % avg) | `dropped` | numbers on one layout; M3D's 760 reproduced or explained; the step distance stated for each engine | Dropped 2026-11-28: the M3D tree was never built, and a matched baseline only matters if the thin entry resumes - it is parked at ~95 µs/call against merging's ~55 µs/cube (096 §0). The step distance it asked for is measured in 096 §9.7 instead |
 | T2 | **Clean hint.** `pspguSetCleanHint(1)` around the draw that follows `pspClass` (`rmodels.c:2159`), cleared after; the driver skips `clipNeeds` at **both** `glDrawElements:1565` and `glDrawArrays:1417` when set. Declared beside `rlpspEnableCulling` (`rlgl.h:949`). Build switch `PSPGU_CLEAN_HINT=1`, default 0 | `done` | a clean draw emits the same pixels without a scan; a dirty draw still scans; a draw after the clear is not skipped | done — `pspguSetCleanHint` (weak from raylib), both scan sites, `clean_skips` counter |
 | T3 | **A/B.** 400, 500 and 800 cubes, two runs each; `PSPGU_NO_CLIP=1` as the control. Report `work` (unquantised) beside `avg` and the distance to the nearest vblank step; assert culling is on in the log | `done` | per-cube slope falls ≥20 % **in work**; the control shows the scan's share | done — merge-off A/B: GRID=8 work 12.54→9.97 (−20.5 %), GRID=14 work 36.23→28.29 (−21.9 %), avg 50.08→33.44 |
 | T4 | **Gates.** `scene_3d SCENE=both`, `MESH_SCENE=1`, `batch_check`, RTT, `clip_probe` | `done` (partial) | 0 diff / 613 / 284 / clip as recorded | partial — `batch_check` 613 on the rebuilt shipped library; the 3D pixel gates were not run under the arm |

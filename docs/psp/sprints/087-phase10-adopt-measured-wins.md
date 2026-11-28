@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S17 |
 | Branch / base commit | `master` @ `07c19f31` (085 closed; 086 folded in here; pspgu `9798af84e81b269e`, `libraylib.a c2004b266a6c3291`) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / 2026-11-28 (closed, absorbed) |
 | Build number(s) | pspgu `b38` (A), `b39` (A+B), `b40` (A+B+C); one pair per build so each workstream is attributable |
-| Tasks | 0/15 — three workstreams, each adopted on its own gate, plus a shared pixel table and close |
+| Tasks | closed by absorption — A went to 089, B split into 096 T2a (done) and T2b (deferred), C into 092 and 096 T3 |
 
 ## 0. Handover
 
@@ -84,35 +84,35 @@ counts that A and B were tuned against.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| A1 | **Diagnose the 161,768 B ceiling.** Instrument only: per fill, log the reserve size and address, the count and sizes of sub-allocations, the size of the one that fails, and the number of `pspguBeginFrame` calls per buffer per frame. Separate chunky-allocation from reopen | `todo` | the cause is stated with evidence; no behaviour change | — |
-| A2 | **Reserve sized from the list.** `PSP_GU_LIST_BYTES` to 252 KiB, reserve = `listBytes − commandHeadroom`, new reserve on a fresh `sceGuStart` after a reopen | `todo` | 3D: 0 fallbacks, `list_used_max` + reserve under the list, no `LIST OVERFLOW`, `arenaOverflows=0` | — |
-| A3 | **Guard and forced fallback.** Refuse a sub-allocation that would pass the block, count it, fall back to the arena; a synthetic frame that exceeds the block must render correctly | `todo` | synthetic frame: correct pixels, fallback counter > 0; normal frames: 0 | — |
-| A4 | **Pair A/B.** Two runs per point against the §0 control | `todo` | 3D `work` **and** `avg` improve by >0.05 ms; 2D `work` improves, `avg` unchanged; drop A with the required bytes if it cannot fit | — |
+| A1 | **Diagnose the 161,768 B ceiling.** Instrument only: per fill, log the reserve size and address, the count and sizes of sub-allocations, the size of the one that fails, and the number of `pspguBeginFrame` calls per buffer per frame. Separate chunky-allocation from reopen | `dropped` | the cause is stated with evidence; no behaviour change | 089 replaced A: the list-local arm was measured as a 2x2 against the arena and lost |
+| A2 | **Reserve sized from the list.** `PSP_GU_LIST_BYTES` to 252 KiB, reserve = `listBytes − commandHeadroom`, new reserve on a fresh `sceGuStart` after a reopen | `dropped` | 3D: 0 fallbacks, `list_used_max` + reserve under the list, no `LIST OVERFLOW`, `arenaOverflows=0` | with A; 089 §9.4 kept the arena, so there is no list-local reserve to size |
+| A3 | **Guard and forced fallback.** Refuse a sub-allocation that would pass the block, count it, fall back to the arena; a synthetic frame that exceeds the block must render correctly | `dropped` | synthetic frame: correct pixels, fallback counter > 0; normal frames: 0 | with A; the fallback already exists as the arena replay counted by MERGEPROBE |
+| A4 | **Pair A/B.** Two runs per point against the §0 control | `dropped` | 3D `work` **and** `avg` improve by >0.05 ms; 2D `work` improves, `avg` unchanged; drop A with the required bytes if it cannot fit | with A; 089 §9.4 states the comparison that ended it |
 
 ### B — index-run cache (build `b39`)
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| B1 | **Instrument the real cost.** Count per frame: index bytes copied, runs, distinct run keys, copies avoided by a cache. The 085 estimate (31 µs/1,000) came from a probe; this is the demo | `todo` | the measured per-frame cost is stated; B is dropped now if it is <0.05 ms | — |
-| B2 | **Cache.** A persistent main-RAM pool (candidate 64 KiB, not the rotating arena) keyed by `(index pointer, count, first)`, written back once on creation; a hit hands the block straight to `sceGuDrawArray` | `todo` | hits > 0 and copies/frame fall; key changes ⇒ miss, never stale bytes; `arenaOverflows=0` | — |
-| B3 | **Miss path and lifetime.** A run whose key changes every frame is copied every frame, uncached; the pool is overwritten LRU and never while a list that references it is in flight | `todo` | the animated scene (the showcase's cubes) keeps correct pixels; two-lists-in-flight proof; misses counted | — |
-| B4 | **Pair A/B.** A+B against A alone | `todo` | 3D `work` improves by >0.05 ms over A; drop B with the number if not | — |
+| B1 | **Instrument the real cost.** Count per frame: index bytes copied, runs, distinct run keys, copies avoided by a cache. The 085 estimate (31 µs/1,000) came from a probe; this is the demo | `done` | the measured per-frame cost is stated; B is dropped now if it is <0.05 ms | 096 T2a measured it by A/B instead of by a probe: the index write is 14,400 shorts/frame, far under the 0.05 ms bar |
+| B2 | **Cache.** A persistent main-RAM pool (candidate 64 KiB, not the rotating arena) keyed by `(index pointer, count, first)`, written back once on creation; a hit hands the block straight to `sceGuDrawArray` | `deferred` | hits > 0 and copies/frame fall; key changes ⇒ miss, never stale bytes; `arenaOverflows=0` | this is 096 T2b; moved to the ceiling sprint with the 460 KiB copy removal it belongs with |
+| B3 | **Miss path and lifetime.** A run whose key changes every frame is copied every frame, uncached; the pool is overwritten LRU and never while a list that references it is in flight | `deferred` | the animated scene (the showcase's cubes) keeps correct pixels; two-lists-in-flight proof; misses counted | with B2; the two-lists-in-flight proof is 096 T2b's acceptance, not a separate task |
+| B4 | **Pair A/B.** A+B against A alone | `dropped` | 3D `work` improves by >0.05 ms over A; drop B with the number if not | no pair value: 096 §9.7 shows the pair at GRID=20 is bistable across sessions |
 
 ### C — baked static geometry (build `b40`)
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| C1 | **Load-time bake helper.** `rlpspBakeStaticMesh(Mesh*, options)`: triangle-strip indices (0-diff path) and optional s8 positions for meshes under a stated pixel-size threshold (s8 quantises to ≈1.8 px on screen-spanning geometry) | `todo` | a baked mesh renders from the same draw path; no per-frame cost; s8 is opt-in per mesh | — |
-| C2 | **Gate scene.** Baked vs unbaked on a dedicated dense mesh | `todo` | strips: **0 diff**; s8: diff counted and bounded by the threshold rule, recorded as opt-in | — |
-| C3 | **Integrate and measure.** Use a baked mesh in one sample (ground plane and/or cube) and record GE time on that scene | `todo` | GE time before/after; no `avg` regression on the pair | — |
-| C4 | **Pair check.** A+B+C against A+B | `todo` | no regression (>0.05 ms); the pair is expected to be flat here, and that is recorded, not hidden | — |
+| C1 | **Load-time bake helper.** `rlpspBakeStaticMesh(Mesh*, options)`: triangle-strip indices (0-diff path) and optional s8 positions for meshes under a stated pixel-size threshold (s8 quantises to ≈1.8 px on screen-spanning geometry) | `absorbed` | a baked mesh renders from the same draw path; no per-frame cost; s8 is opt-in per mesh | 092 shipped the lazy bake for static meshes; the strip helper is 096 T3 |
+| C2 | **Gate scene.** Baked vs unbaked on a dedicated dense mesh | `absorbed` | strips: **0 diff**; s8: diff counted and bounded by the threshold rule, recorded as opt-in | 092 gated the bake (613 / 284 / checksum); strips carry their own gate in 096 T3 |
+| C3 | **Integrate and measure.** Use a baked mesh in one sample (ground plane and/or cube) and record GE time on that scene | `done` | GE time before/after; no `avg` regression on the pair | 092 §9.3: the bake is in the showcase, -0.8 ms of work |
+| C4 | **Pair check.** A+B+C against A+B | `dropped` | no regression (>0.05 ms); the pair is expected to be flat here, and that is recorded, not hidden | a pair check on a bistable metric (096 §9.7) |
 
 ### X — shared
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| X1 | **Pixel table** on the combined build | `todo` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT all as recorded; no full GE wait; fallback counters 0 outside A3 | — |
-| X2 | **Close.** Pair re-run, RAM ledger, docs, driver hash, restore the chosen driver | `todo` | §9 criteria; one paragraph per workstream with its number | — |
+| X1 | **Pixel table** on the combined build | `dropped` | 613 / 284 / 0 / 0 / clip / MESH_SCENE / RTT all as recorded; no full GE wait; fallback counters 0 outside A3 | each workstream carries its own gate; a combined table would grade a build nobody ships |
+| X2 | **Close.** Pair re-run, RAM ledger, docs, driver hash, restore the chosen driver | `done` | §9 criteria; one paragraph per workstream with its number | Closed 2026-11-28 with §9: no pair re-run, because the pair is not a decision instrument here (096 §9.7); the driver state is unchanged (`pspgu b37`) |
 
 ## 6. Design notes
 
@@ -214,3 +214,19 @@ them.
 - `tools/pspgu/egl.c` (`pspguBeginFrame`/`pspguEndFrame`, `pspguArenaAlloc`), `gl_draw.c:749-793` (index copy
   sites), `gl_texture.c:408` (the eviction path that can reopen a list)
 - `tools/pspgu/pspgu_internal.h` — `PSPGU_LIST_VERTICES`, `PSPGU_LIST_VERTEX_BYTES`, the writeback no-op
+
+## 9. Disposition — absorbed, not executed
+
+This sprint was written to adopt the three surviving levers of 085 as three workstreams with one pair per build. Before
+any of it ran, the phase reorganised: 089 measured the vertex-memory question as a 2x2 and kept the arena, 092 shipped
+a lazy bake, and 096 measured the merge path's economy including the index reuse.
+
+| workstream | where it went |
+|---|---|
+| A — list-local vertices | **089**. Measured as a 2x2 (submission × vertex memory) with a per-draw variant; the arena stayed (§9.4). The 161,768 B ceiling was never diagnosed because the arm that needed it lost |
+| B — index-run cache | **096 T2a** (raylib-side reuse, adopted, alive: `reused 400 frames in a row`) and **T2b** (persistent driver-side copy, deferred to the ceiling sprint) |
+| C — baked geometry | **092** (the lazy bake, -0.8 ms, ships) and **096 T3** (strips, not started: the merge path cannot use a static strip buffer, so its value was bounded before it was built) |
+
+No row here was dropped for being wrong; each became a narrower, better-instrumented task in a later sprint. The
+lesson worth keeping: three workstreams with one gate each was the right shape, but the pair it specified is not a
+decision instrument on this scene (096 §9.7), and that is what the later sprints had to work around.

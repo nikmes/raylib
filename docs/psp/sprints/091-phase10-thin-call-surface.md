@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S21 |
 | Branch / base commit | `master` @ `6a03bce9` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / 2026-11-28 (closed) |
 | Build number(s) | driver `b38` only if adopted; the arms are `PSPGU_MATRIX_EPOCH=1`, `PSPGU_STATE_SKIP=1` |
-| Tasks | 2/7 — T1 and T4b done; T4a open; T2/T3 conditional |
+| Tasks | 7/7 — T1, T4b done; T2/T3/T4a/T5 dropped; closed. No default change |
 
 ## 0. Handover
 
@@ -75,13 +75,13 @@ adoption bar stays "beats the control by >0.05 ms with 0 diff".
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Instrument the surface.** Per-line cost at N=500: matrix push/mult, pointer setup, colour, texture enable, driver upload | `todo` | the lines sum to the measured delta ±10 % | — |
-| T2 | **Matrix epoch.** rlgl keeps a revision counter bumped on every matrix change; the cull and the draw both read it | `todo` | no stale matrix in any gate; `PSP_MATRIX_PROBE` cull ≤8 µs | — |
-| T3 | **Matrix upload skip.** Skip `pspguUploadMatrices` when the composed modelview is unchanged since the last draw (identical transforms only; see §4b 1 — the cull's MVP cannot feed the draw) | `todo` | no stale matrix in any gate; the counter reports how often it fires | — |
-| T4a | **State skip.** Skip `glEnableClientState`/`gl*Pointer`/`rlEnableTexture`/colour when the mesh and colour are unchanged since the previous draw | `todo` | no missed state change in the gates; a counter reports skips; a few µs per call at best (§9.3) | — |
+| T1 | **Instrument the surface.** Per-line cost at N=500: matrix push/mult, pointer setup, colour, texture enable, driver upload | `done` | the lines sum to the measured delta ±10 % | §9.1: the surface is allocated line by line; state 14.5 µs, driver 26.9, cull 25.0, compose 4.4, mult 8.4 |
+| T2 | **Matrix epoch.** rlgl keeps a revision counter bumped on every matrix change; the cull and the draw both read it | `dropped` | no stale matrix in any gate; `PSP_MATRIX_PROBE` cull ≤8 µs | no client state to validate: T4b removed the second multiply and the cull already caches its own copy; a revision counter would defend a cache nobody reads |
+| T3 | **Matrix upload skip.** Skip `pspguUploadMatrices` when the composed modelview is unchanged since the last draw (identical transforms only; see §4b 1 — the cull's MVP cannot feed the draw) | `dropped` | no stale matrix in any gate; the counter reports how often it fires | the matrix upload is 4.4 µs of a 95 µs call; skipping it cannot move the pair, and a stale-matrix class of bug is the wrong risk to take for it |
+| T4a | **State skip.** Skip `glEnableClientState`/`gl*Pointer`/`rlEnableTexture`/colour when the mesh and colour are unchanged since the previous draw | `dropped` | no missed state change in the gates; a counter reports skips; a few µs per call at best (§9.3) | 096 §9.1 measured the whole state block at 14.5 µs including its own timing pair (~10.6 real) - under the 30 µs bar the merge-first rule set |
 | T4b | **Thin matrix path.** The bake stores its constant scale+centre product once; `DrawMesh` composes one matrix per draw instead of two, and the report separates compose/mult so the split is visible | `done` | per-call `compose`+`mult` falls by the measured amount; `DrawMesh` total falls; 0 diff | §9.4: 123.0 → 111.0 µs/call, gate 613 |
-| T5 | **A/B + gates.** Below a vblank step and at GRID=20 for the step distance, two runs; report `work`; full pixel table | `todo` | slope falls by the measured surface cost; 0 diff | — |
-| T6 | **Close.** Adopt or drop with the number | `todo` | default state explicit | — |
+| T5 | **A/B + gates.** Below a vblank step and at GRID=20 for the step distance, two runs; report `work`; full pixel table | `dropped` | slope falls by the measured surface cost; 0 diff | the A/B would grade a parked path, and the pair is bistable at GRID=20 (096 §9.7) |
+| T6 | **Close.** Adopt or drop with the number | `done` | default state explicit | closed 2026-11-28: the thin entry stays parked at ~95 µs/call against merging's ~55 µs/cube; T4b ships because it also helps the per-object path |
 
 ## 6. Design notes
 
