@@ -114,7 +114,7 @@ Each one has produced a wrong result here at least once.
 
 | measure | expected | source |
 |---|---|---|
-| 3D `psp_showcase` | 33.548 ms, work 32.071, swap 1.477 | sprint 085 §9.9 |
+| 3D `psp_showcase` | **40.3 ms, work 32.6** after the 2026-11-28 upstream merge; 33.5 before it — same work, different side of the 33.3 ms step (landmine 7) | measured 2026-11-28 |
 | 2D `psp_2d_showcase` | 33.803 ms, work 21.590, swap 12.213 | sprint 085 §9.9 |
 | `batch_check` | 613 distinct 5-6-5 colours | sprints 085, 088 |
 | `basic_shapes` | 284 colours | sprint 014 |
