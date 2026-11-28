@@ -4,10 +4,10 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) (port maintenance spanning phases 04, 05, 07, 09) |
 | Sprint | P10-S25 |
-| Branch / base commit | `master` @ `eb76ba64`; if the `upstream-11-26` merge lands first, rebase onto it |
+| Branch / base commit | `master` @ `21bbb3f4`; the `upstream-11-26` merge is written but **unlanded** (device gates pending) — rebase onto it before T1 if it lands first |
 | Started / closed | 2026-11-26 (written) / — |
 | Build number(s) | driver unchanged; `libraylib.a` hash changes (files moved), measurements must not |
-| Tasks | 0/6 |
+| Tasks | 0/7 |
 
 ## 0. Handover
 
@@ -55,15 +55,21 @@ redesign sprints (090-094) must not be folded in here.
 - [x] the core-file line count is reproducible (the script in §6)
 - [x] `libraylib.a` and driver hashes recorded before the move
 - [x] `PSP_CALL_PROBE` and the bench harness exist for the pair
+- [x] the two threads that ran without `PSP_THREAD_ATTR_VFPU` are fixed (`640ece10`, `21bbb3f4`) — port-layer
+      changes like these are exactly what this sprint is meant to keep out of core files
 - [ ] the upstream merge is either landed or rebased onto — do not mix a merge and a move in one diff
+- [ ] the counts are re-measured **on the tree T1 starts from** (T0): they differ by the merge:
+      master **1,626** lines, `upstream-11-26` **1,617** (the 9-line difference is `rcore.c`, where upstream's
+      `#elif` consolidation replaced our split guards)
 
 ## 5. Tasks
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
+| T0 | **Settle the baseline.** Land or rebase `upstream-11-26`, re-run the §6 count on that tree, and record the per-file numbers the move will be measured against | `todo` | counts recorded on the tree T1 starts from; a trial `git merge upstream/master` shows what conflicts today | — |
 | T1 | **Mesh path → `src/platforms/rlpsp_mesh.c/.h`.** Move `PspGeMesh`, the bounds table, `pspGeClassifyMesh` family and the merge helpers out of `rmodels.c`; leave guarded call sites in `DrawMesh`/`UnloadMesh`/`rlpspMergeFlush` | `todo` | `rmodels.c` PSP lines ≤ 40; symbols exported through the new header; no double definition | — |
 | T2 | **Batcher → `src/platforms/rlpsp_batch.h`.** Move the 402 `rlgl.h` lines behind one `#include` under one guard, preserving include order (the block runs before the GL headers) | `todo` | `rlgl.h` PSP lines ≤ 10; header-only semantics intact; desktop build unchanged | — |
-| T3 | **Shapes → one switch.** Replace the scattered `#if !defined(PLATFORM_PSP)` exclusions with a single `PSP_SHAPES_FAST` condition, so upstream quad-path edits merge cleanly | `todo` | `rshapes.c` PSP lines ≤ 40; 2D output byte-identical | — |
+| T3 | **Shapes → one switch.** Replace the scattered `#if !defined(PLATFORM_PSP)` exclusions with a single `PSP_SHAPES_FAST` condition, so upstream quad-path edits merge cleanly | `todo` | `rshapes.c` PSP lines ≤ 40; 2D output byte-identical; the four affected functions named and their upstream history checked | — |
 | T4 | **Audio decoder → `raudio_psp.c`.** Move the music-decoder thread next to the device that owns it | `todo` | `raudio.c` PSP lines ≤ 20; audio smoke unchanged | — |
 | T5 | **Prove no behaviour change.** Same driver hash, same `libraylib` symbols for our API, gates and pair within tolerance | `todo` | 613 / 284 / 0 / 0 / clip; pair 33.5 / 33.8 ±2 %; `psp-nm` diff empty for `rlpsp*`/`pspgu*` | — |
 | T6 | **Close.** Record the line counts before/after, update the port notes, state the merge surface left | `todo` | one number per file, before and after | — |
@@ -110,6 +116,12 @@ already warns about this.
 adding ours. Two consequences: an upstream edit to that function conflicts even when we change nothing, and a
 reviewer cannot see what PSP does *instead*. Collapsing them behind one switch fixes both.
 
+**Which functions are actually affected** (checked 2026-11-28, merge branch): `DrawTriangleGradient` (326),
+`DrawPoly` (1531), `DrawPolyLinesEx` (1616) replace raylib's quad paths, and `DrawRectanglePro` (622) adds a cull
+path. **`DrawRectangleLines` is not one of ours**, so upstream's half-pixel fix (#6430) applies to PSP normally —
+T3 must not chase a divergence that does not exist. What T3 does need is a check of which of these four functions
+upstream has changed since the base, so any future conflict is expected rather than discovered.
+
 **Move only.** No constant, threshold or call order changes in this sprint. If a move forces a behaviour decision,
 stop and record it as a separate task — the acceptance for T5 is exact equality on the gates.
 
@@ -126,7 +138,8 @@ stop and record it as a separate task — the acceptance for T5 is exact equalit
 
 ## 8. Exit criteria
 
-- [ ] core-file PSP lines ≤200, measured by the script, per file before/after
+- [ ] core-file PSP lines ≤200, measured by the script, per file, on the tree the move started from
+- [ ] the baseline in T0 matches the tree T1 used (master vs merge branch differs by 9 lines in `rcore.c`)
 - [ ] `psp-nm` diff empty for the port's public symbols
 - [ ] gates byte-identical; pair within 2 %
 - [ ] desktop build unaffected (`PLATFORM_PSP` absent ⇒ the moved files are not compiled)
@@ -151,3 +164,4 @@ Pending — no code moved yet.
   (negative guards), `src/raudio.c:2847+` (decoder thread)
 - `docs/psp/recipes/backend-ab-pspgu-vs-pspgl.md` — the harness this sprint's acceptance uses
 - upstream merge of 2026-11-26 (`upstream-11-26`, `ddbd5340`) — the conflict this sprint is meant to prevent
+- port fixes `640ece10` / `21bbb3f4` — `PSP_THREAD_ATTR_VFPU` on the update and music-decoder threads
