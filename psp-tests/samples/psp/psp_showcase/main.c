@@ -109,7 +109,13 @@ int main(void)
 
     for (;;)
     {
+#if defined(SHOWCASE_FRAME_INDEXED)
+        // Determinism gate (P10-S26): frame N must be the same scene on every run, or a
+        // framebuffer hash cannot compare two builds.
+        float t = (float)frames/60.0f;
+#else
         float t = (float)GetTime();
+#endif
         float a = t*0.18f;
 
         cam.position = (Vector3){ sinf(a)*17.0f, 7.5f + 2.5f*sinf(t*0.25f), cosf(a)*17.0f };
@@ -161,6 +167,14 @@ int main(void)
 
 
         EndDrawing();
+
+#if defined(SHOWCASE_CHECKSUM)
+        if ((frames == 60) || (frames == 120) || (frames == 240))
+        {
+            unsigned int h = (PSP_FramebufferHash != NULL)? PSP_FramebufferHash() : 0;
+            TraceLog(LOG_INFO, "FBHASH frame=%d hash=%08x", frames, h);
+        }
+#endif
 
         frames++;
         sum += GetFrameTime();

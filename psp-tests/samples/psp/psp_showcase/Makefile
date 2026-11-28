@@ -8,6 +8,9 @@ include ../../Makefile.inc
 # The shared file assigns CFLAGS and LDFLAGS, so the demo's own switches come after it.
 CFLAGS += -DSHOWCASE_FRAMES=$(FRAMES) -I../../../bunnymark -DWRAP_COUNTERS
 CFLAGS += -DSHOWCASE_VSYNC=$(VSYNC)
+ifdef CHECKSUM
+CFLAGS += -DSHOWCASE_CHECKSUM=1 -DSHOWCASE_FRAME_INDEXED=1
+endif
 ifdef GRID
 CFLAGS += -DGRID=$(GRID)
 endif

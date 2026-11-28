@@ -170,6 +170,31 @@ double-buffered by frame parity and handed to the driver directly, the 4.9 ms co
 the next frame's CPU. That difference is the pipelining the three-buffer design buys, and it is why adoption numbers
 stay at vsync 1.
 
+### 9.5 The determinism gate (`PSP_FramebufferHash`)
+
+Capture-at-DONE cannot see scrambled geometry (it differed from itself by 35 %). `PSP_FramebufferHash()` hashes the
+buffer the frame just drew, after waiting for the list that drew it; `psp_showcase CHECKSUM=1` switches the animation
+to frame-indexed (`t = frames/60`) and prints the hash at frames 60/120/240.
+
+| run | frame 60 | 120 | 240 |
+|---|---|---|---|
+| 1 | `d53fd604` | `f0498eaa` | `313b0556` |
+| 2 | `d53fd604` | `f0498eaa` | `313b0556` |
+
+Deterministic across runs, so it is a gate: any change that scrambles indices or reuses a buffer too early moves it.
+
+### 9.6 The copy removal does not move the frame — re-prioritised
+
+The four-buffer direct merge (hand the vertices to the driver, skip the 460 KiB copy) would remove ~4.3 ms of work:
+
+- **vsync on:** frame 33.44 ms, work 30.8 → 26.5. Still locked at 33.3. **`avg` does not move.** By this sprint's own
+  rule — adopt only what moves the pair — it would be dropped.
+- **What it actually buys:** headroom, i.e. a higher 30 fps cube ceiling (roughly 400 → 480) and lower CPU/battery on
+  the merged path.
+
+So it is not the next task. If it is done, its acceptance must be a **ceiling measurement**, not the pair: the last
+cube count at 30 fps with and without the change, on the same layout, with the hash gate at 0 differences.
+
 **Not done:** T2b, the persistent driver-side copy with a two-list lifetime proof. The driver still copies the run
 into the arena; only the rebuild is gone.
 

@@ -674,6 +674,34 @@ void pspguFinishAndWait(void)
     if (qid >= 0) sceGeListSync(qid, PSP_GE_LIST_DONE);
 }
 
+// P10-S26: a deterministic per-frame gate for changes that can scramble geometry without
+// changing timing (index reuse, buffer lifetime). Only usable with a frame-indexed scene.
+// Reads the buffer the frame just drew, after waiting for the list that drew it.
+unsigned int PSP_FramebufferHash(void)
+{
+    const unsigned char *base;
+    const unsigned short *p;
+    unsigned int h = 2166136261u;
+
+    if (!pspgu.current) return 0;
+
+    int i = pspgu.drawIndex;
+    if ((i < 0) || (i >= PSP_GU_FB_COUNT)) return 0;
+    if (pspgu.bufQid[i] >= 0) sceGeListSync(pspgu.bufQid[i], PSP_GE_LIST_DONE);
+
+    base = (const unsigned char *)sceGeEdramGetAddr();
+    p = (const unsigned short *)(base + (unsigned int)pspgu.fbOffset[i]);
+
+    for (int y = 0; y < pspgu.height; y++)
+        for (int x = 0; x < pspgu.width; x++)
+        {
+            h ^= p[y*(size_t)pspgu.stride + x];
+            h *= 16777619u;
+        }
+
+    return h;
+}
+
 unsigned int pspguVramFreeBytes(void)
 {
     return (PSPGU_VRAM_BLOCKS - vramUsedBlocks)*PSPGU_VRAM_BLOCK;
