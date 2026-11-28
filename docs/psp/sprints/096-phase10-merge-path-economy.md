@@ -145,8 +145,30 @@ At GRID=20 it looked like **−4.4 ms of work** (30.77 → 26.35), twice each. I
 mirrored by 4.4 ms of `swap` — the split moving, not the frame. This is the recipe's landmine 7 in its purest form:
 at a step, `work = avg − swap` is a difference of two quantised values and must not be compared.
 
-Dropped. `PSP_MERGE_FAST_NORMAL` stays at 0 with its gate recorded, and the expansion's cost is still unattributed —
-which is the honest state, not a missing line.
+Dropped. `PSP_MERGE_FAST_NORMAL` stays at 0 with its gate recorded.
+
+### 9.4 T4 — the attribution, done with vsync off (`MERGEX`)
+
+The merge path bypasses `DrawMesh`, so it had no timer. `MERGEX` times `pspMergeBuild` and the flush separately,
+and the run is taken **free-running** (`--vsync 0`), where nothing is quantised:
+
+| component | per frame, GRID=20 |
+|---|---|
+| merge build (CPU expansion) | **10.6 ms** (5,282 µs × 2 runs) |
+| merge flush (state + arena copy + draw) | **4.9 ms** (2,468 µs × 2) |
+| everything else | ~25.6 ms |
+| frame, free-running | 41.1 ms (`swap` 0.18 — collapsed, as expected) |
+
+So the merged path's 15.5 ms is almost exactly half expansion, half copy: `pspMergeBuild` writes 14,400 vertices at
+~730 ns each, and the flush `memcpy`s 460 KiB of vertices plus 29 KiB of indices into the arena and writes them back.
+
+**The next lever is the copy, not the loop.** The merged vertices are a static buffer rebuilt each frame; if it were
+double-buffered by frame parity and handed to the driver directly, the 4.9 ms copy and its writeback disappear, at
+460 KiB × 2 of main RAM. That is a lifetime-shaped change, like T2b, and it is worth ten times T2b.
+
+**Note on the modes:** the free-running frame is 41 ms against 33.4 locked, because with vsync the GE hides behind
+the next frame's CPU. That difference is the pipelining the three-buffer design buys, and it is why adoption numbers
+stay at vsync 1.
 
 **Not done:** T2b, the persistent driver-side copy with a two-list lifetime proof. The driver still copies the run
 into the arena; only the rebuild is gone.

@@ -72,6 +72,10 @@
 #if defined(PLATFORM_PSP) && defined(PSP_CALL_PROBE)
     unsigned long long rlpspProbeDrawMeshUs;
     unsigned long long rlpspProbeDriverUs;
+    // P10-S26 T4: the merge path bypasses DrawMesh's per-object part, so it needs its own
+    // pair: the expansion (pspMergeBuild) and the flush (state + driver copy + draw).
+    unsigned long long rlpspMergeBuildUs, rlpspMergeFlushUs;
+    static unsigned int rlpspMergeProbeCount;
     unsigned long long rlpspProbeStateUs;     // texture enable + pointer setup (T4a's target)
 
     // Sprint 091 T1: the counters existed from 078 but nothing printed them, so the split
@@ -1835,7 +1839,7 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
 #endif
 
 #ifndef PSP_MERGE_FAST_NORMAL
-    #define PSP_MERGE_FAST_NORMAL 1
+    #define PSP_MERGE_FAST_NORMAL 0
 #endif
 
     for (int k = 0; k < r->instances; k++)
@@ -1959,7 +1963,14 @@ void rlpspMergeFlush(void)
 
     if ((memcmp(mv, r->view, sizeof(mv)) == 0) && (pspguDrawMergedArrays != NULL))
     {
+#if defined(PSP_CALL_PROBE)
+        SceInt64 _b0 = rlpspProbeNow();
+#endif
         pspMergeBuild(&r->mesh, vc, ic);
+#if defined(PSP_CALL_PROBE)
+        rlpspMergeBuildUs += (unsigned long long)(rlpspProbeNow() - _b0);
+        SceInt64 _f0 = rlpspProbeNow();
+#endif
 
         if (r->tex > 0) rlEnableTexture(r->tex); else rlDisableTexture();
         // glColor4ub, not rlColor4ub: under PSP_BATCH the latter only stores the 2D batch's
@@ -1981,6 +1992,16 @@ void rlpspMergeFlush(void)
 #else
         merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx,
                                        r->instances*vc, pspMergeVerts, PSP_MERGE_CLEAN);
+#endif
+
+#if defined(PSP_CALL_PROBE)
+        rlpspMergeFlushUs += (unsigned long long)(rlpspProbeNow() - _f0);
+        if (++rlpspMergeProbeCount == 200)
+        {
+            TRACELOG(LOG_INFO, "MERGEX build=%.1f us flush=%.1f us per run (n=%u)",
+                     (double)rlpspMergeBuildUs/200.0, (double)rlpspMergeFlushUs/200.0, rlpspMergeProbeCount);
+            rlpspMergeBuildUs = 0; rlpspMergeFlushUs = 0; rlpspMergeProbeCount = 0;
+        }
 #endif
 
         rlDisableStatePointer(GL_VERTEX_ARRAY);
