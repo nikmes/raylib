@@ -2994,7 +2994,7 @@ static void PspMusicDecoderCreate(Music music)
     size_t pcmBytes = decoder->pcmFrames*music.stream.channels*(music.stream.sampleSize/8);
 
     decoder->pcm = (unsigned char *)RL_CALLOC(1, pcmBytes);
-    decoder->thread = sceKernelCreateThread("music_decoder", PspMusicDecoderThread, 0x40, 0x10000, 0, NULL);
+    decoder->thread = sceKernelCreateThread("music_decoder", PspMusicDecoderThread, 0x40, 0x10000, PSP_THREAD_ATTR_VFPU, NULL);
 
     if ((decoder->pcm == NULL) || (decoder->thread < 0))
     {
