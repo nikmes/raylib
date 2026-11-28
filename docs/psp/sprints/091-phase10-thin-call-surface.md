@@ -143,14 +143,33 @@ roughly half and half: the driver is 42 %, not a footnote.
 ~24 µs, and the per-call total to ~115 µs. That re-run is the next measurement and it decides whether T2/T3 (matrix
 upload) or T4 (state skip) is worth writing.
 
-### 9.2 What that predicts
+### 9.2 The same run with the hint on (`PSPGU_CLEAN_HINT=1`)
 
-- With the hint on: cull 23 + driver ~24 + surface ~55 ≈ 102 µs/call of work, i.e. the surface becomes the largest
-  single block and T4 is the right target.
-- The driver's remaining ~24 µs is a matrix upload (two 64-byte converts + two `sceGuSetMatrix`) plus emission —
-  T3's territory, and the cull already has the numbers to compose it, which is why T3 is not free.
+| component | hint off | hint on | Δ |
+|---|---|---|---|
+| `DrawMesh` total | 155-158 | 123.0 | **−33** |
+| cull | 23.4 | 24.3 | — |
+| **driver** | **65.0** | **27.7** | **−37** |
+| residual (surface) | 67.5 | 70.9 | — |
 
-### 9.3 Open
+`clean_skips=9800` again (24.5/frame). The driver's drop matches the clip pass plus the per-triangle expansion a
+dirty mesh triggers — that expansion, not the scan, is why the hint was worth 8 ms.
+
+**T1 is answered.** With the hint on, the per-call split is **cull 24 (20 %), driver 28 (22 %), surface 71 (58 %)**.
+Subtracting the instrument (the surface carries the two matrix probe pairs, ~8 µs), the surface is still the largest
+single block at ~60 µs.
+
+### 9.3 What that predicts
+
+- The prediction held: driver ~24 predicted, 27.7 measured; the surface is the largest block.
+- **T4 is the right next task**, but it will not close the gap on its own: pointer/enable skips are worth a few µs,
+  while the surface's bulk is per-draw matrix work (`rlPushMatrix`, a 4×4 `MatrixMultiply` for the bake, and
+  `rlMultMatrixf` through rlgl on a scalar path). That is the "thin entry" the redesign described, and it is larger
+  than T4 as written.
+- The driver's remaining 28 µs is matrix upload (two 64-byte converts + two `sceGuSetMatrix`) plus emission —
+  T3's territory, and the cull already composes `P*V`, which is why T3 is not free.
+
+### 9.4 Open
 
 - Re-run with the hint driver to confirm the 41 µs drop (needs the console).
 - The probe build inflates every figure above; compare arms of the same build, never across.
