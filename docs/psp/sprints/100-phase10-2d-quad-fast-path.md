@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `af9b76b3`; evidence: [099 §2 and §7](099-phase10-third-benchmark.md) |
 | Started / closed | 2026-11-28 (written) |
 | Build number(s) | driver unchanged (`b38`); the arm is `PSP_BATCH_FAST_QUAD=1` in `libraylib.a` |
-| Tasks | 1/7 — T1 done: the 3.5 µs splits **1.4 raylib body / 2.2 seam staging**, and the instrument defect that hid it is fixed |
+| Tasks | 1/5 — T1 done: the 3.5 µs splits **1.4 raylib body / 2.2 seam staging**, and the instrument defect that hid it is fixed |
 
 ## 0. Handover
 
