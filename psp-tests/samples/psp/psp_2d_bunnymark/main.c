@@ -21,6 +21,9 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#if (MODE == 5)
+#include "rlgl.h"     // the seam itself: same rlpsp state (defined once in rcore_psp.c)
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -152,7 +155,20 @@ int main(void)
                 float y = fmodf(by[i] + bvy[i]*t, 304.0f) - 16.0f;
                 Color tint = { bc[i][0], bc[i][1], bc[i][2], 255 };
 
-#if (MODE == 0)
+#if (MODE == 5)
+                // The exact sequence DrawTexturePro emits, issued here so the seam runs without
+                // raylib's per-sprite body (cull test, corner maths, source/dest handling).
+                // Same state, same vertices: the difference from MODE 1 is raylib's own work.
+                rlSetTexture(tex.id);
+                rlBegin(RL_QUADS);
+                rlColor4ub(bc[i][0], bc[i][1], bc[i][2], 255);
+                rlTexCoord2f(0.0f, 0.0f);           rlVertex2f(x, y);
+                rlTexCoord2f(0.0f, 1.0f);           rlVertex2f(x, y + SCALE);
+                rlTexCoord2f(1.0f, 1.0f);           rlVertex2f(x + SCALE, y + SCALE);
+                rlTexCoord2f(1.0f, 0.0f);           rlVertex2f(x + SCALE, y);
+                rlEnd();
+                rlSetTexture(0);
+#elif (MODE == 0)
                 // Untextured: the PSPRuntime doc's mode 0. If this is much faster than mode 1,
                 // the cost is the texture fetch, not the primitive or the batcher.
                 DrawRectanglePro((Rectangle){ x, y, SCALE, SCALE }, (Vector2){ 0, 0 }, 0.0f, tint);

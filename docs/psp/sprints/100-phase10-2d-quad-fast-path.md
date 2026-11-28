@@ -80,7 +80,7 @@ says where the cycles went.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Attribute, without a core edit.** Three arms at 7,000 sprites: `PSP_CULL=0` build; a benchmark arm that emits the quad through the seam; the existing prebuilt arm. Two runs each | `doing` | the 3.2 µs is allocated to one of the four candidates with numbers, or declared unattributable and the sprint stops | **cull block: 45.4 → 43.7 ms work (two runs, 43.686/43.689)**, i.e. **0.24 of the 3.2 µs per sprite** is the per-sprite `rlGetActiveFramebuffer()` test. Not the cost. The seam-emitted arm is the remaining discriminator |
+| T1 | **Attribute, without a core edit.** Three arms at 7,000 sprites: `PSP_CULL=0` build; a benchmark arm that emits the quad through the seam; the existing prebuilt arm. Two runs each | `doing` | the 3.2 µs is allocated to one of the four candidates with numbers, or declared unattributable and the sprint stops | **cull block: 45.4 → 43.7 ms work (two runs, 43.686/43.689)**, i.e. **0.24 of the 3.2 µs per sprite** is the per-sprite `rlGetActiveFramebuffer()` test — not the cost. The seam arm (MODE 5) came back **slower**, 79.9 ms, so it is not a valid discriminator as built; see §T1 (partial) |
 | T2 | **Take the lever T1 named** — `rlgl.h` framebuffer cache, or the guarded `rlpspDrawQuad`, or the two-vertex staging change | `todo` | the change is inside the stated budget; the arm it targets is named | — |
 | T3 | **Measure.** 7,000 sprites, two runs; the 2D showcase unchanged (it is fill-bound) | `todo` | **≤32 ms** at 7,000 from 45.4, or dropped with the number | — |
 | T4 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, one benchmark capture | `todo` | exact | — |
@@ -121,9 +121,15 @@ The per-sprite `rlGetActiveFramebuffer()` test costs 1.7 ms per frame — real, 
 3.2 µs. Caching it remains a cheap separate win for any 2D scene with many small quads, and it needs no core behaviour
 change (the value only moves on `BeginTextureMode`).
 
-What that leaves is raylib's own per-sprite body versus the seam's staging. The discriminator is one more benchmark arm
-(the same quad emitted through the seam); until it runs, this sprint is **not** implementation-ready and the guarded
-core call site is not taken on an assumption.
+What that leaves is raylib's own per-sprite body versus the seam's staging. The obvious discriminator — issue the same
+quad through the seam from the demo (MODE 5) — **failed as an instrument**: 79.9 ms against 45.4 for raylib's own call,
+with the same draws, binds and vertex count. A slower arm cannot separate "raylib costs X" from "the seam costs Y"; the
+likely cause is code generation in the demo's single large loop (four inlined vertex expansions, external `rlpsp`), not
+the library's path. The arm needs a `noinline` helper to be comparable, or the per-sprite cost needs a call-level
+counter inside `DrawTexturePro` using the existing probe scaffolding.
+
+Until one of those runs, this sprint is **not** implementation-ready and the guarded core call site is not taken on an
+assumption.
 
 ## 9. References
 
