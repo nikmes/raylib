@@ -13,6 +13,9 @@
 # binds and submitted vertices. Two runs per point; the script warns if they disagree by
 # more than --tolerance (default 2 %).
 #
+# --samples "a b" runs a different set (default: the pair). The third benchmark,
+# psp_2d_bunnymark, is a fixed-count sprite scene; see sprint 099.
+#
 # --port selects the console (default 10000, pspsh's default). Two consoles on one PC each
 # have their own usbhostfs_pc on their own base port; HOSTFS must be that instance's root.
 #
@@ -47,6 +50,7 @@ MERGE=1
 VSYNC=1
 
 SAMPLES="psp_showcase psp_2d_showcase"
+SAMPLES_OPT=""
 
 usage() {
     sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
@@ -65,6 +69,7 @@ while [ $# -gt 0 ]; do
         --merge)      MERGE=${2:-1}; shift 2 ;;
         --vsync)      VSYNC=${2:-1}; shift 2 ;;
         --port)       PORT=${2:-}; shift 2 ;;
+        --samples)    SAMPLES_OPT=${2:-}; shift 2 ;;
         --rebuild)    REBUILD=1; shift ;;
         --keep-driver) KEEP_DRIVER=1; shift ;;
         -h|--help)    usage ;;
@@ -81,6 +86,8 @@ command -v pspsh >/dev/null || { echo "pspsh not on PATH" >&2; exit 1; }
 pgrep -af usbhostfs_pc | grep -q -- "-b $PORT\b" \
     || { echo "no usbhostfs_pc serving port $PORT (instances: $(pgrep -a usbhostfs_pc | tr '\n' ' '))" >&2; exit 1; }
 [ -d "$HOSTFS" ] || { echo "missing host filesystem root $HOSTFS" >&2; exit 1; }
+
+[ -n "$SAMPLES_OPT" ] && SAMPLES="$SAMPLES_OPT"
 
 case "$DRIVER" in pspgu|pspgl) ;; *) echo "--driver must be pspgu or pspgl" >&2; exit 2 ;; esac
 
@@ -201,8 +208,10 @@ echo "  vsync    : $VSYNC (1 = adoption, 0 = attribution; never compare across)"
 BODY=""
 for s in $SAMPLES; do
     case "$s" in
-        psp_showcase)    FRAMES=400 ;;
-        psp_2d_showcase) FRAMES=300 ;;
+        psp_showcase)     FRAMES=400 ;;
+        psp_2d_showcase)  FRAMES=300 ;;
+        psp_2d_bunnymark) FRAMES=200 ;;
+        *)                FRAMES=200 ;;
     esac
     echo "  running  : $s ($FRAMES frames)"
     j=$(run_sample "$s" "$FRAMES") || exit 1

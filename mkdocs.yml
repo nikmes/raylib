@@ -150,6 +150,7 @@ nav:
               - P10-S26 — Merge-path economy: psp/sprints/096-phase10-merge-path-economy.md
               - P10-S27 — The 078 regression, bisected and withdrawn: psp/sprints/097-phase10-078-regression-bisect.md
               - P10-S28 — The merged-run copy: psp/sprints/098-phase10-merged-copy-removal.md
+              - P10-S29 — The third benchmark, 7,000 sprites: psp/sprints/099-phase10-third-benchmark.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
