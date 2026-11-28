@@ -4,10 +4,10 @@
 |---|---|
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S21 |
-| Branch / base commit | `master` @ `fe1171fe` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
+| Branch / base commit | `master` @ `6a03bce9` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | driver `b38` only if adopted; the arms are `PSPGU_MATRIX_EPOCH=1`, `PSPGU_STATE_SKIP=1` |
-| Tasks | 0/6 |
+| Tasks | 0/6 — T3 reframed and T4 promoted by the readiness review (§4b) |
 
 ## 0. Handover
 
@@ -38,6 +38,33 @@ draw; skipping unchanged texture/pointer/colour setup.
 **Out:** vertex production (S22), submission, 2D, desktop paths (the code must not change behaviour when
 `PLATFORM_PSP` is absent).
 
+## 4b. Readiness review (2026-11-28)
+
+Reviewed against `master @ 6a03bce9`, after 090 and 092 measured the per-object path at **~139 µs/cube** (GRID=14,
+`PSP_MERGE_DRAWS=0`) and showed that removing per-frame vertex packing bought only 0.8 ms. The surface is confirmed
+as the target; three details change how to attack it.
+
+1. **T3's premise is wrong twice.** "Reuse the cull's MVP for the draw" fails because (a) the GE lights with the
+   **model** matrix — its inverse-transpose — so a projection-inclusive MVP cannot stand in for `GU_MODEL`; and
+   (b) GL 1.1 exposes only `GL_MODELVIEW`, so the driver never has `V` and `M` apart and cannot hand the GE a view
+   and a model to compose. The cull's `MVP` is usable for the cull and nothing else. T3 is reframed to "skip a
+   redundant matrix upload when the composed modelview is unchanged", which only helps identical transforms and
+   may be dropped at T1.
+2. **T2 is smaller than it reads.** The cull already caches `P*V` by value (`pspCullPVValid`, two 64-byte `memcmp`s,
+   `rmodels.c:1554-1559`). An epoch would replace two memcmps with one integer compare — real, but micro. Keep it
+   only if T1's profile names it.
+3. **T4 is the item with weight.** The showcase draws **one** cube mesh 196 times per frame, and every draw re-issues
+   three `glEnableClientState` + three `gl*Pointer` + colour + texture enable. Skipping the pointer/state block when
+   the mesh and colour are unchanged is the largest removable piece the profile is likely to find. T4 is promoted
+   to the first implementation task after T1.
+
+**Base numbers.** The sprint's "−10–20 µs/cube" was written against a 180 µs/cube estimate. The measured figure is
+139 µs, so the top of that range is ~14 %; T1 sets the target from the profile rather than the estimate, and T5's
+adoption bar stays "beats the control by >0.05 ms with 0 diff".
+
+**Benchmark discipline** carries over from 090: run below a vblank step, report `work` beside `avg`, and keep the
+`clean_skips`-style counter so a skipped block is visible as skipped rather than assumed.
+
 ## 4. Preconditions
 
 - [x] `PSP_MATRIX_PROBE` and `PSP_CALL_PROBE` counters exist (078)
@@ -50,9 +77,9 @@ draw; skipping unchanged texture/pointer/colour setup.
 |---|---|---|---|---|
 | T1 | **Instrument the surface.** Per-line cost at N=500: matrix push/mult, pointer setup, colour, texture enable, driver upload | `todo` | the lines sum to the measured delta ±10 % | — |
 | T2 | **Matrix epoch.** rlgl keeps a revision counter bumped on every matrix change; the cull and the draw both read it | `todo` | no stale matrix in any gate; `PSP_MATRIX_PROBE` cull ≤8 µs | — |
-| T3 | **Cached MVP.** The cull stores the composed MVP keyed by the epoch; the draw reuses it instead of composing again | `todo` | one compose per draw, not two; identical matrix in the log | — |
-| T4 | **State skip.** Skip `rlEnableTexture`/pointer/colour when unchanged since the previous draw | `todo` | no missed state change in the gates; counters report skips | — |
-| T5 | **A/B + gates.** N=400/500/800, two runs; full pixel table | `todo` | slope falls by the measured surface cost; 0 diff | — |
+| T3 | **Matrix upload skip.** Skip `pspguUploadMatrices` when the composed modelview is unchanged since the last draw (identical transforms only; see §4b 1 — the cull's MVP cannot feed the draw) | `todo` | no stale matrix in any gate; the counter reports how often it fires | — |
+| T4 | **State skip (promoted, §4b 3).** Skip `glEnableClientState`/`gl*Pointer`/`rlEnableTexture`/colour when the mesh and colour are unchanged since the previous draw | `todo` | no missed state change in the gates; counters report skips; measured on the 196-cube scene where one mesh repeats | — |
+| T5 | **A/B + gates.** Below a vblank step and at GRID=20 for the step distance, two runs; report `work`; full pixel table | `todo` | slope falls by the measured surface cost; 0 diff | — |
 | T6 | **Close.** Adopt or drop with the number | `todo` | default state explicit | — |
 
 ## 6. Design notes
