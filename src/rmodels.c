@@ -1389,8 +1389,11 @@ static int pspGeCount = 0;
 
 // P10-S22: the bake was keyed by vboId, so a procedural mesh - never uploaded, which is
 // what the showcase and most DrawMesh callers use - never got one. The key is the uploaded
-// array when there is one, else the vertex array itself. A mesh whose vertices are rewritten
-// in place invalidates this, exactly as it invalidates the merge bounds cache.
+// array when there is one, else the vertex array itself.
+// In-place vertex mutation is unsupported on this path: the bake, like the merge bounds
+// cache, is computed once and never re-validated. UpdateMeshBuffer() is the one sanctioned
+// route and now drops both entries, so a caller that goes through it is safe; a caller that
+// writes mesh.vertices directly is not, and must call UnloadMesh() instead.
 static unsigned int *pspGeKey(Mesh *mesh)
 {
     if (mesh == NULL) return NULL;
@@ -2270,6 +2273,15 @@ void UploadMesh(Mesh *mesh, bool dynamic)
 void UpdateMeshBuffer(Mesh mesh, int index, const void *data, int dataSize, int offset)
 {
     rlUpdateVertexBuffer(mesh.vboId[index], data, dataSize, offset);
+
+#if defined(PLATFORM_PSP) && defined(GRAPHICS_API_OPENGL_11)
+    // P10-S26 T4: the bake and the merge bounds are keyed by the mesh and computed once, so
+    // an update through any index leaves both stale. rlUpdateVertexBuffer is a no-op on
+    // GL 1.1, so the caller's own copy may already have changed under us; drop them and the
+    // next draw re-bakes from the current arrays.
+    pspGeRemove(pspGeKey(&mesh));
+    pspGeRemoveBounds(mesh.vboId);
+#endif
 }
 
 // Draw a 3d mesh with material and transform

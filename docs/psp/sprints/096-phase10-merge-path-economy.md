@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S26 |
 | Branch / base commit | `master` @ `33e7f18f` — decision: [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) |
-| Started / closed | 2026-11-28 (written) / — |
+| Started / closed | 2026-11-28 (written) / 2026-11-28 (closed) |
 | Build number(s) | pspgu `b38` only if a driver change is adopted; the index cache is a driver + raylib change |
-| Tasks | 3/6 — T1, T2a done; T4 measured and dropped; T2b/T3/T5/T6 open |
+| Tasks | 5/6 — T1, T2 (a), T4, T5, T6 done; T2b/T3 deferred to the ceiling sprint |
 
 ## 0. Handover
 
@@ -58,11 +58,11 @@ attribution names one (T4); gates and pair (T5); close (T6).
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
 | T1 | **The last breakdown.** One probe run splitting the ~48 µs of unexplained per-object surface (pointer/state, push/pop, texture enable, DrawMesh bookkeeping). No code change unless a counter is missing | `done` | the 48 µs is allocated or declared unallocatable; **≥30 µs removable ⇒ stop the merge-first decision and re-open the thin entry** | §9.1: `state` 14.5 µs (≈10.6 real), below the bar; merge-first stands |
-| T2 | **Index-run cache.** Cache a run's indices in a persistent pool keyed by `(pointer, count, first)`, written back once; a key change is a miss; the pool never overwrites a block whose list is in flight | `todo` | copies/frame fall; the 3D showcase keeps correct pixels; hit/miss counters; `arenaOverflows=0` | — |
+| T2 | **Index-run cache.** Cache a run's indices in a persistent pool keyed by `(pointer, count, first)`, written back once; a key change is a miss; the pool never overwrites a block whose list is in flight | `done` (T2a); T2b deferred | copies/frame fall; the 3D showcase keeps correct pixels; hit/miss counters; `arenaOverflows=0` | §9.2: the raylib-side reuse is on by default and fires — `PSP: merged index run reused 400 frames in a row (ic=36)`. The *persistent driver-side* copy (T2b) is deferred to the ceiling sprint with the copy removal (§9.6). Its pair value is **not reproducible across sessions**: §9.7 |
 | T3 | **Static-mesh strips.** Stripify at load for meshes flagged static (not the merge path), draw `GU_TRIANGLE_STRIP`, and measure against the list on a mesh-heavy scene | `todo` | 0 diff; strip vertex count and GE time reported; if it cannot be used by the merge path, say so and record the ceiling | — |
 | T4 | **Expansion attribution.** Probe the merge expansion line by line (transform, pack, arena copy, index rebase) and improve the largest line only if one dominates | `dropped` | attribution sums to the measured expansion ±10 %; one measured change or none | §9.3: the normal `sqrtf` is not the cost — GRID=8 work 6.147 → 6.251, and the GRID=20 win was a split artifact |
-| T5 | **Gates + pair.** Full pixel table, the pair below a vblank step, two runs per point | `todo` | 613 / 284 / 0 / 0 / clip; `work` reported; no regression | — |
-| T6 | **Close.** Adopt or drop each item with its number; state the per-object path's status | `todo` | one paragraph per item; driver state explicit | — |
+| T5 | **Gates + pair.** Full pixel table, the pair below a vblank step, two runs per point | `done` | 613 / 284 / 0 / 0 / clip; `work` reported; no regression | 2026-11-28, shipped build: `batch_check` **613**, `basic_shapes` **284**, checksum `86b1e3c2 / c4b13eb4 / 670d502c` (stable, and invariant with 092 T4 absent). 2D **33.799 ms** (work 20.241), unchanged. 3D **49.980 ms** (work 33.639) — the frame landed on the third vblank period; §9.7 explains why that is not a regression and not an adoption signal |
+| T6 | **Close.** Adopt or drop each item with its number; state the per-object path's status | `done` | one paragraph per item; driver state explicit | T1 done (merge-first stands), T2a adopted and firing, T4 dropped, T2b/T3 deferred to the ceiling sprint, T5 gated. No default change. The per-object path stays parked at ~95 µs/call against ~55 µs/cube |
 
 ## 6. Design notes
 
@@ -183,6 +183,30 @@ to frame-indexed (`t = frames/60`) and prints the hash at frames 60/120/240.
 
 Deterministic across runs, so it is a gate: any change that scrambles indices or reuses a buffer too early moves it.
 
+**Correction, 2026-11-28 (092 T4).** Those values were deterministic only because both runs drew the same FPS digit.
+The frame the gate hashes contains the HUD line `DrawText(TextFormat("%d fps", GetFPS()), ...)` — a *measured* number.
+A no-op change (092 T4, which nothing in the tree calls) shifted frame time by microseconds, the digit changed, and
+all three hashes moved to `24a74236/c4b57d40/64960f58`. Capturing both builds at a fixed frame and diffing the raw
+images localised it exactly: **12 differing pixels, all inside that one glyph** (x 20–23, y 43–49), 0 elsewhere.
+
+The checksum arm now draws `"checksum build"` instead, and the gate is invariant under a code-size change:
+
+| build | frame 60 | 120 | 240 |
+|---|---|---|---|
+| new baseline, run 1 | `86b1e3c2` | `c4b13eb4` | `670d502c` |
+| new baseline, run 2 | `86b1e3c2` | `c4b13eb4` | `670d502c` |
+| same scene, 092 T4 absent | `86b1e3c2` | `c4b13eb4` | `670d502c` |
+
+The old triple is retired. Two further instrument notes, both measured today:
+
+- **The hash is all-or-nothing.** FNV over 130,560 pixels means one changed pixel rewrites it, so the hash answers
+  "identical or not", never "how much". When it moves, capture both arms at a fixed frame (`CHECKSUM=1 FRAMES=241`,
+  then `scrshot`) and count pixels — that is what found this.
+- **`lib_hash` in `bench/results/*.json` is a build identity, not a content identity.** `psp-ar` writes member
+  timestamps, so three clean builds of identical sources produced three hashes (`e3168c2f`, `d6edc865`, `4e3bc117`).
+  Two builds can be compared only by their recorded git revision plus the driver content hash; the library hash
+  distinguishes *runs of the same install*.
+
 ### 9.6 The copy removal does not move the frame — re-prioritised
 
 The four-buffer direct merge (hand the vertices to the driver, skip the 460 KiB copy) would remove ~4.3 ms of work:
@@ -225,6 +249,37 @@ matches *and* the run has not grown, so the reused prefix is byte-identical — 
 That is weaker than a pixel gate and must be stated as such. The gate this sprint needs is a **frozen-frame** scene
 (the `batch_check` pattern: two identical final frames) or `scene_3d SCENE=both`, not a capture of a running demo.
 
+### 9.7 The pair at GRID=20 is bistable — T2a's value cannot be re-read (2026-11-28)
+
+Closing the sprint with 092 T4 in the library produced a 3D pair of **49.98 ms**, not the 33.44 recorded in §9.2. It is
+not a regression, and it is not an adoption signal either. Same staged binary, run twice, reset between:
+
+| arm | run 1 | run 2 | work | swap |
+|---|---|---|---|---|
+| shipped (reuse on) | 50.000 | 49.875 | 33.63 / 33.65 | 16.37 / 16.23 |
+| `PSP_MERGE_IDX_REUSE=0` | 41.242 | 41.242 | 32.82 / 32.82 | 8.42 / 8.42 |
+| shipped, free-running (`--vsync 0`) | 35.919 | — | 35.74 | 0.19 |
+
+Three facts in that table:
+
+1. **The CPU work did not grow.** Free-running is 35.9 ms, and the two vsync arms differ in `work` by 0.8 ms — a
+   difference of two quantised values, i.e. the artefact §9.6 renamed. What changed is *which vblank period* the
+   frame lands on: 50.0 = three periods, 41.2 = two and a half.
+2. **Reuse on is currently the worse arm, and 096 §9.2 measured the opposite** (on 33.441/33.443, off 40.366/40.531).
+   Both arms in that A/B were stable; both arms here are stable; they disagree. A 9 ms swing between sessions with
+   no code difference is the step, not the change.
+3. **`psp-ar` stamps are why "same build" is hard to pin down.** Three clean builds of identical sources produced
+   three `lib_hash` values today (`e3168c2f`, `d6edc865`, `4e3bc117`, `84719b8c`), so a recorded hash proves an
+   install, not a content.
+
+The decision this sprint cannot make — whether reuse-on stays the default — is moved to the ceiling sprint, which
+uses a step-free metric (the last cube count that holds 30 fps). Until then the default stays as adopted: the
+mechanism is sound, the reuse is proven alive by its log line, and flipping a default on a bistable pair would be
+chasing the instrument.
+
+Recipe consequences, written into `docs/psp/recipes/benchmarking.md`: interleave the arms inside one session, report
+the swap wait per run, and decide sub-period gains with free-running time or a ceiling count.
+
 ### 9.1 T1 — the last breakdown (`done`)
 
 One probe run, GRID=14, merge off, hint on, with a new `state=` leg (texture enable + the three pointer setups):
@@ -252,10 +307,14 @@ merging. It stays parked with this number, not pursued.
 
 ## 10. Follow-ups
 
+- **The ceiling sweep decides T2a and T2b.** Last cube count at 30 fps and at 60 fps, one layout, checksum at 0 diff
+  (the sprint that measures the 460 KiB copy removal). It is the step-free metric the pair cannot provide (§9.7).
 - If T1 reverses the decision, 091 T4a and the thin entry resume and this sprint's items still stand.
 - If strips cannot serve the merge path, the GE-side lever for merged content is closed and only the CPU expansion
   remains.
 - The index cache, once proven, should be documented in the A/B recipe as the example of a lifetime-safe cache.
+- **The 3D demo needs a size that is not on a step** before anyone quotes its `avg` again. GRID=20 has read 33.44,
+  40.4, 41.2, 41.9 and 50.0 for the same work; a smaller grid (below one period) or the ceiling count is the fix.
 
 ## 11. References
 

@@ -127,7 +127,15 @@ int main(void)
             DrawRectangleLines(8, 8, 212, 62, (Color){ 90, 140, 210, 255 });
             DrawText("PSP-1000  GE  pspgu", 14, 14, 10, (Color){ 150, 190, 240, 255 });
             DrawText(TextFormat("%d cubes merged", COLS*ROWS), 14, 28, 10, RAYWHITE);
+#if defined(SHOWCASE_CHECKSUM)
+            // The hash gate must not hash a measured number: GetFPS() is a timing result, and a
+            // build that merely changes code size moves the digit, which rewrites the whole FNV
+            // hash. Measured in P10-S26: a no-op library change moved exactly the 12 glyph pixels
+            // of this line and nothing else, and the three hashes all changed.
+            DrawText("checksum build", 14, 42, 10, (Color){ 120, 220, 160, 255 });
+#else
             DrawText(TextFormat("%d fps", GetFPS()), 14, 42, 10, (Color){ 120, 220, 160, 255 });
+#endif
 
             BeginMode3D(cam);
 

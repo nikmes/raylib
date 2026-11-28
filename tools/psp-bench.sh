@@ -13,6 +13,9 @@
 # binds and submitted vertices. Two runs per point; the script warns if they disagree by
 # more than --tolerance (default 2 %).
 #
+# --port selects the console (default 10000, pspsh's default). Two consoles on one PC each
+# have their own usbhostfs_pc on their own base port; HOSTFS must be that instance's root.
+#
 # It does not guess the configuration. --rebuild rebuilds and installs libraylib.a with
 # --batch / --merge; without it the installed library is used and its hash is recorded.
 # The driver is switched with tools/pspgu-build.sh and restored to pspGL at the end unless
@@ -28,6 +31,9 @@ export PSPDEV=${PSPDEV:-/home/psp/pspdev}
 export PATH=$PSPDEV/bin:$PATH
 
 HOSTFS=${HOSTFS:-/tmp/s3}
+# Two consoles can share one PC, each with its own usbhostfs_pc on its own base port, so the
+# port is a run parameter: pspsh's default is 10000, which may belong to the other console.
+PORT=${PORT:-10000}
 OUTDIR=${OUTDIR:-$ROOT/psp-tests/bench/results}
 LABEL=""
 DRIVER="pspgu"
@@ -58,6 +64,7 @@ while [ $# -gt 0 ]; do
         --batch)      BATCH=${2:-1}; shift 2 ;;
         --merge)      MERGE=${2:-1}; shift 2 ;;
         --vsync)      VSYNC=${2:-1}; shift 2 ;;
+        --port)       PORT=${2:-}; shift 2 ;;
         --rebuild)    REBUILD=1; shift ;;
         --keep-driver) KEEP_DRIVER=1; shift ;;
         -h|--help)    usage ;;
@@ -71,7 +78,8 @@ if [ "${PSP_DEVICE_APPROVED:-0}" != "1" ]; then
 fi
 
 command -v pspsh >/dev/null || { echo "pspsh not on PATH" >&2; exit 1; }
-pgrep -x usbhostfs_pc >/dev/null || { echo "usbhostfs_pc is not running rooted at $HOSTFS" >&2; exit 1; }
+pgrep -af usbhostfs_pc | grep -q -- "-b $PORT\b" \
+    || { echo "no usbhostfs_pc serving port $PORT (instances: $(pgrep -a usbhostfs_pc | tr '\n' ' '))" >&2; exit 1; }
 [ -d "$HOSTFS" ] || { echo "missing host filesystem root $HOSTFS" >&2; exit 1; }
 
 case "$DRIVER" in pspgu|pspgl) ;; *) echo "--driver must be pspgu or pspgl" >&2; exit 2 ;; esac
@@ -124,9 +132,9 @@ run_sample() {
     local prev_avg=""
 
     for r in $(seq 1 "$RUNS"); do
-        timeout 20 pspsh -e "reset" >/dev/null
+        timeout 20 pspsh -p "$PORT" -e "reset" >/dev/null
         sleep 6
-        log=$( ( printf "./$name.prx\n"; sleep $(( frames/20 + 12 )) ) | timeout $(( frames/20 + 45 )) pspsh 2>&1 )
+        log=$( ( printf "./$name.prx\n"; sleep $(( frames/20 + 12 )) ) | timeout $(( frames/20 + 45 )) pspsh -p "$PORT" 2>&1 )
 
         local a w s f d b v
         a=$(printf '%s\n' "$log" | sed -n 's/.*STAT .*avg=\([0-9.]*\).*/\1/p' | tail -1)
