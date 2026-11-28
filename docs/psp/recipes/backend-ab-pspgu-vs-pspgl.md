@@ -69,6 +69,16 @@ Each one has produced a wrong result here at least once.
    a pspgu-internal A/B.
 7. **Frame times quantise to the vblank.** Values land on ≈16.67, 33.3, 50 ms. Two cells both at the 60 fps cap
    (16.756 vs 16.757, sprint 089) separate nothing. Pick a scene *above* the cap before claiming a difference.
+
+   **A scene just below a step measures the step, not the change.** Measured 2026-11-28 on the upstream merge: the
+   library's CPU work differed by ≤2 % (31.95 → 32.62 ms at 400 cubes) and the average went **33.5 → 40.4 ms
+   (+20 %)**, because the frame crossed the 33.3 ms step and ~40 % of frames took 50 ms instead. The same two
+   libraries at **64 cubes are identical** (16.716 vs 16.718 ms; work 6.30 vs 6.49). At GRID=14 master alternated
+   16.7/33.3 ms while the merge was pinned at 33.3 — a 0.2 ms difference deciding every frame.
+
+   So: for an A/B decision, run the scene **well below** the next step, or compare `work` (unquantised) rather than
+   `avg`. A ceiling sweep (last N at 60 fps) is a step measurement and is fine; an A/B at a fixed N near a step is
+   not. If `swap` jumps by ~16 ms while `work` moves by <1 ms, you are looking at the cliff, not at a regression.
 8. **List overflow is silent.** `sceGuGetMemory` and the list have no bounds check; an overrun writes past the
    buffer and the GE executes garbage. *Symptom:* a hang, a garbled frame, or a missing `STAT` line. *Fix:* grep the
    log for `LIST OVERFLOW` before blaming the hardware, and size command headroom from a measurement, not a guess

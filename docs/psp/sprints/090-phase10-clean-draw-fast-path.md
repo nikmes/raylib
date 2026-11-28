@@ -56,7 +56,7 @@ before anything is concluded.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Matched baseline.** Both engines on the 20×60 layout, 200 frames: work, avg, per-cube slope, 60 fps ceiling | `todo` | numbers on one layout; M3D's 760 either reproduced or explained | — |
+| T1 | **Matched baseline.** Both engines on the 20×60 layout, 200 frames: work, avg, per-cube slope, 60 fps ceiling. Run the A/B **below a vblank step** and report `work` beside `avg` (recipe landmine 7: a scene on a step turns a 2 % work change into 20 % avg) | `todo` | numbers on one layout; M3D's 760 reproduced or explained; the step distance stated for each engine | — |
 | T2 | **Clean hint.** `DrawMesh` passes the classifier's answer to the driver; `clipNeeds` is skipped for that draw when set. Build switch `PSPGU_CLEAN_HINT=1`, default 0 | `todo` | a clean draw emits the same pixels without a scan; a dirty draw still scans | — |
 | T3 | **A/B.** 400, 500 and 800 cubes, two runs each; `PSPGU_NO_CLIP=1` as the control | `todo` | per-cube slope falls ≥20 %; the control shows the scan's share | — |
 | T4 | **Gates.** `scene_3d SCENE=both`, `MESH_SCENE=1`, `batch_check`, RTT, `clip_probe` | `todo` | 0 diff / 613 / 284 / clip as recorded | — |
