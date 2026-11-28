@@ -76,8 +76,10 @@ Each one has produced a wrong result here at least once.
    libraries at **64 cubes are identical** (16.716 vs 16.718 ms; work 6.30 vs 6.49). At GRID=14 master alternated
    16.7/33.3 ms while the merge was pinned at 33.3 — a 0.2 ms difference deciding every frame.
 
-   So: for an A/B decision, run the scene **well below** the next step, or compare `work` (unquantised) rather than
-   `avg`. A ceiling sweep (last N at 60 fps) is a step measurement and is fine; an A/B at a fixed N near a step is
+   So: for an A/B decision, run the scene **well below** the next step, or compare `work` rather than `avg` — and
+   only below the step, because `work = avg − swap` is a difference of two quantised values. Measured 2026-11-28: a
+   rebuilt library showed 0.7 ms more `work` on the 400-cube scene (33.31 vs 32.62) that no code change could
+   explain; the pre-change binary reproduced 32.62 and the post-change 41.78 ms average, both on the same step. A ceiling sweep (last N at 60 fps) is a step measurement and is fine; an A/B at a fixed N near a step is
    not. If `swap` jumps by ~16 ms while `work` moves by <1 ms, you are looking at the cliff, not at a regression.
 8. **List overflow is silent.** `sceGuGetMemory` and the list have no bounds check; an overrun writes past the
    buffer and the GE executes garbage. *Symptom:* a hang, a garbled frame, or a missing `STAT` line. *Fix:* grep the
