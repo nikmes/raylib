@@ -12,6 +12,9 @@
 #   ./tools/psp-lane.sh --lane a run foo.prx 20 # reset, run, wait, print the console output
 #   ./tools/psp-lane.sh --lane a install        # copy src/libraylib.a and the pspgu driver in
 #   ./tools/psp-lane.sh --lane a up|down        # start/stop this lane's usbhostfs_pc
+#   ./tools/psp-lane.sh --lane a lock --purpose "ceiling sweep"
+#   ./tools/psp-lane.sh --lane a status         # who holds it, since when, and why
+#   ./tools/psp-lane.sh --lane a unlock
 #
 # Lanes as configured here:
 #   a  PSP-1000, 32 MB RAM   port 11000  root /home/psp/psp-lanes/p1000  PSPDEV /home/psp/pspdev
@@ -48,17 +51,27 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 while [ $# -gt 0 ]; do
     case "$1" in
         --lane) LANE=${2:-}; shift 2 ;;
-        env|check|run|install|up|down) CMD=$1; shift ;;
+        env|check|run|install|up|down|lock|unlock|status) CMD=$1; shift ;;
         -h|--help) usage ;;
         *) break ;;
     esac
 done
 
+OWNER=${PSP_LANE_OWNER:-${USER:-$(id -un)}}
+PURPOSE=""
 case "$LANE" in
     a|A) NAME=$LANE_A_NAME; PID=$LANE_A_PID; PORT=$LANE_A_PORT; HOSTFS=$LANE_A_ROOT; PSPDEV_LANE=$LANE_A_PSPDEV ;;
     b|B) NAME=$LANE_B_NAME; PID=$LANE_B_PID; PORT=$LANE_B_PORT; HOSTFS=$LANE_B_ROOT; PSPDEV_LANE=$LANE_B_PSPDEV ;;
     *) echo "psp-lane: --lane a|b is required" >&2; exit 2 ;;
 esac
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --purpose) PURPOSE=${2:-}; shift 2 ;;
+        --owner)   OWNER=${2:-};   shift 2 ;;
+        *) break ;;
+    esac
+done
 
 export PSPDEV=$PSPDEV_LANE
 export PATH=$PSPDEV_LANE/bin:$PATH
@@ -75,9 +88,117 @@ need_quiet() {
     fi
 }
 
+
+# ---------------------------------------------------------------------------------------
+# Lane lock. A persistent holder (a subshell holding an flock on the lock file) survives
+# between tool calls and dies with the session that took it; PID + owner + purpose are
+# written beside it so a later client can name the holder instead of guessing.
+# ---------------------------------------------------------------------------------------
+LOCK=/tmp/psp-lane-$PORT
+lock_holder_pid() { [ -f "$LOCK.pid" ] && cat "$LOCK.pid" 2>/dev/null; }
+lock_holder_alive() {
+    local p; p=$(lock_holder_pid)
+    [ -n "$p" ] && kill -0 "$p" 2>/dev/null && tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q psp-lane.sh
+}
+lock_owner() { [ -f "$LOCK.info" ] && cat "$LOCK.info" 2>/dev/null; }
+lock_free() { ! lock_holder_alive && ! flock -n "$LOCK" true 2>/dev/null; }
+
+lock_status() {
+    if lock_holder_alive; then
+        echo "lane $LANE ($NAME): LOCKED by $(lock_owner) since $(stat -c %y "$LOCK.info" 2>/dev/null | cut -c1-19)"
+        echo "purpose  : $(cat "$LOCK.purpose" 2>/dev/null || echo -)"
+        echo "holder   : pid $(lock_holder_pid)"
+        echo "unlock   : PSP_LANE_OWNER=$(lock_owner) ./tools/psp-lane.sh --lane $LANE unlock"
+    elif flock -n "$LOCK" true 2>/dev/null; then
+        rm -f "$LOCK.pid" "$LOCK.info" "$LOCK.purpose"
+        echo "lane $LANE ($NAME): free"
+    else
+        echo "lane $LANE ($NAME): locked by an anonymous holder (no live pid recorded)"
+    fi
+}
+
+lock_take() {
+    if lock_holder_alive; then
+        echo "psp-lane: lane $LANE is locked by $(lock_owner) (pid $(lock_holder_pid)); run: --lane $LANE status" >&2
+        exit 4
+    fi
+    (
+        flock -n 9 || { echo "psp-lane: lost the race for $LOCK" >&2; exit 4; }
+        echo "$OWNER" > "$LOCK.info"
+        printf '%s\n' "$PURPOSE" > "$LOCK.purpose"
+        echo "$BASHPID" > "$LOCK.pid"
+        while :; do sleep 30 9>&-; done
+    ) 9>"$LOCK" &
+    sleep 1
+    if lock_holder_alive; then
+        echo "lane $LANE ($NAME) locked by $OWNER${PURPOSE:+ - $PURPOSE}"
+        echo "remember: ./tools/psp-lane.sh --lane $LANE unlock   (PSP_LANE_OWNER=$OWNER)"
+    else
+        echo "psp-lane: could not take the lock (another holder is alive)" >&2
+        exit 4
+    fi
+}
+
+lock_release() {
+    local p; p=$(lock_holder_pid)
+    if ! lock_holder_alive; then
+        rm -f "$LOCK.pid" "$LOCK.info" "$LOCK.purpose"
+        echo "lane $LANE: already free"
+        return 0
+    fi
+    if [ "$(lock_owner)" != "$OWNER" ] && [ "${PSP_LANE_FORCE_UNLOCK:-0}" != "1" ]; then
+        echo "psp-lane: lane $LANE is held by $(lock_owner), not $OWNER (set PSP_LANE_FORCE_UNLOCK=1 to override)" >&2
+        exit 4
+    fi
+    kill "$p" 2>/dev/null
+    sleep 1
+    kill -9 "$p" 2>/dev/null
+    # A holder's children must not inherit the lock fd, but if one did, take it back here.
+    flock -n "$LOCK" true 2>/dev/null || { fuser -k "$LOCK" >/dev/null 2>&1; sleep 1; }
+    rm -f "$LOCK.pid" "$LOCK.info" "$LOCK.purpose"
+    echo "lane $LANE ($NAME) unlocked"
+}
+
+# A transient run is allowed when the lane is free, or when the caller holds the lock.
+need_lane() {
+    if lock_holder_alive; then
+        if [ "$(lock_owner)" != "$OWNER" ]; then
+            echo "psp-lane: lane $LANE is held by $(lock_owner) (pid $(lock_holder_pid)); status: --lane $LANE status" >&2
+            exit 4
+        fi
+    fi
+}
+
+
+# The holder already provides exclusion; taking a second flock in that case deadlocks against
+# the holder itself (found the hard way). Free lanes get a non-blocking transient flock.
+run_locked() {
+    if lock_holder_alive && [ "$(lock_owner)" = "$OWNER" ]; then
+        bash -c "$1"
+    else
+        flock -n "$LOCK" -c "$1"
+    fi
+}
+
+exec_run() {
+    if lock_holder_alive && [ "$(lock_owner)" = "$OWNER" ]; then
+        exec bash -c "$1"
+    else
+        exec flock -n "$LOCK" -c "$1"
+    fi
+}
+
 case "$CMD" in
     env)
-        echo "export PSPDEV=$PSPDEV_LANE"
+        echo "while [ $# -gt 0 ]; do
+    case "$1" in
+        --purpose) PURPOSE=${2:-}; shift 2 ;;
+        --owner)   OWNER=${2:-};   shift 2 ;;
+        *) break ;;
+    esac
+done
+
+export PSPDEV=$PSPDEV_LANE"
         echo "export PSP_LANE=$LANE"
         echo "export PSP_LANE_NAME=$NAME"
         echo "export PSP_PORT=$PORT"
@@ -100,7 +221,11 @@ case "$CMD" in
         echo -n "libraylib: "; sha256sum "$PSPDEV_LANE/psp/lib/libraylib.a" 2>/dev/null | cut -c1-16 || echo missing
         echo -n "libGL    : "; sha256sum "$PSPDEV_LANE/psp/lib/libGL.a" 2>/dev/null | cut -c1-16 || echo missing
         ;;
+    lock)   lock_take ;;
+    unlock) lock_release ;;
+    status) lock_status ;;
     install)
+        need_lane
         need_quiet
         [ -f "$ROOT/src/libraylib.a" ] || { echo "psp-lane: no src/libraylib.a to install" >&2; exit 1; }
         flock /tmp/psp-lane-$PORT.lock -c \
@@ -112,9 +237,9 @@ case "$CMD" in
         PRX=${1:-}; SLIP=${2:-14}
         [ -n "$PRX" ] || { usage; }
         [ -f "$HOSTFS/$PRX" ] || [ -f "$PRX" ] || { echo "psp-lane: $PRX not found in $HOSTFS" >&2; exit 1; }
+        need_lane
         need_quiet
-        exec flock /tmp/psp-lane-$PORT.lock -c \
-            "timeout 20 pspsh -p $PORT -e reset >/dev/null 2>&1; sleep 9; \
+        exec_run "timeout 20 pspsh -p $PORT -e reset >/dev/null 2>&1; sleep 9; \
              ( printf './$PRX\n'; sleep $SLIP ) | timeout $((SLIP + 30)) pspsh -p $PORT 2>&1"
         ;;
     up)

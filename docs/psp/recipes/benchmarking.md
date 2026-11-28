@@ -50,6 +50,10 @@ eval "$(./tools/psp-lane.sh --lane a env)"
 ./tools/psp-lane.sh --lane a run foo.prx 20
 ```
 
+Long work takes the lane explicitly, so two agents cannot interleave: `status` shows who holds it, `lock --purpose
+"..."` takes it (owner from `PSP_LANE_OWNER`), `run`/`install` refuse while another owner holds it, `unlock` releases.
+A dead holder frees the lane without a timeout.
+
 Measured cost of getting this wrong, on the same binary: work at COUNT=270 read 15.29 ms in one batch and 15.81 in
 another while a sibling session shared the console, and the ceilings read 250/570 against 270/610 — a session-level
 drift larger than any change the pair was built to detect.
