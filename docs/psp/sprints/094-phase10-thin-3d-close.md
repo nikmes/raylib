@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S24 |
 | Branch / base commit | `master` @ `fe1171fe` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / — / 2026-11-28 (closed as a decision) |
 | Build number(s) | final `b38` if the redesign is adopted; otherwise the driver is unchanged |
-| Tasks | 0/4 |
+| Tasks | 0/4 — **closed as a decision** (§9): merge-first, thin path parked |
 
 ## 0. Handover
 
@@ -101,3 +101,28 @@ Pending — no device runs yet.
 - [M3D compared](../phases/10-3d-advanced/m3d-lessons.md) — E6, R7
 - sprints 078, 085 (§9.9 close), 088 (§9.5), 089 (§9.4), 090-093
 - `docs/psp/recipes/backend-ab-pspgu-vs-pspgl.md` — the harness this close uses
+
+## 9. Disposition — the close, as a decision (2026-11-28)
+
+The sprint was written to retire the losing 3D architecture with a matched 60 fps ceiling. That decision no longer
+needed its own measurement:
+
+| path | cost | ceiling after 098 |
+|---|---|---|
+| merged (shipped) | ~55 µs/cube | **290 at 60 fps, 700 at 30 fps** on the PSP-1000 lane |
+| per-object, thinned | ~95 µs/call | parked; 0 pixels differ, so it can be re-enabled from the same library |
+
+**Decision: merge-first.** The merged path stays the default; the thin entry stays compiled and opt-in
+(`PSP_MERGE_DRAWS=0`), so a future scene that is call-bound rather than instance-bound can still use it. No default
+was changed to reach this. The redesign page records it as the outcome of P10-S20..S24.
+
+What replaced the sprint's own tests:
+
+- T1's matched ceiling → 096 §9.9 and 098 §9.2, on the quiet lane, with two runs per point.
+- T2's arena/replay ledger → `MERGEPROBE` run every time (replays=0 at 400 cubes) and 098's pinned path removing the
+  merged run from the arena entirely.
+- T3's gates → run for 098 (613 / 284 / checksum / 0 replays) and unchanged by this close.
+- T4's docs/default → this section, the phase index, and the redesign page.
+
+Arena and replay evidence for the 1,200-instance case is the one item not re-run; 098 §9.5 states why (the merged run
+no longer touches the arena) and what would have to be re-measured if the thin path ever returns.

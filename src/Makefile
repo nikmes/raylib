@@ -597,6 +597,13 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
         CUSTOM_CFLAGS += -DPSP_MERGE_FAST_NORMAL=$(PSP_MERGE_FAST_NORMAL)
     endif
 
+    # P10-S28: draw the merged run from raylib's own buffer (two slots, one per list)
+    # instead of copying it into the driver arena. Adopted 2026-11-28: 60 fps 270 -> 290,
+    # 30 fps 610 -> 660..690, work at 270 15.86 -> 14.55 ms, gates exact. PSP_MERGE_DIRECT=0
+    # rebuilds the copying reference.
+    PSP_MERGE_DIRECT ?= 1
+    CUSTOM_CFLAGS += -DPSP_MERGE_DIRECT=$(PSP_MERGE_DIRECT)
+
     ifdef PSP_CALL_PROBE
         CUSTOM_CFLAGS += -DPSP_CALL_PROBE
     endif

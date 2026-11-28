@@ -145,7 +145,7 @@ make MODE=scene PROBE=0 COUNT=250 FRAMES=200    # PROBE=0 keeps the instrument o
 
 `COUNT` cubes in a 10-wide grid, `STAT` giving min/median/p95/worst and `SPLIT` the work. A point **holds** when the
 median is at the period *and* p95 shows no drops; the ceiling is the last passing count with the next integer failing,
-both stable across two runs. Current shipped baseline (2026-11-28): **250 at 60 fps, 570 at 30 fps**.
+both stable across two runs. Current shipped baseline (2026-11-28, after 098): **290 at 60 fps, 700 at 30 fps** — the copying build before it read 270 / 610.
 
 - One cube at 30 fps is ~57 µs of work, so a change worth less than that cannot be seen here — measure the pair or
   free-running time instead.

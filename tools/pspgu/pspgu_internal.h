@@ -51,7 +51,7 @@
 // Bump when the driver's observable behaviour changes. Printed in the boot line so a
 // stale archive on the device is visible before a measurement is believed; sprint 014
 // lost runs to archives that had not rebuilt.
-#define PSPGU_BUILD "b37"
+#define PSPGU_BUILD "b38"   // P10-S28: pinned merged runs (pspguDrawMergedArraysPinned)
 
 // Sprint 015 T2: per-texture PSM. 8888 is the default and preserves pixel parity;
 // `auto` (make PSP_GU_TEXFMT=auto) picks 16-bit formats where the source permits it.
@@ -350,6 +350,15 @@ int pspguArenaRoom(void);                   // bytes left in the list being fill
 #define PSPGU_MERGED_CLEAN 1u
 int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices,
                           GLsizei vertexCount, const GLvoid *verts, unsigned int flags);
+
+// P10-S28: the merged run drawn from the caller's buffer, for the list whose index is
+// returned by pspguMergeSlot(). No arena allocation and no copy: the buffers are written
+// back and handed to the GE. Refused (counted) when the slot is not the current list.
+int pspguMergeSlot(void);
+int pspguDrawMergedArraysPinned(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                                GLsizei vertexCount, const GLvoid *verts, int slot,
+                                unsigned int flags);
+void pspguMergeSlotStats(unsigned int *calls, unsigned int *mismatches);
 
 // The GE reads vertices and indices straight out of main RAM, through its own path, so
 // anything the CPU wrote has to be written back first. Without this the GE reads stale

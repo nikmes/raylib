@@ -229,6 +229,12 @@ implemented as written.
 
 ## 8. Decision (2026-11-28): merge-first, per-object opt-in
 
+> **Outcome, 2026-11-28 (098).** The decision stands and the merged path got stronger: handing the merge buffer to the
+> driver instead of copying it into the arena moved the 60 fps ceiling from **270 to 290** cubes and the 30 fps ceiling
+> from **610 to 700**, with work at 270 instances falling from 15.81 to 14.55 ms (gates 613 / 284 / checksum, driver
+> `b38`). 093 is closed unexecuted and 094 as a decision — the thin entry stays compiled and opt-in behind
+> `PSP_MERGE_DRAWS=0`, at ~95 µs/call, for a scene that is call-bound rather than instance-bound.
+
 The redesign was written on M3D's evidence that a thin per-object GE-transform draw beats CPU expansion. Three
 sprints later that has not happened, and the arithmetic is now explicit:
 

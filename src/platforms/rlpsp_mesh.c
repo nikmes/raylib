@@ -22,6 +22,8 @@
 #include <pspkernel.h>
 #include <GL/gl.h>
 
+// rlgl.h defines TRACELOG as a no-op, and this file may include it before config.h: use the
+// TraceLog function directly or every instrument here silently disappears (found in 098).
 #include "rlgl.h"
 #include "raymath.h"
 
@@ -226,7 +228,7 @@ int pspGeClassifyMesh(Mesh *mesh, Matrix transform)
         if (!diag)
         {
             diag = 1;
-            TRACELOG(RL_LOG_INFO, "MERGE diag vbo=%p uploadBounds=%d mergeBounds=%d culling=%d",
+            TraceLog(LOG_INFO, "MERGE diag vbo=%p uploadBounds=%d mergeBounds=%d culling=%d",
                      (void *)mesh->vboId, fromUpload, pspMergeBoundsCount, rlpspCulling);
         }
     }
@@ -307,7 +309,7 @@ int pspGeClassifyMesh(Mesh *mesh, Matrix transform)
                 if (diagFails < 3)
                 {
                     diagFails++;
-                    TRACELOG(RL_LOG_INFO, "MERGE fail corner=%d nx=%.6f ny=%.6f nz=%.6f w=%.4f",
+                    TraceLog(LOG_INFO, "MERGE fail corner=%d nx=%.6f ny=%.6f nz=%.6f w=%.4f",
                              i, (w != 0.0f)? x/w : 0.0f, (w != 0.0f)? y/w : 0.0f,
                              (w != 0.0f)? z/w : 0.0f, w);
                 }
@@ -320,7 +322,7 @@ int pspGeClassifyMesh(Mesh *mesh, Matrix transform)
     {
         static unsigned int culled = 0;
         culled++;
-        if ((culled % 1000) == 1) TRACELOG(RL_LOG_INFO, "CULL total=%u", culled);
+        if ((culled % 1000) == 1) TraceLog(LOG_INFO, "CULL total=%u", culled);
         rlpspClassCull++;
         return 0;
     }
@@ -357,6 +359,13 @@ extern int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *
                                  GLsizei vertexCount, const GLvoid *verts,
                                  unsigned int flags) __attribute__((weak));
 extern int pspguArenaRoom(void) __attribute__((weak));
+// P10-S28: draw the run from raylib's own buffer. Absent on pspGL, and on a pspgu too old
+// to have it, so every use is guarded by the pointer being non-NULL.
+extern int pspguMergeSlot(void) __attribute__((weak));
+extern int pspguDrawMergedArraysPinned(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                                       GLsizei vertexCount, const GLvoid *verts, int slot,
+                                       unsigned int flags) __attribute__((weak));
+extern void pspguMergeSlotStats(unsigned int *calls, unsigned int *mismatches) __attribute__((weak));
 
 typedef struct {
     Mesh mesh;
@@ -369,8 +378,23 @@ typedef struct {
 } PspMergeRun;
 
 static PspMergeRun pspMergeRun;
-static unsigned char pspMergeVerts[PSP_MERGE_MAX_VERTS*PSP_MERGE_STRIDE];
-static unsigned short pspMergeIdx[PSP_MERGE_MAX_IDX];
+// P10-S28: one buffer per list the driver may be filling. The slot is the driver's list
+// index, so the buffer being written is one whose previous list has already completed
+// (pspguBeginFrame waits for it). 64-byte aligned: a cache writeback starts on a line.
+#ifndef PSP_MERGE_SLOTS
+    #define PSP_MERGE_SLOTS 2
+#endif
+static unsigned char pspMergeVerts[PSP_MERGE_SLOTS][PSP_MERGE_MAX_VERTS*PSP_MERGE_STRIDE] __attribute__((aligned(64)));
+static unsigned short pspMergeIdx[PSP_MERGE_SLOTS][PSP_MERGE_MAX_IDX] __attribute__((aligned(64)));
+
+static int pspMergeDirectAvailable(void)
+{
+#if defined(PSP_MERGE_DIRECT) && (PSP_MERGE_DIRECT == 1)
+    return (pspguDrawMergedArraysPinned != NULL) && (pspguMergeSlot != NULL);
+#else
+    return 0;
+#endif
+}
 
 static int pspMergeActive(void)
 {
@@ -443,7 +467,8 @@ int pspMergeRoom(Mesh *mesh)
     if (r->instances >= PSP_MERGE_MAX_INST) return 0;
     if (((r->instances + 1)*vc) > PSP_MERGE_MAX_VERTS) return 0;
     if (((r->instances + 1)*ic) > PSP_MERGE_MAX_IDX) return 0;
-    if ((pspguArenaRoom != NULL) && (pspguArenaRoom() < (int)need)) return 0;
+    // The pinned path copies nothing, so the arena wall does not apply to it.
+    if (!pspMergeDirectAvailable() && (pspguArenaRoom != NULL) && (pspguArenaRoom() < (int)need)) return 0;
 
     return 1;
 }
@@ -469,10 +494,10 @@ void pspMergeAppend(Mesh *mesh, Material *material, Matrix transform)
     r->xf[r->instances++] = transform;
 }
 
-static void pspMergeBuild(Mesh *mesh, int vc, int ic)
+static void pspMergeBuild(Mesh *mesh, int vc, int ic, int slot)
 {
     PspMergeRun *r = &pspMergeRun;
-    unsigned char *v = pspMergeVerts;
+    unsigned char *v = pspMergeVerts[slot];
 
     // P10-S26 T2: the merged index run depends only on (ic, vc, mesh->indices) - never on
     // the instance transforms - so a frame whose run key and instance count are unchanged
@@ -482,20 +507,26 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
     #define PSP_MERGE_IDX_REUSE 1
 #endif
 #if PSP_MERGE_IDX_REUSE
-    static int lastIc = -1, lastVc = -1, lastInstances = -1;
-    static const unsigned short *lastSrc = NULL;
-    static unsigned int idxSkips = 0;
+    // P10-S28: per slot. Two slots alternate, so a run key that matched in the other slot
+    // says nothing about this buffer - keying globally would draw stale indices.
+    static int lastIc[PSP_MERGE_SLOTS], lastVc[PSP_MERGE_SLOTS], lastInstances[PSP_MERGE_SLOTS];
+    static const unsigned short *lastSrc[PSP_MERGE_SLOTS];
+    static unsigned int idxSkips[PSP_MERGE_SLOTS];
+    static int inited = 0;
 
-    int rebuildIdx = !((ic == lastIc) && (vc == lastVc) && (mesh->indices == lastSrc) &&
-                       (r->instances <= lastInstances));
+    if (!inited) { for (int i = 0; i < PSP_MERGE_SLOTS; i++) { lastIc[i] = -1; lastVc[i] = -1; lastInstances[i] = -1; } inited = 1; }
+
+    int rebuildIdx = !((ic == lastIc[slot]) && (vc == lastVc[slot]) && (mesh->indices == lastSrc[slot]) &&
+                       (r->instances <= lastInstances[slot]));
 
     if (rebuildIdx)
     {
-        lastIc = ic; lastVc = vc; lastSrc = mesh->indices; lastInstances = r->instances;
+        lastIc[slot] = ic; lastVc[slot] = vc; lastSrc[slot] = mesh->indices; lastInstances[slot] = r->instances;
+        idxSkips[slot] = 0;
     }
-    else if (++idxSkips == 400)
+    else if (++idxSkips[slot] == 400)
     {
-        TRACELOG(LOG_INFO, "PSP: merged index run reused %u frames in a row (ic=%d)", idxSkips, ic);
+        TraceLog(LOG_INFO, "PSP: merged index run reused %u frames in a row (ic=%d slot=%d)", idxSkips[slot], ic, slot);
     }
 #else
     int rebuildIdx = 1;
@@ -566,7 +597,7 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
         }
 
         if (rebuildIdx)
-            for (int j = 0; j < ic; j++) pspMergeIdx[k*ic + j] = (unsigned short)(mesh->indices[j] + k*vc);
+            for (int j = 0; j < ic; j++) pspMergeIdx[slot][k*ic + j] = (unsigned short)(mesh->indices[j] + k*vc);
     }
 }
 
@@ -616,7 +647,7 @@ void rlpspMergeFlush(void)
 #if defined(PSP_MERGE_DIAG)
     {
         static int lg = 0;
-        if (lg < 6) { lg++; TRACELOG(RL_LOG_INFO, "MERGE run colour=%08x instances=%d", r->color, r->instances); }
+        if (lg < 6) { lg++; TraceLog(LOG_INFO, "MERGE run colour=%08x instances=%d", r->color, r->instances); }
     }
 #endif
 
@@ -629,7 +660,15 @@ void rlpspMergeFlush(void)
 #if defined(PSP_CALL_PROBE)
         SceInt64 _b0 = rlpspProbeNow();
 #endif
-        pspMergeBuild(&r->mesh, vc, ic);
+        // P10-S28: build into the list's slot when the pinned entry exists.
+        int slot = 0;
+        int direct = pspMergeDirectAvailable();
+        if (direct)
+        {
+            int s = pspguMergeSlot();
+            if ((s >= 0) && (s < PSP_MERGE_SLOTS)) slot = s; else direct = 0;
+        }
+        pspMergeBuild(&r->mesh, vc, ic, slot);
 #if defined(PSP_CALL_PROBE)
         rlpspMergeBuildUs += (unsigned long long)(rlpspProbeNow() - _b0);
         SceInt64 _f0 = rlpspProbeNow();
@@ -643,25 +682,47 @@ void rlpspMergeFlush(void)
                    (unsigned char)((r->color >> 16) & 0xFF), (unsigned char)((r->color >> 24) & 0xFF));
 
         glEnableClientState(GL_VERTEX_ARRAY);
-        glVertexPointer(3, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 20);
+        glVertexPointer(3, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts[slot] + 20);
         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-        glTexCoordPointer(2, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 0);
+        glTexCoordPointer(2, GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts[slot] + 0);
         glEnableClientState(GL_NORMAL_ARRAY);
-        glNormalPointer(GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts + 8);
+        glNormalPointer(GL_FLOAT, PSP_MERGE_STRIDE, pspMergeVerts[slot] + 8);
 
 #if defined(PSP_MERGE_NO_HINT)
-        merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx,
-                                       r->instances*vc, pspMergeVerts, 0);
+        #define PSP_MERGE_FLAGS 0u
 #else
-        merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx,
-                                       r->instances*vc, pspMergeVerts, PSP_MERGE_CLEAN);
+        #define PSP_MERGE_FLAGS PSP_MERGE_CLEAN
 #endif
+        if (direct)
+        {
+            merged = pspguDrawMergedArraysPinned(GL_TRIANGLES, r->instances*ic, pspMergeIdx[slot],
+                                                 r->instances*vc, pspMergeVerts[slot], slot,
+                                                 PSP_MERGE_FLAGS);
+        }
+        else
+        {
+            merged = pspguDrawMergedArrays(GL_TRIANGLES, r->instances*ic, pspMergeIdx[slot],
+                                           r->instances*vc, pspMergeVerts[slot], PSP_MERGE_FLAGS);
+        }
+        #undef PSP_MERGE_FLAGS
+
+        // P10-S28: the ordering guard. A non-zero count means the build ran into a list the
+        // driver had not started yet, which is the one way this design can be wrong.
+        {
+            static unsigned int flushes = 0;
+            if ((++flushes == 200) && (pspguMergeSlotStats != NULL))
+            {
+                unsigned int calls = 0, mismatches = 0;
+                pspguMergeSlotStats(&calls, &mismatches);
+                TraceLog(LOG_INFO, "MERGEHZ slots=%u mismatches=%u", calls, mismatches);
+            }
+        }
 
 #if defined(PSP_CALL_PROBE)
         rlpspMergeFlushUs += (unsigned long long)(rlpspProbeNow() - _f0);
         if (++rlpspMergeProbeCount == 200)
         {
-            TRACELOG(LOG_INFO, "MERGEX build=%.1f us flush=%.1f us per run (n=%u)",
+            TraceLog(LOG_INFO, "MERGEX build=%.1f us flush=%.1f us per run (n=%u)",
                      (double)rlpspMergeBuildUs/200.0, (double)rlpspMergeFlushUs/200.0, rlpspMergeProbeCount);
             rlpspMergeBuildUs = 0; rlpspMergeFlushUs = 0; rlpspMergeProbeCount = 0;
         }
@@ -754,7 +815,7 @@ void pspGePack(Mesh *mesh, bool dynamic)
     pspGe[pspGeCount].bmin[0] = minx; pspGe[pspGeCount].bmin[1] = miny; pspGe[pspGeCount].bmin[2] = minz;
     pspGe[pspGeCount].bmax[0] = maxx; pspGe[pspGeCount].bmax[1] = maxy; pspGe[pspGeCount].bmax[2] = maxz;
     pspGeCount++;
-    TRACELOG(LOG_INFO, "PSP: baked mesh verts=%d key=%p stride=%u K=%.1f",
+    TraceLog(LOG_INFO, "PSP: baked mesh verts=%d key=%p stride=%u K=%.1f",
              mesh->vertexCount, (void *)pspGe[pspGeCount-1].key, stride, K);
 }
 #endif

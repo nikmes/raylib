@@ -237,3 +237,12 @@ The check is the same gates the sprint required, on the device, after the move:
 
 A move that changed a pixel or stopped the merge would show in either instrument; neither moved. The library hash
 changes, as the sprint predicted — and, per 096 §9.7, that hash identifies an install rather than a content.
+
+### 9.5 One behavioural regression from the move (found by 098)
+
+`rlgl.h` defines `TRACELOG` as `(void)0`, and `platforms/rlpsp_mesh.c` includes `rlgl.h` without `config.h`. Every
+`TRACELOG` in the moved block therefore compiled to nothing — including 096 T2a's "index run reused" line, which had
+worked while the code lived in `rmodels.c` (that file includes `config.h`). Nothing rendered differently, so no gate
+could have caught it; 098 found it because a new log had to appear and did not. Converted to `TraceLog` directly, with
+a comment at the include explaining why. A moved block carries its *instruments* with it, and an instrument that
+compiles to nothing looks exactly like a feature that never fires.

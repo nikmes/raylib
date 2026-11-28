@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
 | Sprint | P10-S23 |
 | Branch / base commit | `master` @ `fe1171fe` — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
-| Started / closed | 2026-11-24 (written) / — |
+| Started / closed | 2026-11-24 (written) / — / 2026-11-28 (closed, withdrawn) |
 | Build number(s) | depends on S22; no new default until the decision |
-| Tasks | 0/6 |
+| Tasks | 0/6 — **closed unexecuted, premise withdrawn** (§9) |
 
 ## 0. Handover
 
@@ -105,3 +105,17 @@ Pending — no device runs yet.
 - [M3D compared](../phases/10-3d-advanced/m3d-lessons.md) — F5, F9, R3
 - sprint 078 (merged runs, the arena wall, `MERGEPROBE`), 085 T2 (s8), 089 (§9.4)
 - `src/rlgl.h` (`PSP_MERGE_DRAWS`), `tools/pspgu/gl_draw.c` (`pspguDrawMergedArrays`)
+
+## 9. Disposition — closed unexecuted, with the decision (2026-11-28)
+
+This sprint existed to answer one question: can a world-space bake make the per-object path competitive with merging?
+The question was answered before it ran, by measurement elsewhere in the phase:
+
+- 091 T4b took the thin per-call cost from 123.0 to **111.0 µs/call**, and 098 T1 put the call surface's remaining
+  removable block at ~10 µs — still ~**95 µs/call** against merging's ~**55 µs/cube**.
+- 092 showed the object-space bake buys 0.8 ms of that 28 ms; the bake was never the lever.
+- 098 then took the merged path's copy out: **60 fps 270 → 290, 30 fps 610 → 700**, work at 270 15.81 → 14.55 ms.
+
+A world-space bake is only worth building if the thin path can win, and on this hardware it does not. Running T1-T6
+would have measured a parked path a third time. Closed with the decision recorded in [094 §9](094-phase10-thin-3d-close.md)
+and in the redesign page: **merge-first, thin entry opt-in.**

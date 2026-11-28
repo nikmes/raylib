@@ -1731,3 +1731,73 @@ int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices
 
     return 1;
 }
+
+// P10-S28: the list this frame is filling. raylib builds its merged run into the slot with
+// this index, which is safe by construction: pspguBeginFrame waited for this list (its own
+// previous run) before it started it, so nothing reads that buffer any more. -1 when no
+// list is current.
+int pspguMergeSlot(void)
+{
+    if (!pspgu.current || (pspgu.listIndex < 0)) return -1;
+
+    return pspgu.listIndex;
+}
+
+// P10-S28: the same run, drawn from the caller's buffer instead of a copy into the arena.
+// The caller must pass the slot pspguMergeSlot() returned for THIS list; a mismatch is
+// counted and refused, and raylib then replays the run through the copying entry.
+static unsigned int mergeSlotCalls, mergeSlotMismatches;
+
+void pspguMergeSlotStats(unsigned int *calls, unsigned int *mismatches)
+{
+    if (calls != NULL) *calls = mergeSlotCalls;
+    if (mismatches != NULL) *mismatches = mergeSlotMismatches;
+}
+
+int pspguDrawMergedArraysPinned(GLenum mode, GLsizei indexCount, const GLvoid *indices,
+                                GLsizei vertexCount, const GLvoid *verts, int slot,
+                                unsigned int flags)
+{
+    unsigned int prim = guPrimitive(mode);
+    unsigned int fmt, drawFmt;
+    PspGuLayout layout;
+    unsigned int vb, ib;
+
+    if (!pspgu.current || (prim != GU_TRIANGLES) || (indexCount <= 0) || (vertexCount <= 0)) return 0;
+    if ((indices == NULL) || (verts == NULL)) return 0;
+    if (!arraysSupported()) return 0;
+
+    mergeSlotCalls++;
+    if (slot != pspgu.listIndex) { mergeSlotMismatches++; return 0; }
+
+    pspguUploadMatrices();
+    fmt = guVertexFormat();
+    vertexLayout(fmt, &layout);
+
+    if ((fmt & GU_COLOR_BITS) || layout.vshort || (layout.stride != 32)) return 0;
+
+#ifndef PSPGU_NO_CLIP
+    if (!(flags & PSPGU_MERGED_CLEAN) &&
+        clipNeeds((const unsigned short *)indices, indexCount, 0))
+    {
+        drawClipped(prim, fmt, indexCount, 0, (const unsigned short *)indices);
+        return 1;
+    }
+#else
+    (void)flags;
+#endif
+
+    vb = (unsigned int)vertexCount*layout.stride;
+    ib = (unsigned int)indexCount*2;
+
+    pspguBeginFrame();
+    // Two separate ranges: raylib's buffers are not the arena's contiguous block.
+    pspguWriteback((const void *)verts, vb);
+    pspguWriteback(indices, ib);
+    applyGlobalColor(fmt);
+
+    drawFmt = fmt | GU_INDEX_16BIT;
+    sceGuDrawArray(prim, drawFmt, indexCount, (void *)indices, (void *)verts);
+
+    return 1;
+}
