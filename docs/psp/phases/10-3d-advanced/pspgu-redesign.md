@@ -227,7 +227,33 @@ driver, and the next redesign belongs there.
 087 should be rewritten as a short closure note (A closed, B deferred with its number, C absorbed) rather than
 implemented as written.
 
-## 8. References
+## 8. Decision (2026-11-28): merge-first, per-object opt-in
+
+The redesign was written on M3D's evidence that a thin per-object GE-transform draw beats CPU expansion. Three
+sprints later that has not happened, and the arithmetic is now explicit:
+
+| path | cost |
+|---|---|
+| merged, shipped default | ~55 µs/cube (32.6 ms work at 400 cubes) |
+| per-object after 090 + 092 + 091 T4b | ~95 µs/call (111 under the probe) |
+| per-object if *all* remaining surface were removed | ~63 µs/call |
+
+M3D does the same content at 19 µs/cube, so the model is right and our call surface is the defect — but closing that
+gap needs a rewrite of `DrawMesh`'s per-call path, not another micro-optimisation, and its ceiling is "competitive
+with merging", not "clearly better".
+
+**Decision:** merging remains the 3D architecture. The per-object work of 090/092/T4b stays in the tree as an
+**opt-in** path (default-off), because it is the only path that can draw content the merge key rejects (varied
+material, no uniform scale, vertex colours).
+
+**Reversal rule.** One measurement remains: a breakdown of the ~48 µs that no counter explains. If **≥30 µs of it is
+removable raylib surface**, a thin-entry sprint could land per-object near 50–60 µs/cube and the decision reverses.
+If not, the redesign is closed with that number.
+
+The next sprint is therefore not S21's continuation but **sprint 096**, on the merge path: the index-run cache
+(0.45 ms/frame, 085 T3b), strips for static meshes (−58 % GE at 0 px, 085 T3), and the merge expansion cost itself.
+
+## 9. References
 
 - [M3D compared](m3d-lessons.md) — the comparison, findings F1–F10, recommendations R1–R7
 - `src/rmodels.c:1447-1620` — the classifier, its guard-band margins, `clean` vs `dirty`

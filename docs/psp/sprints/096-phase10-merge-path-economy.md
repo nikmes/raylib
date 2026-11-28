@@ -1,0 +1,121 @@
+# Sprint 096 (P10-S26) — Merge-path economy: index cache, static strips, expansion cost
+
+| | |
+|---|---|
+| Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) |
+| Sprint | P10-S26 |
+| Branch / base commit | `master` @ `33e7f18f` — decision: [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) |
+| Started / closed | 2026-11-28 (written) / — |
+| Build number(s) | pspgu `b38` only if a driver change is adopted; the index cache is a driver + raylib change |
+| Tasks | 0/6 |
+
+## 0. Handover
+
+The 3D redesign was written on M3D's evidence that a thin per-object draw beats CPU expansion. After 090, 092 and
+091 T4b it has not:
+
+| path | cost |
+|---|---|
+| **merged (shipped default)** | **~55 µs/cube**, 32.6 ms work at 400 cubes |
+| per-object, thinned | ~95 µs/call |
+| per-object with *all* remaining surface removed | ~63 µs/call |
+
+The [decision](../phases/10-3d-advanced/pspgu-redesign.md#8-decision-2026-11-28-merge-first-per-object-opt-in) is
+therefore **merge-first**: merging stays the architecture, the per-object path stays opt-in for content the merge key
+cannot express, and effort moves to the merge path's own costs — all of which already have numbers:
+
+- **index-run copy**: 31 µs per 1,000 indices, 14,400 per frame ≈ **0.45 ms** (085 T3b);
+- **strips for static meshes**: **−1.073 ms GE (−58 %) at 0 px** on a vertex-bound mesh (085 T3a);
+- **merge expansion**: the CPU cost that makes merging 55 µs/cube, never attributed line by line.
+
+## 1. Objective
+
+Reduce the merged path's per-frame CPU and GE cost with three measured items, and settle the last open question of
+the redesign — whether the per-object surface is removable enough to matter — with one run.
+
+## 2. Why now
+
+The shipped frame is the merged one; every per-object win since 090 is latent. This is the first sprint in the phase
+that targets the path the demos actually use.
+
+## 3. Scope
+
+**In:** the surface breakdown that can reverse the decision (T1); the index-run cache (T2); load-time stripification
+for meshes flagged static (T3); a line-by-line attribution of the merge expansion, and one measured improvement if the
+attribution names one (T4); gates and pair (T5); close (T6).
+
+**Out:** further per-object thinning (091 T4a stays open and parked), submission, 2D, offline asset conversion.
+
+## 4. Preconditions
+
+- [x] the decision is recorded and the reversal rule is explicit (redesign §8)
+- [x] `CALLPROBE` reports the split (091 §9.1-9.4)
+- [x] the index-copy cost and the strip win are measured (085 §9.3)
+- [ ] the merge expansion has a probe; T4 builds it before claiming anything
+
+## 5. Tasks
+
+| # | Task | Status | Acceptance | Result |
+|---|---|---|---|---|
+| T1 | **The last breakdown.** One probe run splitting the ~48 µs of unexplained per-object surface (pointer/state, push/pop, texture enable, DrawMesh bookkeeping). No code change unless a counter is missing | `todo` | the 48 µs is allocated or declared unallocatable; **≥30 µs removable ⇒ stop the merge-first decision and re-open the thin entry** | — |
+| T2 | **Index-run cache.** Cache a run's indices in a persistent pool keyed by `(pointer, count, first)`, written back once; a key change is a miss; the pool never overwrites a block whose list is in flight | `todo` | copies/frame fall; the 3D showcase keeps correct pixels; hit/miss counters; `arenaOverflows=0` | — |
+| T3 | **Static-mesh strips.** Stripify at load for meshes flagged static (not the merge path), draw `GU_TRIANGLE_STRIP`, and measure against the list on a mesh-heavy scene | `todo` | 0 diff; strip vertex count and GE time reported; if it cannot be used by the merge path, say so and record the ceiling | — |
+| T4 | **Expansion attribution.** Probe the merge expansion line by line (transform, pack, arena copy, index rebase) and improve the largest line only if one dominates | `todo` | attribution sums to the measured expansion ±10 %; one measured change or none | — |
+| T5 | **Gates + pair.** Full pixel table, the pair below a vblank step, two runs per point | `todo` | 613 / 284 / 0 / 0 / clip; `work` reported; no regression | — |
+| T6 | **Close.** Adopt or drop each item with its number; state the per-object path's status | `todo` | one paragraph per item; driver state explicit | — |
+
+## 6. Design notes
+
+**T1 is a decision task, not an optimisation.** Its only job is to stop the question from being re-litigated. The
+rule is written: ≥30 µs removable reverses the direction; less closes the redesign with that number.
+
+**The index cache's hard part is lifetime, not speed.** A block handed to `sceGuDrawArray` must outlive the list that
+references it. The pool is main RAM and persistent; a block may only be overwritten when no live list references it.
+The two-lists-in-flight rotation gives the rule a concrete test: the same proof 089's cache would have needed.
+
+**Strips and merging are different paths.** The merge path expands instances per frame and cannot use a static strip
+buffer; T3 applies to meshes drawn as themselves. Its value is therefore bounded by how much of a scene is static
+single meshes — measure that before building.
+
+**The expansion is where merging's 55 µs/cube lives.** 14,400 vertices per frame at 400 cubes is ~460 KiB of packed
+output; if one line dominates (transform, pack, or the arena copy), that is the only one worth changing.
+
+**Measurement discipline.** Below a vblank step, `work` beside `avg`, two runs per point, and a counter for every
+skipped block so a dead feature is visible as dead.
+
+## 7. Gates
+
+| gate | expected |
+|---|---|
+| `batch_check` / `basic_shapes` | 613 / 284 |
+| `scene_3d SCENE=both`, `MESH_SCENE`, RTT | 0 diff |
+| `clip_probe` | 237/720 |
+| benchmark pair | below a step; `work` reported; no regression |
+| frame behaviour | `arenaOverflows=0`; index-cache hits reported |
+
+## 8. Exit criteria
+
+- [ ] T1's breakdown exists and the decision is either confirmed or reversed with a number
+- [ ] the index cache is adopted or dropped with the copies/frame it removed
+- [ ] strips are adopted for static meshes with 0 diff, or their ceiling is stated
+- [ ] the expansion attribution sums, and any change is measured
+- [ ] gates green; pair re-run below a step
+- [ ] per-object path's status (opt-in, default-off) is stated at close
+
+## 9. Result
+
+Pending — no device runs yet.
+
+## 10. Follow-ups
+
+- If T1 reverses the decision, 091 T4a and the thin entry resume and this sprint's items still stand.
+- If strips cannot serve the merge path, the GE-side lever for merged content is closed and only the CPU expansion
+  remains.
+- The index cache, once proven, should be documented in the A/B recipe as the example of a lifetime-safe cache.
+
+## 11. References
+
+- [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) — the decision and the reversal rule
+- sprint 085 §9.3 (strips and the index-copy measurement), §9.1 (the split)
+- sprint 091 §9.1-9.4 (the per-call split and T4b), 089 §9.1 (the lifetime proof the cache needs)
+- `tools/pspgu/gl_draw.c:749-793` (index copy sites), `src/rmodels.c` (merge expansion), `tools/pspgu/pspgu_internal.h`
