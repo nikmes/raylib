@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `21bbb3f4`; the `upstream-11-26` merge is written but **unlanded** (device gates pending) — rebase onto it before T1 if it lands first |
 | Started / closed | 2026-11-26 (written) / — |
 | Build number(s) | driver unchanged; `libraylib.a` hash changes (files moved), measurements must not |
-| Tasks | 1/7 — T2 done; T1/T3/T4 reframed by findings (§9), T5-T6 open |
+| Tasks | 1/4 active — T2 done (§9.1), **T1 the only code move left**, T3 dropped as a move, T4 deferred with its blocker (§9.3) |
 
 ## 0. Handover
 
@@ -33,9 +33,12 @@ had replaced.
 
 ## 1. Objective
 
-Move PSP-specific implementation out of the portable files and into `src/platforms/`, leaving only small guarded
-call sites, **with no behaviour change**. Success is measured three ways: the core-file line count, identical
-symbols, identical gates and pair.
+**Reduce the number of files that upstream edits and we have modified** — not the line count. That is the property
+that decides what a merge costs, and this sprint has already shown the two are not the same: a rename can halve the
+count and change nothing (T3), while moving one contiguous block removes a file's worth of conflict surface (T2).
+
+Measured by: which files appear in a trial `git merge upstream/master` as conflicts, the per-file PSP-guarded line
+count, identical symbols, and identical gates/pair. The line count is evidence, not the goal.
 
 ## 2. Why now
 
@@ -69,8 +72,8 @@ redesign sprints (090-094) must not be folded in here.
 | T0 | **Settle the baseline.** Land or rebase `upstream-11-26`, re-run the §6 count on that tree, and record the per-file numbers the move will be measured against | `todo` | counts recorded on the tree T1 starts from; a trial `git merge upstream/master` shows what conflicts today | — |
 | T1 | **Mesh path → `src/platforms/rlpsp_mesh.c/.h`.** Move `PspGeMesh`, the bounds table, `pspGeClassifyMesh` family and the merge helpers out of `rmodels.c`; leave guarded call sites in `DrawMesh`/`UnloadMesh`/`rlpspMergeFlush` | `todo` | `rmodels.c` PSP lines ≤ 40; symbols exported through the new header; no double definition | — |
 | T2 | **Batcher → `src/platforms/rlpsp_batch.h`.** Move the 402 `rlgl.h` lines behind one `#include` under one guard, preserving include order (the block runs before the GL headers) | `done` | `rlgl.h` PSP lines ≤ 10; header-only semantics intact; desktop build unchanged | done — 231 lines moved to `platforms/rlpsp_batch.h`; rlgl.h 402 → 173 lines; gates 613 / 2D 33.801 |
-| T3 | **Shapes → one switch.** Replace the scattered `#if !defined(PLATFORM_PSP)` exclusions with a single `PSP_SHAPES_FAST` condition, so upstream quad-path edits merge cleanly | `todo` | `rshapes.c` PSP lines ≤ 40; 2D output byte-identical; the four affected functions named and their upstream history checked | — |
-| T4 | **Audio decoder → `raudio_psp.c`.** Move the music-decoder thread next to the device that owns it | `todo` | `raudio.c` PSP lines ≤ 20; audio smoke unchanged | — |
+| T3 | **Shapes → one switch.** *Dropped as a move (§9.2).* Renaming the negative guards to one macro cuts the count and not the conflict surface; a real fix is function-level variants selected in one place, which is a refactor. Filed to §10 | `dropped` | — | §9.2 |
+| T4 | **Audio decoder → `raudio_psp.c`.** *Deferred (§9.3).* `raudio.c:185` includes the backend before the decoder type at `:187`, so the thread cannot move alone; the type, its create/destroy helpers and the include position move together | `deferred` | `raudio.c` PSP lines ≤ 20; audio smoke unchanged | §9.3 |
 | T5 | **Prove no behaviour change.** Same driver hash, same `libraylib` symbols for our API, gates and pair within tolerance | `todo` | 613 / 284 / 0 / 0 / clip; pair 33.5 / 33.8 ±2 %; `psp-nm` diff empty for `rlpsp*`/`pspgu*` | — |
 | T6 | **Close.** Record the line counts before/after, update the port notes, state the merge surface left | `todo` | one number per file, before and after | — |
 
@@ -138,7 +141,7 @@ stop and record it as a separate task — the acceptance for T5 is exact equalit
 
 ## 8. Exit criteria
 
-- [ ] core-file PSP lines ≤200, measured by the script, per file, on the tree the move started from
+- [ ] target after T1: **total ≤700** (1,397 − rmodels' 763 + ~40 call-site lines). **≤200 is not reachable by moves** — it needs the T3 hook indirection filed to §10
 - [ ] the baseline in T0 matches the tree T1 used (master vs merge branch differs by 9 lines in `rcore.c`)
 - [ ] `psp-nm` diff empty for the port's public symbols
 - [ ] gates byte-identical; pair within 2 %
@@ -182,14 +185,23 @@ order to preserve, not a cut-and-paste.
 cross-references into `DrawMesh`. It remains the largest single win for mergeability and needs its own session:
 extract to `platforms/rlpsp_mesh.c` with a small header, leave ≤40 lines of call sites, then run the full table.
 
-### 9.5 Where the count stands
+### 9.5 Where the count stands, and the revised goal
 
-**1,617 → 1,397** (−220 net: rlgl −229, rmodels +9 from sprint 090's clean-hint helper). The remaining target of
-≤200 is dominated by T1 (763) and cannot be reached by the two moves that are left; the sprint needs T1 or a
-revised goal.
+**1,617 → 1,397** (−220 net: rlgl −229, rmodels +9 from sprint 090's clean-hint helper). With T1 done the total
+lands near **674**; that is the realigned target (**≤700**). The original ≤200 was reachable only by renaming
+guards (T3), which changes no conflict, so it is withdrawn rather than pursued.
+
+The realigned sprint therefore has **one code move left (T1)** plus the close, and two design tasks parked in §10.
 
 ## 10. Follow-ups
 
+- **Shape variants (from T3).** Replace the four gutted `rshapes.c` functions with function-level PSP variants
+  selected in one place. That is a refactor with pixel gates, and it is the only way to make those four functions
+  mergeable.
+- **Audio move (from T4).** Move `PspMusicDecoder`, its create/destroy helpers and the `raudio_psp.c` include
+  together, preserving initialisation order.
+- **Re-run the 3D pair.** Not measured since 090/095 (2D is identical at 33.801 and the clean-hint arm is off by
+  default, but the 3D number after these commits is unverified).
 - After the move, a trial `git merge upstream/master` should show conflicts only in `platforms/`, which is the point.
 - If `rlpsp_batch.h` grows past ~400 lines, it is a candidate for a real `.c` with an init hook, but only if the
   header-only cost shows up in build time.
