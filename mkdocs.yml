@@ -148,6 +148,8 @@ nav:
               - P10-S24 — Thin 3D close: psp/sprints/094-phase10-thin-3d-close.md
               - P10-S25 — Keeping the port mergeable: psp/sprints/095-phase10-psp-code-quarantine.md
               - P10-S26 — Merge-path economy: psp/sprints/096-phase10-merge-path-economy.md
+              - P10-S27 — The 078 regression, bisected and withdrawn: psp/sprints/097-phase10-078-regression-bisect.md
+              - P10-S28 — The merged-run copy: psp/sprints/098-phase10-merged-copy-removal.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
