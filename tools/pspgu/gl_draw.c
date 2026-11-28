@@ -1351,6 +1351,11 @@ void glNormalPointer(GLenum type, GLsizei stride, const GLvoid *ptr)
     arrNormal.stride = stride? stride : 3*((type == GL_BYTE)? 1 : (int)sizeof(float));
 }
 
+void pspguSetCleanHint(int on)
+{
+    pspgu.cleanHint = (on != 0);
+}
+
 void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
     unsigned int prim = guPrimitive(mode);
@@ -1414,7 +1419,7 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
         int chunk = (int)((pspgu.arenaBytes > 64)? ((pspgu.arenaBytes - 64) / layout.stride) : 0);
 
 #ifndef PSPGU_NO_CLIP
-        if ((prim == GU_TRIANGLES) && clipNeeds(NULL, count, first))
+        if ((prim == GU_TRIANGLES) && !pspguCleanSkip() && clipNeeds(NULL, count, first))
         {
             drawClipped(prim, fmt, count, first, NULL);
             return;
@@ -1562,7 +1567,7 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
             pspguBeginFrame();
 
 #ifndef PSPGU_NO_CLIP
-            if ((prim == GU_TRIANGLES) && clipNeeds(idx + done, n, 0))
+            if ((prim == GU_TRIANGLES) && !pspguCleanSkip() && clipNeeds(idx + done, n, 0))
             {
                 drawClipped(prim, fmt, n, 0, idx + done);
                 done += n;

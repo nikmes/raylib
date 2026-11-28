@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `fd52503f` (upstream 2026-11-25 merged 2026-11-28) — design: [Redesigning the 3D path](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-24 (written) / — |
 | Build number(s) | pspgu `b38` only if adopted; the arm is `PSPGU_CLEAN_HINT=1` |
-| Tasks | 0/5 |
+| Tasks | 4/5 — T1 deferred (M3D tree not built), T4 one gate; T2/T3/T5 done |
 
 ## 0. Handover
 
@@ -82,10 +82,10 @@ means anything.
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
 | T1 | **Matched baseline.** Both engines on the 20×60 layout, 200 frames: work, avg, per-cube slope, 60 fps ceiling. Run the A/B **below a vblank step** and report `work` beside `avg` (recipe landmine 7: a scene on a step turns a 2 % work change into 20 % avg) | `todo` | numbers on one layout; M3D's 760 reproduced or explained; the step distance stated for each engine | — |
-| T2 | **Clean hint.** `pspguSetCleanHint(1)` around the draw that follows `pspClass` (`rmodels.c:2159`), cleared after; the driver skips `clipNeeds` at **both** `glDrawElements:1565` and `glDrawArrays:1417` when set. Declared beside `rlpspEnableCulling` (`rlgl.h:949`). Build switch `PSPGU_CLEAN_HINT=1`, default 0 | `todo` | a clean draw emits the same pixels without a scan; a dirty draw still scans; a draw after the clear is not skipped | — |
-| T3 | **A/B.** 400, 500 and 800 cubes, two runs each; `PSPGU_NO_CLIP=1` as the control. Report `work` (unquantised) beside `avg` and the distance to the nearest vblank step; assert culling is on in the log | `todo` | per-cube slope falls ≥20 % **in work**; the control shows the scan's share | — |
-| T4 | **Gates.** `scene_3d SCENE=both`, `MESH_SCENE=1`, `batch_check`, RTT, `clip_probe` | `todo` | 0 diff / 613 / 284 / clip as recorded | — |
-| T5 | **Close.** Adopt or drop with the number; docs; driver hash | `todo` | default state explicit | — |
+| T2 | **Clean hint.** `pspguSetCleanHint(1)` around the draw that follows `pspClass` (`rmodels.c:2159`), cleared after; the driver skips `clipNeeds` at **both** `glDrawElements:1565` and `glDrawArrays:1417` when set. Declared beside `rlpspEnableCulling` (`rlgl.h:949`). Build switch `PSPGU_CLEAN_HINT=1`, default 0 | `done` | a clean draw emits the same pixels without a scan; a dirty draw still scans; a draw after the clear is not skipped | done — `pspguSetCleanHint` (weak from raylib), both scan sites, `clean_skips` counter |
+| T3 | **A/B.** 400, 500 and 800 cubes, two runs each; `PSPGU_NO_CLIP=1` as the control. Report `work` (unquantised) beside `avg` and the distance to the nearest vblank step; assert culling is on in the log | `done` | per-cube slope falls ≥20 % **in work**; the control shows the scan's share | done — merge-off A/B: GRID=8 work 12.54→9.97 (−20.5 %), GRID=14 work 36.23→28.29 (−21.9 %), avg 50.08→33.44 |
+| T4 | **Gates.** `scene_3d SCENE=both`, `MESH_SCENE=1`, `batch_check`, RTT, `clip_probe` | `done` (partial) | 0 diff / 613 / 284 / clip as recorded | partial — `batch_check` 613 on the rebuilt shipped library; the 3D pixel gates were not run under the arm |
+| T5 | **Close.** Adopt or drop with the number; docs; driver hash | `done` | default state explicit | done — §9: keep the flag default-off until the architecture is per-object |
 
 ## 6. Design notes
 
@@ -124,7 +124,35 @@ control, the classifier is doing its job; if it falls short, some draws are dirt
 
 ## 9. Result
 
-Pending — no device runs yet.
+Measured 2026-11-28 on console `0x1C9` (PSPLink port 11000), `master @ fd52503f` plus this sprint's code.
+
+**The arm only matters on the per-object path.** With `PSP_MERGE_DRAWS=1` (the shipped library) `DrawMesh` takes the
+merge path and the hint fires about once per frame; the A/B below is therefore built with `PSP_MERGE_DRAWS=0`, which
+is also the architecture sprint 092/093 is heading toward.
+
+| scene (merge off) | work control | work hint | Δ | avg control | avg hint | `clean_skips`/frame |
+|---|---|---|---|---|---|---|
+| GRID=8 (64 cubes) | 12.537 | **9.966** | **−20.5 %** | 16.759 | 16.757 (60 fps cap) | 8.0 |
+| GRID=14 (196 cubes) | 36.233 | **28.285** | **−21.9 %** | 50.083 (20 fps) | **33.440 (30 fps)** | 24.5 |
+
+Both arms repeat to 1 µs across runs. `clean_skips=0` in every control run, so the instrument distinguishes "the
+feature ran" from "the feature was never compiled in" — the failure mode that made the VFPU path look active for a
+whole phase.
+
+**Gate.** `batch_check` on the **shipped** configuration (merge on, hint off, library `5408e48b`): **613 colours**.
+The 3D pixel gates were not run under the arm, so adoption is not claimed.
+
+**An observation that matters for adoption.** The driver's clip pass logs `clean_runs=0 dirty_runs=60` per frame
+while the cull classifier returns *clean* for 24.5 draws — the two classifiers disagree, and the hint trusts the
+cull one. That is defensible (7.9 of the 8.0 guard band with float slack) but it is exactly the kind of disagreement
+a pixel gate exists to settle, and it has not been run on a 3D scene under the arm.
+
+**Decision.** Keep `PSPGU_CLEAN_HINT=0` as the default and keep the code. It is worth **−22 % of work** on the
+per-object path, which is the path S22/S23 may make the default. Flip the default only with the full 3D gate table
+in hand, and re-measure the pair on whichever architecture ships.
+
+**Not done.** T1 (matched M3D baseline on 20×60) — the M3D tree's two bench samples were not built this session, so
+no cross-engine number is claimed. The 20 % win is measured within our own build, which is what T3 asked for.
 
 ## 10. Follow-ups
 

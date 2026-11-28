@@ -1346,6 +1346,13 @@ typedef struct {
 
 int rlpspCulling = 1;
 
+// P10-S20: the driver exports this as a weak symbol, so a raylib built once links against
+// pspgu (which honours it) and pspGL (which does not have it).
+static void pspSetCleanHint(int on)
+{
+    if (pspguSetCleanHint != NULL) pspguSetCleanHint(on);
+}
+
 void rlpspEnableCulling(int enable) { rlpspCulling = enable; }
 
 #define PSP_GE_MAX 256
@@ -2254,8 +2261,10 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 #if defined(PSP_CALL_PROBE)
             SceInt64 _d0 = rlpspProbeNow();
 #endif
+            pspSetCleanHint(pspClass == 1);
             if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
             else rlDrawVertexArray(0, mesh.vertexCount);
+            pspSetCleanHint(0);
 #if defined(PSP_CALL_PROBE)
             rlpspProbeDriverUs += (unsigned long long)(rlpspProbeNow() - _d0);
 #endif
@@ -2266,8 +2275,10 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 #if defined(PSP_CALL_PROBE)
         SceInt64 _d1 = rlpspProbeNow();
 #endif
+        pspSetCleanHint(pspClass == 1);
         if (mesh.indices != NULL) rlDrawVertexArrayElements(0, mesh.triangleCount*3, mesh.indices);
         else rlDrawVertexArray(0, mesh.vertexCount);
+        pspSetCleanHint(0);
 #if defined(PSP_CALL_PROBE)
         rlpspProbeDriverUs += (unsigned long long)(rlpspProbeNow() - _d1);
 #endif

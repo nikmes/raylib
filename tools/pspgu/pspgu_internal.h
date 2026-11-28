@@ -138,6 +138,11 @@
 #ifndef PSPGU_LIST_VERTICES
     #define PSPGU_LIST_VERTICES 0
 #endif
+// P10-S20: DrawMesh's classifier already proves an object is inside the GE guard band. When
+// this arm is built, a draw carrying that hint skips the clip scan. Default off.
+#ifndef PSPGU_CLEAN_HINT
+    #define PSPGU_CLEAN_HINT 0
+#endif
 #ifndef PSPGU_LIST_VERTEX_BYTES
     #define PSPGU_LIST_VERTEX_BYTES (160*1024)
 #endif
@@ -198,6 +203,8 @@ typedef struct {
     unsigned long long listVertexFellBack;  // allocations that used the arena instead
     unsigned long long listVertexCallsTotal; // P10-S19: sceGuGetMemory calls (one stall each)
     unsigned long long listVertexAllocTotal; // P10-S19: bytes taken from the list
+    int cleanHint;                          // P10-S20: caller proved this draw clean
+    unsigned int cleanSkips;                // draws whose clip scan was skipped
 
     unsigned int fbBytes;                   // one framebuffer, bytes
     void *fbOffset[PSP_GU_FB_COUNT];         // the rotating framebuffers, EDRAM offsets
@@ -349,6 +356,20 @@ int pspguDrawMergedArrays(GLenum mode, GLsizei indexCount, const GLvoid *indices
 // (usually zero) vertices and every primitive is a degenerate point: invisible, not
 // distorted. This is phase 5 task 9, and it turned out to be blocking rather than an
 // optimisation.
+// P10-S20: consumes the caller's clean hint. Returns 1 when the clip scan may be skipped and
+// counts it, so a run can prove the arm was active rather than silently dead.
+static inline int pspguCleanSkip(void)
+{
+#if PSPGU_CLEAN_HINT
+    if (pspgu.cleanHint) { pspgu.cleanSkips++; return 1; }
+#endif
+    return 0;
+}
+
+// Set by DrawMesh for one draw; cleared by the caller afterwards. Always exported so a raylib
+// built once links against either driver (weak on the raylib side).
+void pspguSetCleanHint(int on);
+
 static inline void pspguWriteback(const void *addr, unsigned int bytes)
 {
     if ((addr == NULL) || (bytes == 0)) return;

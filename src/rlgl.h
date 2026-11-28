@@ -947,6 +947,7 @@ RLAPI void rlpspEnableFog(int enable);
 RLAPI void rlpspFog(float start, float end, unsigned int color);
 RLAPI void rlpspTexEnv(int mode, unsigned int color);   // GL_MODULATE/REPLACE/DECAL/ADD/BLEND
 RLAPI void rlpspEnableCulling(int enable);              // object frustum culling in DrawMesh
+RLAPI void pspguSetCleanHint(int on) __attribute__((weak)); // P10-S20: driver-side clip hint (absent on pspGL)
 #endif
 RLAPI void rlEnableScissorTest(void);                   // Enable scissor test
 RLAPI void rlDisableScissorTest(void);                  // Disable scissor test

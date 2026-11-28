@@ -37,6 +37,11 @@ ifdef PSPGU_LIST_VERTICES
     CFLAGS += -DPSPGU_LIST_VERTICES=$(PSPGU_LIST_VERTICES)
 endif
 
+# P10-S20: skip the clip scan for draws the classifier proved clean (measurement arm).
+ifdef PSPGU_CLEAN_HINT
+    CFLAGS += -DPSPGU_CLEAN_HINT=$(PSPGU_CLEAN_HINT)
+endif
+
 # P10-S18 S1: submission model arm. single = one list, vertices inside it, a full wait at
 # the end of every frame; dual (default) = two rotating lists with per-list arenas.
 # P10-S19: an explicit PSPGU_LIST_VERTICES wins, so the S-A cell (single + arena) is
