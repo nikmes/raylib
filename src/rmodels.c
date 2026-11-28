@@ -1807,6 +1807,26 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
     PspMergeRun *r = &pspMergeRun;
     unsigned char *v = pspMergeVerts;
 
+    // P10-S26 T2: the merged index run depends only on (ic, vc, mesh->indices) - never on
+    // the instance transforms - so a frame whose run key and instance count are unchanged
+    // can keep the buffer built last time. The prefix for k < instances is identical; a
+    // larger run is rebuilt because its tail was never written.
+    static int lastIc = -1, lastVc = -1, lastInstances = -1;
+    static const unsigned short *lastSrc = NULL;
+    static unsigned int idxSkips = 0;
+
+    int rebuildIdx = !((ic == lastIc) && (vc == lastVc) && (mesh->indices == lastSrc) &&
+                       (r->instances <= lastInstances));
+
+    if (rebuildIdx)
+    {
+        lastIc = ic; lastVc = vc; lastSrc = mesh->indices; lastInstances = r->instances;
+    }
+    else if (++idxSkips == 400)
+    {
+        TRACELOG(LOG_INFO, "PSP: merged index run reused %u frames in a row (ic=%d)", idxSkips, ic);
+    }
+
     for (int k = 0; k < r->instances; k++)
     {
         const float *f = MatrixToFloat(r->xf[k]);
@@ -1831,7 +1851,8 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
             o[7] = p[j*3 + 0]*f[2] + p[j*3 + 1]*f[6] + p[j*3 + 2]*f[10] + f[14];
         }
 
-        for (int j = 0; j < ic; j++) pspMergeIdx[k*ic + j] = (unsigned short)(mesh->indices[j] + k*vc);
+        if (rebuildIdx)
+            for (int j = 0; j < ic; j++) pspMergeIdx[k*ic + j] = (unsigned short)(mesh->indices[j] + k*vc);
     }
 }
 
