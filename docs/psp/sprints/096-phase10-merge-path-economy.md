@@ -129,6 +129,23 @@ extra is cache traffic — the loop rewrites ~28 kB of paged memory and leaves t
 **Not done:** T2b, the persistent driver-side copy with a two-list lifetime proof. The driver still copies the run
 into the arena; only the rebuild is gone.
 
+**Pixel check: the instrument failed, and that is recorded.** Capture-at-DONE, each binary twice, same console:
+
+| comparison | pixels differing |
+|---|---|
+| old vs old (identical binary) | **45,639 (35 %)** |
+| new vs new (identical binary) | 1,735 (1.3 %) |
+| old vs new | 79,207 (60.7 %) |
+
+The old binary does not reproduce its own last frame — at 40.4 ms per frame it sits between vblank steps, so the
+displayed buffer at capture time differs run to run. A cross-build comparison built on that is worthless, and the
+60.7 % figure must not be read as a defect. It is not evidence either way.
+
+**What this means:** T2a's correctness rests on the structural argument — the skip is taken only when the run key
+matches *and* the run has not grown, so the reused prefix is byte-identical — plus the fact that the scenes render.
+That is weaker than a pixel gate and must be stated as such. The gate this sprint needs is a **frozen-frame** scene
+(the `batch_check` pattern: two identical final frames) or `scene_3d SCENE=both`, not a capture of a running demo.
+
 ### 9.1 T1 — the last breakdown (`done`)
 
 One probe run, GRID=14, merge off, hint on, with a new `state=` leg (texture enable + the three pointer setups):
