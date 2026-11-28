@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `33e7f18f` — decision: [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-28 (written) / — |
 | Build number(s) | pspgu `b38` only if a driver change is adopted; the index cache is a driver + raylib change |
-| Tasks | 2/6 — T1 and T2a done; T2b (driver copy) open |
+| Tasks | 3/6 — T1, T2a done; T4 measured and dropped; T2b/T3/T5/T6 open |
 
 ## 0. Handover
 
@@ -60,7 +60,7 @@ attribution names one (T4); gates and pair (T5); close (T6).
 | T1 | **The last breakdown.** One probe run splitting the ~48 µs of unexplained per-object surface (pointer/state, push/pop, texture enable, DrawMesh bookkeeping). No code change unless a counter is missing | `done` | the 48 µs is allocated or declared unallocatable; **≥30 µs removable ⇒ stop the merge-first decision and re-open the thin entry** | §9.1: `state` 14.5 µs (≈10.6 real), below the bar; merge-first stands |
 | T2 | **Index-run cache.** Cache a run's indices in a persistent pool keyed by `(pointer, count, first)`, written back once; a key change is a miss; the pool never overwrites a block whose list is in flight | `todo` | copies/frame fall; the 3D showcase keeps correct pixels; hit/miss counters; `arenaOverflows=0` | — |
 | T3 | **Static-mesh strips.** Stripify at load for meshes flagged static (not the merge path), draw `GU_TRIANGLE_STRIP`, and measure against the list on a mesh-heavy scene | `todo` | 0 diff; strip vertex count and GE time reported; if it cannot be used by the merge path, say so and record the ceiling | — |
-| T4 | **Expansion attribution.** Probe the merge expansion line by line (transform, pack, arena copy, index rebase) and improve the largest line only if one dominates | `todo` | attribution sums to the measured expansion ±10 %; one measured change or none | — |
+| T4 | **Expansion attribution.** Probe the merge expansion line by line (transform, pack, arena copy, index rebase) and improve the largest line only if one dominates | `dropped` | attribution sums to the measured expansion ±10 %; one measured change or none | §9.3: the normal `sqrtf` is not the cost — GRID=8 work 6.147 → 6.251, and the GRID=20 win was a split artifact |
 | T5 | **Gates + pair.** Full pixel table, the pair below a vblank step, two runs per point | `todo` | 613 / 284 / 0 / 0 / clip; `work` reported; no regression | — |
 | T6 | **Close.** Adopt or drop each item with its number; state the per-object path's status | `todo` | one paragraph per item; driver state explicit | — |
 
@@ -125,6 +125,26 @@ phase that improves the **shipped** 3D build.
 **Caveat, recorded rather than smoothed:** 9,900-14,000 index writes should cost ~0.3-0.45 ms, not 2 ms. The likely
 extra is cache traffic — the loop rewrites ~28 kB of paged memory and leaves the buffer cold for the driver's
 `memcpy` — but that is a hypothesis. The number is the measured one; the mechanism is not claimed.
+
+### 9.3 T4 — the normal path (`dropped`)
+
+The merge key already proves uniform scale and an orthogonal basis (`pspMergeEligible`), so `|M*n| = sqrt(sx)` and the
+per-vertex `sqrtf` looked redundant. Arm `PSP_MERGE_FAST_NORMAL=1`: one reciprocal per instance, two loop variants
+(a per-vertex branch cost 2.3 ms when it sat inside the loop). Gated on the lit static scene: **0 pixels differ**.
+
+At GRID=20 it looked like **−4.4 ms of work** (30.77 → 26.35), twice each. It was not:
+
+| arm | GRID=8 `work` (below every step) |
+|---|---|
+| baseline | 6.147 / 6.153 |
+| fast normal | 6.251 / 6.248 |
+
+**0.1 ms slower**, not 0.7 faster. The GRID=20 pair had both arms at `avg 33.44`, so a 4.4 ms "work" difference was
+mirrored by 4.4 ms of `swap` — the split moving, not the frame. This is the recipe's landmine 7 in its purest form:
+at a step, `work = avg − swap` is a difference of two quantised values and must not be compared.
+
+Dropped. `PSP_MERGE_FAST_NORMAL` stays at 0 with its gate recorded, and the expansion's cost is still unattributed —
+which is the honest state, not a missing line.
 
 **Not done:** T2b, the persistent driver-side copy with a two-list lifetime proof. The driver still copies the run
 into the arena; only the rebuild is gone.

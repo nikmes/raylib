@@ -1834,28 +1834,68 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
     int rebuildIdx = 1;
 #endif
 
+#ifndef PSP_MERGE_FAST_NORMAL
+    #define PSP_MERGE_FAST_NORMAL 1
+#endif
+
     for (int k = 0; k < r->instances; k++)
     {
         const float *f = MatrixToFloat(r->xf[k]);
         const float *p = mesh->vertices, *n = mesh->normals, *uv = mesh->texcoords;
+#if PSP_MERGE_FAST_NORMAL
+        // pspMergeEligible proved uniform scale and an orthogonal basis, so for a unit normal
+        // |M*n| = sqrt(sx). One reciprocal per instance replaces a sqrtf per vertex - but only
+        // when the basis is uniform to 0.1 %; the key tolerates 1 %, and inside that band the
+        // per-vertex normalize stays the exact branch.
+        float sx = f[0]*f[0] + f[1]*f[1] + f[2]*f[2];
+        float sy = f[4]*f[4] + f[5]*f[5] + f[6]*f[6];
+        float sz = f[8]*f[8] + f[9]*f[9] + f[10]*f[10];
+        int fastNormal = (sx > 1e-8f) &&
+                         (fabsf(sx - sy) <= 0.001f*sx) && (fabsf(sx - sz) <= 0.001f*sx);
+        float ninv = fastNormal? (1.0f/sqrtf(sx)) : 1.0f;
+#endif
 
-        for (int j = 0; j < vc; j++, v += PSP_MERGE_STRIDE)
+#if PSP_MERGE_FAST_NORMAL
+        // Two loop variants rather than a per-vertex branch: the branch cost 2.3 ms/frame at
+        // 400 cubes when it sat inside the loop.
+        if (fastNormal)
         {
-            float nx = n[j*3 + 0], ny = n[j*3 + 1], nz = n[j*3 + 2];
-            float wx = nx*f[0] + ny*f[4] + nz*f[8];
-            float wy = nx*f[1] + ny*f[5] + nz*f[9];
-            float wz = nx*f[2] + ny*f[6] + nz*f[10];
-            float len = sqrtf(wx*wx + wy*wy + wz*wz);
-            float *o = (float *)v;
+            for (int j = 0; j < vc; j++, v += PSP_MERGE_STRIDE)
+            {
+                float nx = n[j*3 + 0], ny = n[j*3 + 1], nz = n[j*3 + 2];
+                float *o = (float *)v;
 
-            if (len > 1e-8f) { len = 1.0f/len; wx *= len; wy *= len; wz *= len; }
+                o[0] = uv[j*2 + 0];
+                o[1] = uv[j*2 + 1];
+                o[2] = (nx*f[0] + ny*f[4] + nz*f[8])*ninv;
+                o[3] = (nx*f[1] + ny*f[5] + nz*f[9])*ninv;
+                o[4] = (nx*f[2] + ny*f[6] + nz*f[10])*ninv;
+                o[5] = p[j*3 + 0]*f[0] + p[j*3 + 1]*f[4] + p[j*3 + 2]*f[8] + f[12];
+                o[6] = p[j*3 + 0]*f[1] + p[j*3 + 1]*f[5] + p[j*3 + 2]*f[9] + f[13];
+                o[7] = p[j*3 + 0]*f[2] + p[j*3 + 1]*f[6] + p[j*3 + 2]*f[10] + f[14];
+            }
+        }
+        else
+#endif
+        {
+            for (int j = 0; j < vc; j++, v += PSP_MERGE_STRIDE)
+            {
+                float nx = n[j*3 + 0], ny = n[j*3 + 1], nz = n[j*3 + 2];
+                float wx = nx*f[0] + ny*f[4] + nz*f[8];
+                float wy = nx*f[1] + ny*f[5] + nz*f[9];
+                float wz = nx*f[2] + ny*f[6] + nz*f[10];
+                float len = sqrtf(wx*wx + wy*wy + wz*wz);
+                float *o = (float *)v;
 
-            o[0] = uv[j*2 + 0];
-            o[1] = uv[j*2 + 1];
-            o[2] = wx; o[3] = wy; o[4] = wz;
-            o[5] = p[j*3 + 0]*f[0] + p[j*3 + 1]*f[4] + p[j*3 + 2]*f[8] + f[12];
-            o[6] = p[j*3 + 0]*f[1] + p[j*3 + 1]*f[5] + p[j*3 + 2]*f[9] + f[13];
-            o[7] = p[j*3 + 0]*f[2] + p[j*3 + 1]*f[6] + p[j*3 + 2]*f[10] + f[14];
+                if (len > 1e-8f) { len = 1.0f/len; wx *= len; wy *= len; wz *= len; }
+
+                o[0] = uv[j*2 + 0];
+                o[1] = uv[j*2 + 1];
+                o[2] = wx; o[3] = wy; o[4] = wz;
+                o[5] = p[j*3 + 0]*f[0] + p[j*3 + 1]*f[4] + p[j*3 + 2]*f[8] + f[12];
+                o[6] = p[j*3 + 0]*f[1] + p[j*3 + 1]*f[5] + p[j*3 + 2]*f[9] + f[13];
+                o[7] = p[j*3 + 0]*f[2] + p[j*3 + 1]*f[6] + p[j*3 + 2]*f[10] + f[14];
+            }
         }
 
         if (rebuildIdx)
