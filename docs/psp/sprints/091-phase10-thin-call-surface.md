@@ -119,7 +119,41 @@ GUM would add a CPU stack in front of a product we already have (redesign §3.6)
 
 ## 9. Result
 
-Pending — no device runs yet.
+### 9.1 T1 — the split (`done`, 2026-11-28)
+
+The counters existed since 078 but nothing printed them; `rlpspProbeReport()` now emits one line per 2,000 calls
+(`CALLPROBE calls=2000 drawmesh=… cull=… driver=… self=…`) and resets. Run on console `0x1C9`, GRID=14, merge off,
+**default driver (clip hint off)**, `PSP_CALL_PROBE=1 PSP_MATRIX_PROBE=1`:
+
+| component | µs/call | share |
+|---|---|---|
+| `DrawMesh` total | 155-158 | — |
+| cull | 23.4 | 15 % |
+| **driver** (`rlDrawVertexArrayElements`) | **65.0** | **42 %** |
+| residual (rlgl/raylib surface) | 67.5 | 43 % |
+
+Ten consecutive windows agree within 2 %. The probe costs ~4 µs per timing pair and the call carries five or six of
+them, so ~17 µs of the total is instrument; the shares hold.
+
+**Correction to this sprint's premise.** 091 assumed the remainder was the call surface *above* the driver. It is
+roughly half and half: the driver is 42 %, not a footnote.
+
+**The driver's 65 µs is not all driver work.** This run used the default driver, so it still runs the clip scan that
+090 removes — measured on its own at **~41 µs/call**. With `PSPGU_CLEAN_HINT=1` the driver component should fall to
+~24 µs, and the per-call total to ~115 µs. That re-run is the next measurement and it decides whether T2/T3 (matrix
+upload) or T4 (state skip) is worth writing.
+
+### 9.2 What that predicts
+
+- With the hint on: cull 23 + driver ~24 + surface ~55 ≈ 102 µs/call of work, i.e. the surface becomes the largest
+  single block and T4 is the right target.
+- The driver's remaining ~24 µs is a matrix upload (two 64-byte converts + two `sceGuSetMatrix`) plus emission —
+  T3's territory, and the cull already has the numbers to compose it, which is why T3 is not free.
+
+### 9.3 Open
+
+- Re-run with the hint driver to confirm the 41 µs drop (needs the console).
+- The probe build inflates every figure above; compare arms of the same build, never across.
 
 ## 10. Follow-ups
 

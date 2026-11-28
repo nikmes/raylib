@@ -73,6 +73,26 @@
     unsigned long long rlpspProbeDrawMeshUs;
     unsigned long long rlpspProbeDriverUs;
 
+    // Sprint 091 T1: the counters existed from 078 but nothing printed them, so the split
+    // could not be read. One line per 2,000 calls, then reset: per-call averages of the
+    // whole DrawMesh, the cull, the driver call, and the residual (rlgl/raylib surface).
+    static unsigned int rlpspProbeCalls;
+
+    static void rlpspProbeReport(void)
+    {
+        unsigned int n = (rlpspProbeCalls > 0)? rlpspProbeCalls : 1;
+        double total = (double)rlpspProbeDrawMeshUs/n;
+        double cull = (double)rlpspProbeCullUs/n;
+        double driver = (double)rlpspProbeDriverUs/n;
+
+        TraceLog(LOG_INFO, "CALLPROBE calls=%u drawmesh=%.1f us cull=%.1f driver=%.1f self=%.1f",
+                 rlpspProbeCalls, total, cull, driver, total - cull - driver);
+
+        rlpspProbeDrawMeshUs = 0; rlpspProbeDriverUs = 0; rlpspProbeCullUs = 0;
+        rlpspProbeComposeUs = 0; rlpspProbeMultUs = 0;
+        rlpspProbeDraws = 0; rlpspProbeCalls = 0;
+    }
+
     // Cost of one clock pair, so the attribution can subtract it: every measured line is
     // inflated by the same syscall, and at 500 calls/frame that is milliseconds, not noise.
     unsigned long long rlpspProbeTail(int n)
@@ -2162,7 +2182,10 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
 
 #if defined(PLATFORM_PSP) && defined(PSP_CALL_PROBE)
     SceInt64 _dm0 = rlpspProbeNow();
-    #define PSP_CALL_DONE() rlpspProbeDrawMeshUs += (unsigned long long)(rlpspProbeNow() - _dm0)
+    #define PSP_CALL_DONE() do { \
+        rlpspProbeDrawMeshUs += (unsigned long long)(rlpspProbeNow() - _dm0); \
+        if (++rlpspProbeCalls >= 2000) rlpspProbeReport(); \
+    } while (0)
 #else
     #define PSP_CALL_DONE()
 #endif
