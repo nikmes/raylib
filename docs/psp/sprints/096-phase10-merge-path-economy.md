@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `33e7f18f` — decision: [redesign §8](../phases/10-3d-advanced/pspgu-redesign.md) |
 | Started / closed | 2026-11-28 (written) / — |
 | Build number(s) | pspgu `b38` only if a driver change is adopted; the index cache is a driver + raylib change |
-| Tasks | 1/6 — T1 done (§9.1); the merge-first decision stands |
+| Tasks | 2/6 — T1 and T2a done; T2b (driver copy) open |
 
 ## 0. Handover
 
@@ -103,6 +103,31 @@ skipped block so a dead feature is visible as dead.
 - [ ] per-object path's status (opt-in, default-off) is stated at close
 
 ## 9. Result
+
+### 9.2 T2a — merged index reuse (`done`, 2026-11-28)
+
+The merged index buffer depends only on `(ic, vc, mesh->indices)`, never on the instance
+transforms, so `pspMergeBuild` keeps the buffer when its key and instance count are unchanged. Logs after 400
+consecutive reuses, so a dead feature shows as silence.
+
+| build | avg | work | swap | fps |
+|---|---|---|---|---|
+| pre-T2a (merge-era binary) | 40.366 / 40.531 | 32.615 / 32.616 | 7.75 / 7.92 | 24.8 |
+| T2a | **33.441 / 33.443** | **30.756 / 30.754** | 2.68 / 2.69 | **29.9** |
+
+Alternated on the same console, reset between: the old binary reproduces 40.4 twice and the new one 33.4 twice, so
+this is not drift. The reuse log fires in every run.
+
+**Work falls 1.9-2.6 ms** (depending on which earlier build is the baseline) and the average falls **7 ms** because
+the frame crosses the 33.3 ms vblank step downwards — the cliff, in our favour. This is the first change in the
+phase that improves the **shipped** 3D build.
+
+**Caveat, recorded rather than smoothed:** 9,900-14,000 index writes should cost ~0.3-0.45 ms, not 2 ms. The likely
+extra is cache traffic — the loop rewrites ~28 kB of paged memory and leaves the buffer cold for the driver's
+`memcpy` — but that is a hypothesis. The number is the measured one; the mechanism is not claimed.
+
+**Not done:** T2b, the persistent driver-side copy with a two-list lifetime proof. The driver still copies the run
+into the arena; only the rebuild is gone.
 
 ### 9.1 T1 — the last breakdown (`done`)
 
