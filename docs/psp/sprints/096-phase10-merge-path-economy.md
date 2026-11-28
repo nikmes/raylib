@@ -118,9 +118,11 @@ consecutive reuses, so a dead feature shows as silence.
 Alternated on the same console, reset between: the old binary reproduces 40.4 twice and the new one 33.4 twice, so
 this is not drift. The reuse log fires in every run.
 
-**Work falls 1.9-2.6 ms** (depending on which earlier build is the baseline) and the average falls **7 ms** because
-the frame crosses the 33.3 ms vblank step downwards — the cliff, in our favour. This is the first change in the
-phase that improves the **shipped** 3D build.
+**The frame-time win is real:** `avg` fell from 40.4 to 33.4 ms (24.8 → 29.9 fps), reproduced by alternating the two
+binaries. **Its magnitude is a step effect** — the frame crossed 33.3 ms downwards — and the "work falls 1.9-2.6 ms"
+line is split-derived, not an independent measurement. T2a's underlying saving at a sub-step size is too small to
+see (at GRID=8 the loop is ~2,300 indices). So: a real 7 ms frame, a small real cost saving, and a step in between.
+This is the first change in the phase that improves the **shipped** 3D build.
 
 **Caveat, recorded rather than smoothed:** 9,900-14,000 index writes should cost ~0.3-0.45 ms, not 2 ms. The likely
 extra is cache traffic — the loop rewrites ~28 kB of paged memory and leaves the buffer cold for the driver's
