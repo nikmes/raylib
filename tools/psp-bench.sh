@@ -38,6 +38,7 @@ KEEP_DRIVER=0
 BASELINE=""
 BATCH=1
 MERGE=1
+VSYNC=1
 
 SAMPLES="psp_showcase psp_2d_showcase"
 
@@ -56,6 +57,7 @@ while [ $# -gt 0 ]; do
         --baseline)   BASELINE=${2:-}; shift 2 ;;
         --batch)      BATCH=${2:-1}; shift 2 ;;
         --merge)      MERGE=${2:-1}; shift 2 ;;
+        --vsync)      VSYNC=${2:-1}; shift 2 ;;
         --rebuild)    REBUILD=1; shift ;;
         --keep-driver) KEEP_DRIVER=1; shift ;;
         -h|--help)    usage ;;
@@ -114,7 +116,7 @@ run_sample() {
     local name=$1 frames=$2 dir="$ROOT/psp-tests/samples/psp/$1"
     local prx="$dir/$name.prx" log r
 
-    ( cd "$dir" && rm -f *.o *.elf *.prx && make FRAMES="$frames" >/dev/null 2>&1 ) \
+    ( cd "$dir" && rm -f *.o *.elf *.prx && make FRAMES="$frames" VSYNC="$VSYNC" >/dev/null 2>&1 ) \
         || { echo "build failed: $name" >&2; return 1; }
     cp "$prx" "$HOSTFS/" || return 1
 
@@ -186,6 +188,7 @@ echo "  driver   : $DRIVER ($DRIVER_HASH)"
 echo "  library  : $LIB_HASH  (batch=$BATCH merge=$MERGE, rebuilt=$REBUILD)"
 echo "  git      : $GIT_REV"
 echo "  runs     : $RUNS per sample, reset between"
+echo "  vsync    : $VSYNC (1 = adoption, 0 = attribution; never compare across)"
 
 BODY=""
 for s in $SAMPLES; do
@@ -208,6 +211,7 @@ cat > "$RESULT" <<JSON
   "lib_hash": "$LIB_HASH",
   "lib_batch": $( [ "$REBUILD" = 1 ] && echo "$BATCH" || echo null ),
   "lib_merge": $( [ "$REBUILD" = 1 ] && echo "$MERGE" || echo null ),
+  "vsync": $VSYNC,
   "rebuilt": $REBUILD,
   "samples": [$BODY]
 }

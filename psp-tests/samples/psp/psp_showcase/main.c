@@ -49,6 +49,12 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 int main(void)
 {
     InitWindow(480, 272, "psp showcase");
+
+    // Measurement arm (P10-S26): vsync on for adoption decisions, off for attribution. The
+    // harness passes -DSHOWCASE_VSYNC=0|1; default is on, the shipped configuration.
+#if defined(SHOWCASE_VSYNC)
+    PSP_SetVsync(SHOWCASE_VSYNC);
+#endif
     SetTargetFPS(0);
 
     Image img = GenImageChecked(64, 64, 8, 8, (Color){ 236, 242, 255, 255 }, (Color){ 176, 192, 226, 255 });

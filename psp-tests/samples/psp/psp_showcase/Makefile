@@ -1,11 +1,13 @@
 TARGET = psp_showcase
 FRAMES ?= 0
+VSYNC ?= 1
 
 OBJS = main.o psp_counters.o
 include ../../Makefile.inc
 
 # The shared file assigns CFLAGS and LDFLAGS, so the demo's own switches come after it.
 CFLAGS += -DSHOWCASE_FRAMES=$(FRAMES) -I../../../bunnymark -DWRAP_COUNTERS
+CFLAGS += -DSHOWCASE_VSYNC=$(VSYNC)
 ifdef GRID
 CFLAGS += -DGRID=$(GRID)
 endif

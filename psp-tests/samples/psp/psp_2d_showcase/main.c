@@ -96,6 +96,12 @@ static Image genRing(int size)
 int main(void)
 {
     InitWindow(480, 272, "psp 2d showcase");
+
+    // Measurement arm (P10-S26): vsync on for adoption decisions, off for attribution. The
+    // harness passes -DSHOWCASE_VSYNC=0|1; default is on, the shipped configuration.
+#if defined(SHOWCASE_VSYNC)
+    PSP_SetVsync(SHOWCASE_VSYNC);
+#endif
     SetTargetFPS(0);
 
     Image glowImg = genGlow(GLOW_SIZE);

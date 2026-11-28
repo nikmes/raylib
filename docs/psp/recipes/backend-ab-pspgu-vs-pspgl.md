@@ -101,6 +101,19 @@ Each one has produced a wrong result here at least once.
 15. **End restored.** Unless the session's owner wants pspgu left installed, finish with
     `./tools/pspgu-build.sh --restore` and state the final hash.
 
+## Vsync: two modes, two questions
+
+`tools/psp-bench.sh --vsync 0|1` (default 1). Never compare across the two.
+
+| question | mode | how to read it |
+|---|---|---|
+| does the player see an improvement (adoption) | **vsync 1** | the pair, `avg`, plus the gates. The shipped build is vblank-locked and the three-framebuffer design hides the GE behind that wait; free-running frames describe a different machine |
+| what does this line cost (attribution) | **vsync 0** | frames over elapsed time. `work = avg − swap` is meaningless once `swap` collapses |
+| a small A/B on a real frame | **vsync 1, scene below a step** | `work` is trustworthy only there, and it is the cheapest of the three |
+
+The phase paid for this three times: the upstream merge looked 20 % slower, 090 looked like it cost 0.7 ms, and 096
+T4 produced a 4.4 ms "win" that measured 0.1 ms *slower* at GRID=8. All three were step artefacts.
+
 ## Before / after checklist
 
 - [ ] `PSP_DEVICE_APPROVED=1`, `usbhostfs_pc` running with `HOSTFS=/tmp/s3`
