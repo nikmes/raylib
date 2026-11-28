@@ -12,7 +12,11 @@ OBJS ?= main.o
 
 # -I$(CURDIR)/.. finds shared headers in the category directory (currently
 # shapes/raygui.h). build.mak prepends its own include directories.
-CFLAGS = -Wall -I$(CURDIR)/.. -I$(CURDIR)/../.. -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1
+# -O2 on purpose: without it the samples build at -O0 while libraylib is -O2, so a demo-side
+# loop is measured unoptimised against optimised library code. Sprint 100 found this while
+# comparing raylib's DrawTexturePro (library, -O2) with the same sequence emitted by a demo
+# (-O0): 45.4 vs 79.9 ms at 7,000 sprites, which made the arm useless as an instrument.
+CFLAGS = -Wall -O2 -I$(CURDIR)/.. -I$(CURDIR)/../.. -DPLATFORM_PSP -DGRAPHICS_API_OPENGL_11 -DPSP_BATCH=1
 
 LIBS = -lraylib -lpng -lz -lglut -lGLU -lGL -lpspgu -lpspvfpu
 

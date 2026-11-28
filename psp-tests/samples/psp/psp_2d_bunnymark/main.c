@@ -74,6 +74,26 @@ typedef struct {
 
 static DirectVertex dverts[2*COUNT] __attribute__((aligned(ALIGN)));
 
+#if (MODE == 5)
+// Kept out of line on purpose: four inlined vertex expansions inside the demo's loop changed
+// the code generation enough to make the first version of this arm slower than raylib's own
+// call (79.9 vs 45.4 ms), which made it useless as a discriminator.
+static __attribute__((noinline)) void emitQuad(float x, float y, float size,
+                                               unsigned char r, unsigned char g,
+                                               unsigned char b, Texture2D tex)
+{
+    rlSetTexture(tex.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(r, g, b, 255);
+    rlTexCoord2f(0.0f, 0.0f);   rlVertex2f(x, y);
+    rlTexCoord2f(0.0f, 1.0f);   rlVertex2f(x, y + size);
+    rlTexCoord2f(1.0f, 1.0f);   rlVertex2f(x + size, y + size);
+    rlTexCoord2f(1.0f, 0.0f);   rlVertex2f(x + size, y);
+    rlEnd();
+    rlSetTexture(0);
+}
+#endif
+
 static int cmpFloat(const void *a, const void *b)
 {
     float x = *(const float *)a, y = *(const float *)b;
@@ -159,15 +179,7 @@ int main(void)
                 // The exact sequence DrawTexturePro emits, issued here so the seam runs without
                 // raylib's per-sprite body (cull test, corner maths, source/dest handling).
                 // Same state, same vertices: the difference from MODE 1 is raylib's own work.
-                rlSetTexture(tex.id);
-                rlBegin(RL_QUADS);
-                rlColor4ub(bc[i][0], bc[i][1], bc[i][2], 255);
-                rlTexCoord2f(0.0f, 0.0f);           rlVertex2f(x, y);
-                rlTexCoord2f(0.0f, 1.0f);           rlVertex2f(x, y + SCALE);
-                rlTexCoord2f(1.0f, 1.0f);           rlVertex2f(x + SCALE, y + SCALE);
-                rlTexCoord2f(1.0f, 0.0f);           rlVertex2f(x + SCALE, y);
-                rlEnd();
-                rlSetTexture(0);
+                emitQuad(x, y, SCALE, bc[i][0], bc[i][1], bc[i][2], tex);
 #elif (MODE == 0)
                 // Untextured: the PSPRuntime doc's mode 0. If this is much faster than mode 1,
                 // the cost is the texture fetch, not the primitive or the batcher.

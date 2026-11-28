@@ -7,7 +7,7 @@
 | Branch / base commit | `master` @ `af9b76b3`; evidence: [099 §2 and §7](099-phase10-third-benchmark.md) |
 | Started / closed | 2026-11-28 (written) |
 | Build number(s) | driver unchanged (`b38`); the arm is `PSP_BATCH_FAST_QUAD=1` in `libraylib.a` |
-| Tasks | 0/7 — attribution first; the seam-turn is written below only after T1 decides it |
+| Tasks | 1/7 — T1 done: the 3.5 µs splits **1.4 raylib body / 2.2 seam staging**, and the instrument defect that hid it is fixed |
 
 ## 0. Handover
 
@@ -80,9 +80,9 @@ says where the cycles went.
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Attribute, without a core edit.** Three arms at 7,000 sprites: `PSP_CULL=0` build; a benchmark arm that emits the quad through the seam; the existing prebuilt arm. Two runs each | `doing` | the 3.2 µs is allocated to one of the four candidates with numbers, or declared unattributable and the sprint stops | **cull block: 45.4 → 43.7 ms work (two runs, 43.686/43.689)**, i.e. **0.24 of the 3.2 µs per sprite** is the per-sprite `rlGetActiveFramebuffer()` test — not the cost. The seam arm (MODE 5) came back **slower**, 79.9 ms, so it is not a valid discriminator as built; see §T1 (partial) |
+| T1 | **Attribute, without a core edit.** Three arms at 7,000 sprites: `PSP_CULL=0` build; a benchmark arm that emits the quad through the seam; the existing prebuilt arm. Two runs each | `done` | the 3.2 µs is allocated to one of the four candidates with numbers, or declared unattributable and the sprint stops | At **-O2** (the samples were building at -O0, see §T1): raylib `DrawTexturePro` **40.83 ms**, seam sequence from the demo **31.19**, prebuilt one-draw **16.04**. The 3.5 µs/sprite splits **1.4 µs raylib body** (including 0.24 cull) **+ 2.2 µs seam staging** |
 | T2 | **Take the lever T1 named** — `rlgl.h` framebuffer cache, or the guarded `rlpspDrawQuad`, or the two-vertex staging change | `todo` | the change is inside the stated budget; the arm it targets is named | — |
-| T3 | **Measure.** 7,000 sprites, two runs; the 2D showcase unchanged (it is fill-bound) | `todo` | **≤32 ms** at 7,000 from 45.4, or dropped with the number | — |
+| T3 | **Measure.** 7,000 sprites, two runs; the 2D showcase unchanged (it is fill-bound) | `todo` | **≤24 ms** at 7,000 from 40.8, or dropped with the number | — |
 | T4 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum, one benchmark capture | `todo` | exact | — |
 | T5 | **Close.** Adopt or drop; recipe/skill updated; 099's attribution corrected if needed | `todo` | explicit state | — |
 
@@ -110,26 +110,34 @@ says where the cycles went.
   the next lever is not this batcher.
 - The same hoisting applies to `DrawRectangle*` and text glyph quads, which share the seam — the fit is not sprite-only.
 
-### T1 (partial), measured
+### T1, measured — and the instrument defect that hid the answer
 
-| arm | work at 7,000 | per sprite |
+The first attempt to split raylib's body from the seam produced an arm **slower** than raylib's own call (79.9 vs 45.4
+ms), which cannot discriminate anything. The cause was not the seam: **the sample harness compiled app code at `-O0`**
+(`psp-tests/samples/Makefile.inc` had no `-O` flag at all) while `libraylib.a` is `-O2`. The demo's copy of the sequence
+was unoptimised against an optimised library.
+
+Fixed (`-O2` in `Makefile.inc`, with the reason in the comment), then the three arms at 7,000 sprites, two runs each:
+
+| arm | work | per sprite |
 |---|---|---|
-| shipped (`PSP_CULL=1`) | 45.4 ms | 6.5 µs |
-| `PSP_CULL=0` (build variable only) | **43.7 ms** (43.686 / 43.689) | 6.2 µs |
+| raylib `DrawTexturePro` (library, `-O2`) | **40.83 ms** (40.828 / 40.848) | 5.8 µs |
+| the same seam sequence, emitted by the demo | **31.19 ms** (31.189 / 31.186) | 4.5 µs |
+| prebuilt vertices, one `glDrawArrays` | **16.04 ms** (16.041 / 16.044) | 2.3 µs |
 
-The per-sprite `rlGetActiveFramebuffer()` test costs 1.7 ms per frame — real, but 3.8 % of the frame, so it is not the
-3.2 µs. Caching it remains a cheap separate win for any 2D scene with many small quads, and it needs no core behaviour
-change (the value only moves on `BeginTextureMode`).
+So the 3.5 µs per sprite decomposes:
 
-What that leaves is raylib's own per-sprite body versus the seam's staging. The obvious discriminator — issue the same
-quad through the seam from the demo (MODE 5) — **failed as an instrument**: 79.9 ms against 45.4 for raylib's own call,
-with the same draws, binds and vertex count. A slower arm cannot separate "raylib costs X" from "the seam costs Y"; the
-likely cause is code generation in the demo's single large loop (four inlined vertex expansions, external `rlpsp`), not
-the library's path. The arm needs a `noinline` helper to be comparable, or the per-sprite cost needs a call-level
-counter inside `DrawTexturePro` using the existing probe scaffolding.
+- **1.4 µs — raylib's per-sprite body**: call, source/dest handling, corner maths, and the 0.24 µs cull query.
+- **2.2 µs — the seam's quad staging**: four corner stores, two reserve checks, the 2×24-byte copy to the sprite pair,
+  and the per-call branches. This is step 1's target, entirely inside `platforms/rlpsp_batch.h`.
+- **2.3 µs — the floor** with the vertices prebuilt, i.e. the driver/GE per primitives as they are today.
 
-Until one of those runs, this sprint is **not** implementation-ready and the guarded core call site is not taken on an
-assumption.
+Both levers are now quantified, and they add to the prebuilt floor: seam staging (~2.2 µs) is step 1 without any core
+change; raylib's body (~1.4 µs) is step 2's single guarded call site. Together they are the whole 3.5 µs.
+
+**Consequence for every earlier sample number:** the pair and the 2D demo were measured with `-O0` app code until this
+commit. Ceilings are unaffected (`matrix_probe` builds its own `-O2`), but `psp_showcase`/`psp_2d_showcase` numbers from
+before today include unoptimised demo loops and should be re-taken before they are compared with anything new.
 
 ## 9. References
 

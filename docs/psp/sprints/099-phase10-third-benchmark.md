@@ -38,6 +38,11 @@ as 096 §9.9 applies: a point holds when the median is at the period and p95 doe
 
 ## 2. Measured — 7,000 bunnies, 32×32, PSP-1000 lane a, two runs per point
 
+> **Build note (100).** These runs used the sample harness as it then was: **`-O0` app code**, `-O2` library. The arms
+> below are still comparable to each other, but sprint 100 rebuilt them at `-O2` and the same arms read
+> **40.83 / 31.19 / 16.04 ms** for raylib-sprites / seam-sequence / prebuilt. Use those numbers; the table stays as the
+> record of what was measured first.
+
 | arm | verts/frame | work | presented | per sprite |
 |---|---|---|---|---|
 | `MODE=1` textured sprites | 13,067 | **45.4 ms** | 50.05 (3 periods) | 6.5 µs |
