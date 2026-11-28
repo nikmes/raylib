@@ -141,7 +141,17 @@ The old binary does not reproduce its own last frame — at 40.4 ms per frame it
 displayed buffer at capture time differs run to run. A cross-build comparison built on that is worthless, and the
 60.7 % figure must not be read as a defect. It is not evidence either way.
 
-**What this means:** T2a's correctness rests on the structural argument — the skip is taken only when the run key
+**The gate that works.** `scene_3d SCENE=both INSTANCES=64`, a static 64-instance grid of one mesh, which takes the
+merge path and is frame-deterministic. Built twice — `PSP_MERGE_IDX_REUSE=1` and `=0` — and captured:
+
+| arms | pixels differing |
+|---|---|
+| reuse on vs off | **0 of 130,560** |
+
+Both arms report the same `STAT` median (16.684 ms), as expected at 64 instances where the index loop is small. So
+the reuse is **pixel-identical on the merge path**, and the `PSP_MERGE_IDX_REUSE` switch remains for future A/Bs.
+
+**What the failed capture means:** T2a's correctness no longer rests on the structural argument alone — the skip is taken only when the run key
 matches *and* the run has not grown, so the reused prefix is byte-identical — plus the fact that the scenes render.
 That is weaker than a pixel gate and must be stated as such. The gate this sprint needs is a **frozen-frame** scene
 (the `batch_check` pattern: two identical final frames) or `scene_3d SCENE=both`, not a capture of a running demo.

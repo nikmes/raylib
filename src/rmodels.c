@@ -1811,6 +1811,10 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
     // the instance transforms - so a frame whose run key and instance count are unchanged
     // can keep the buffer built last time. The prefix for k < instances is identical; a
     // larger run is rebuilt because its tail was never written.
+#ifndef PSP_MERGE_IDX_REUSE
+    #define PSP_MERGE_IDX_REUSE 1
+#endif
+#if PSP_MERGE_IDX_REUSE
     static int lastIc = -1, lastVc = -1, lastInstances = -1;
     static const unsigned short *lastSrc = NULL;
     static unsigned int idxSkips = 0;
@@ -1826,6 +1830,9 @@ static void pspMergeBuild(Mesh *mesh, int vc, int ic)
     {
         TRACELOG(LOG_INFO, "PSP: merged index run reused %u frames in a row (ic=%d)", idxSkips, ic);
     }
+#else
+    int rebuildIdx = 1;
+#endif
 
     for (int k = 0; k < r->instances; k++)
     {

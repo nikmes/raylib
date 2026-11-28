@@ -589,6 +589,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     # Sprint 078 (P10-S11): call-level attribution (whole DrawMesh and the driver entry)
     # and the merged-clean-runs engine. Both off by default; matrix_probe reads the
     # counters, and the merge is adopted only if its pixel gate is exact.
+    ifdef PSP_MERGE_IDX_REUSE
+        CUSTOM_CFLAGS += -DPSP_MERGE_IDX_REUSE=$(PSP_MERGE_IDX_REUSE)
+    endif
+
     ifdef PSP_CALL_PROBE
         CUSTOM_CFLAGS += -DPSP_CALL_PROBE
     endif
