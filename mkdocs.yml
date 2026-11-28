@@ -146,6 +146,7 @@ nav:
               - P10-S22 — Object-space baked meshes: psp/sprints/092-phase10-baked-mesh-path.md
               - P10-S23 — World-space bake and the merge decision: psp/sprints/093-phase10-static-bake-and-merge-decision.md
               - P10-S24 — Thin 3D close: psp/sprints/094-phase10-thin-3d-close.md
+              - P10-S25 — Keeping the port mergeable: psp/sprints/095-phase10-psp-code-quarantine.md
           - 11 — General optimisation outside the renderer:
               - psp/phases/11-general-optimisation.md
               - P11-S1 — Measurement harness and re-baseline: psp/sprints/052-phase11-measurement-harness.md
