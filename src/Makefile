@@ -928,6 +928,7 @@ endif
 
 ifeq ($(TARGET_PLATFORM),PLATFORM_PSP)
     OBJS += platforms/rlpsp_math.o
+    OBJS += platforms/rlpsp_mesh.o
 endif
 
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
@@ -1029,6 +1030,11 @@ rtextures.o : rtextures.c raylib.h rlgl.h rlpsp_math.h
 # P10-S12 T3: platform VFPU lifecycle needs the PSP include paths; the built-in
 # %.o rule used only CFLAGS, so <pspmath.h>/<pspvfpu.h> were not found.
 platforms/rlpsp_math.o : platforms/rlpsp_math.c rlpsp_math.h
+	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS) -o $@
+
+# P10-S25 T1: the mesh path has its own translation unit, and its declarations sit in
+# a header rmodels.c includes - a stale object would hide a signature change.
+platforms/rlpsp_mesh.o : platforms/rlpsp_mesh.c platforms/rlpsp_mesh.h
 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS) -o $@
 
 # Compile text module

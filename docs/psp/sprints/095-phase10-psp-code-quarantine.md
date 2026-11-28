@@ -5,9 +5,9 @@
 | Roadmap phase | [Phase 10 — 3D and advanced](../phases/10-3d-advanced/index.md) (port maintenance spanning phases 04, 05, 07, 09) |
 | Sprint | P10-S25 |
 | Branch / base commit | `master` @ `21bbb3f4`; the `upstream-11-26` merge is written but **unlanded** (device gates pending) — rebase onto it before T1 if it lands first |
-| Started / closed | 2026-11-26 (written) / — |
+| Started / closed | 2026-11-26 (written) / 2026-11-28 (closed) |
 | Build number(s) | driver unchanged; `libraylib.a` hash changes (files moved), measurements must not |
-| Tasks | 1/4 active — T2 done (§9.1), **T1 the only code move left**, T3 dropped as a move, T4 deferred with its blocker (§9.3) |
+| Tasks | 3/4 closed — T1 and T2 done, T3 dropped as a move, T4 deferred with its blocker (§9.3) |
 
 ## 0. Handover
 
@@ -70,7 +70,7 @@ redesign sprints (090-094) must not be folded in here.
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
 | T0 | **Settle the baseline.** Land or rebase `upstream-11-26`, re-run the §6 count on that tree, and record the per-file numbers the move will be measured against | `todo` | counts recorded on the tree T1 starts from; a trial `git merge upstream/master` shows what conflicts today | — |
-| T1 | **Mesh path → `src/platforms/rlpsp_mesh.c/.h`.** Move `PspGeMesh`, the bounds table, `pspGeClassifyMesh` family and the merge helpers out of `rmodels.c`; leave guarded call sites in `DrawMesh`/`UnloadMesh`/`rlpspMergeFlush` | `todo` | `rmodels.c` PSP lines ≤ 40; symbols exported through the new header; no double definition | — |
+| T1 | **Mesh path → `src/platforms/rlpsp_mesh.c/.h`.** Move `PspGeMesh`, the bounds table, `pspGeClassifyMesh` family and the merge helpers out of `rmodels.c`; leave guarded call sites in `DrawMesh`/`UnloadMesh`/`rlpspMergeFlush` | `done` | `rmodels.c` PSP lines ≤ 40; symbols exported through the new header; no double definition | 2026-11-28: **744 lines** moved to `platforms/rlpsp_mesh.c` with eleven entry points in `rlpsp_mesh.h`; `rmodels.c` keeps **27** PSP-marked lines (call sites only). The probe counters and their scaffolding moved too (the macros `PSP_CALL_BEGIN`/`PSP_CALL_END`, `PSP_MTX_*` and `PSP_DRIVER_*` live in the header), so the 40-line target survived the probes. Both the shipped build and `PSP_CALL_PROBE=1 PSP_MATRIX_PROBE=1` compile — the instrumented paths did not rot. Gates on hardware after the move: `batch_check` **613**, `basic_shapes` **284**, checksum `86b1e3c2 / c4b13eb4 / 670d502c` (identical to before), `MERGEPROBE runs=482` over 241 frames. §9.4 |
 | T2 | **Batcher → `src/platforms/rlpsp_batch.h`.** Move the 402 `rlgl.h` lines behind one `#include` under one guard, preserving include order (the block runs before the GL headers) | `done` | `rlgl.h` PSP lines ≤ 10; header-only semantics intact; desktop build unchanged | done — 231 lines moved to `platforms/rlpsp_batch.h`; rlgl.h 402 → 173 lines; gates 613 / 2D 33.801 |
 | T3 | **Shapes → one switch.** *Dropped as a move (§9.2).* Renaming the negative guards to one macro cuts the count and not the conflict surface; a real fix is function-level variants selected in one place, which is a refactor. Filed to §10 | `dropped` | — | §9.2 |
 | T4 | **Audio decoder → `raudio_psp.c`.** *Deferred (§9.3).* `raudio.c:185` includes the backend before the decoder type at `:187`, so the thread cannot move alone; the type, its create/destroy helpers and the include position move together | `deferred` | `raudio.c` PSP lines ≤ 20; audio smoke unchanged | §9.3 |
@@ -215,3 +215,25 @@ The realigned sprint therefore has **one code move left (T1)** plus the close, a
 - `docs/psp/recipes/backend-ab-pspgu-vs-pspgl.md` — the harness this sprint's acceptance uses
 - upstream merge of 2026-11-26 (`upstream-11-26`, `ddbd5340`) — the conflict this sprint is meant to prevent
 - port fixes `640ece10` / `21bbb3f4` — `PSP_THREAD_ATTR_VFPU` on the update and music-decoder threads
+
+### 9.4 T1 — the move, and how it was checked (2026-11-28)
+
+`rmodels.c` 7,640 lines, of which 27 carry a PSP marker; `platforms/rlpsp_mesh.c` holds 744 moved lines plus the
+probe block. The header declares the whole surface, including the counters and the five call-site macros, so the
+probe builds (`PSP_CALL_PROBE`, `PSP_MATRIX_PROBE`) still compile — a move that left them broken would have been
+discovered only by the next measurement session.
+
+Why the probe scaffolding moved as well: at 57 PSP-marked lines the move had met its intent but not its number. The
+macros are the difference between a call site and an implementation, so they belong on the implementation side.
+
+The check is the same gates the sprint required, on the device, after the move:
+
+| gate | before | after |
+|---|---|---|
+| `batch_check` | 613 | **613** |
+| `basic_shapes` | 284 | **284** |
+| checksum 60/120/240 | `86b1e3c2` / `c4b13eb4` / `670d502c` | **identical** |
+| `MERGEPROBE` | 2 runs/frame | 482 runs over 241 frames |
+
+A move that changed a pixel or stopped the merge would show in either instrument; neither moved. The library hash
+changes, as the sprint predicted — and, per 096 §9.7, that hash identifies an install rather than a content.
