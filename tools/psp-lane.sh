@@ -11,10 +11,15 @@
 #   eval "$(./tools/psp-lane.sh --lane a env)"  # PSPDEV, PORT, HOSTFS in this shell
 #   ./tools/psp-lane.sh --lane a run foo.prx 20 # reset, run, wait, print the console output
 #   ./tools/psp-lane.sh --lane a install        # copy src/libraylib.a and the pspgu driver in
+#   ./tools/psp-lane.sh --lane a up|down        # start/stop this lane's usbhostfs_pc
 #
 # Lanes as configured here:
-#   a  PSP-1000, 32 MB RAM   port 11000  root /home/psp/galaga-host/b  PSPDEV /home/psp/pspdev
-#   b  PSP Street (E1000), 64 MB RAM  port 10000  root /home/psp/galaga-host/a  PSPDEV /home/psp/pspdev-street
+#   a  PSP-1000, 32 MB RAM   port 11000  root /home/psp/psp-lanes/p1000  PSPDEV /home/psp/pspdev
+#   b  PSP Street (E1000), 64 MB RAM  port 10000  root /home/psp/psp-lanes/street  PSPDEV /home/psp/pspdev-street
+#
+# The bridge is started with the root as an explicit argument, never from a working directory:
+# a usbhostfs_pc started in the wrong cwd serves the wrong tree with no error, and every
+# "not found" then looks like a console fault.
 #
 # The overlay lines PSP_LANE_A_* / PSP_LANE_B_* below are the only place to change that.
 # The guard is deliberate: a second pspsh on the lane's port makes a timing run silently
@@ -23,13 +28,15 @@
 set -u
 
 LANE_A_NAME="p1000"
+LANE_A_PID=0x1C9
 LANE_A_PORT=11000
-LANE_A_ROOT=/home/psp/galaga-host/b
+LANE_A_ROOT=/home/psp/psp-lanes/p1000
 LANE_A_PSPDEV=/home/psp/pspdev
 
 LANE_B_NAME="street"
+LANE_B_PID=0x1CA
 LANE_B_PORT=10000
-LANE_B_ROOT=/home/psp/galaga-host/a
+LANE_B_ROOT=/home/psp/psp-lanes/street
 LANE_B_PSPDEV=/home/psp/pspdev-street
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -41,15 +48,15 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 while [ $# -gt 0 ]; do
     case "$1" in
         --lane) LANE=${2:-}; shift 2 ;;
-        env|check|run|install) CMD=$1; shift ;;
+        env|check|run|install|up|down) CMD=$1; shift ;;
         -h|--help) usage ;;
         *) break ;;
     esac
 done
 
 case "$LANE" in
-    a|A) NAME=$LANE_A_NAME; PORT=$LANE_A_PORT; HOSTFS=$LANE_A_ROOT; PSPDEV_LANE=$LANE_A_PSPDEV ;;
-    b|B) NAME=$LANE_B_NAME; PORT=$LANE_B_PORT; HOSTFS=$LANE_B_ROOT; PSPDEV_LANE=$LANE_B_PSPDEV ;;
+    a|A) NAME=$LANE_A_NAME; PID=$LANE_A_PID; PORT=$LANE_A_PORT; HOSTFS=$LANE_A_ROOT; PSPDEV_LANE=$LANE_A_PSPDEV ;;
+    b|B) NAME=$LANE_B_NAME; PID=$LANE_B_PID; PORT=$LANE_B_PORT; HOSTFS=$LANE_B_ROOT; PSPDEV_LANE=$LANE_B_PSPDEV ;;
     *) echo "psp-lane: --lane a|b is required" >&2; exit 2 ;;
 esac
 
@@ -83,7 +90,12 @@ case "$CMD" in
         echo "toolchain: $PSPDEV_LANE"
         [ -d "$PSPDEV_LANE/psp/lib" ] || { echo "MISSING: $PSPDEV_LANE/psp/lib" >&2; exit 1; }
         [ -d "$HOSTFS" ] || { echo "MISSING: $HOSTFS" >&2; exit 1; }
-        bridge_on_port || { echo "MISSING: no usbhostfs_pc serving -b $PORT" >&2; exit 1; }
+        bridge_on_port || { echo "MISSING: no usbhostfs_pc serving -b $PORT (run: --lane $LANE up)" >&2; exit 1; }
+        served=$(pgrep -af usbhostfs_pc 2>/dev/null | awk -v pat="-b $PORT" 'index($0, pat) {print}' | sed 's/.*usbhostfs_pc//')
+        case "$served" in
+            *"$HOSTFS"*) echo "serving  : $HOSTFS" ;;
+            *) echo "serving  : WARNING - bridge not started with the explicit root (cmdline:$served)" ;;
+        esac
         if client_on_port; then echo "client   : ATTACHED (a run would collide)"; else echo "client   : none"; fi
         echo -n "libraylib: "; sha256sum "$PSPDEV_LANE/psp/lib/libraylib.a" 2>/dev/null | cut -c1-16 || echo missing
         echo -n "libGL    : "; sha256sum "$PSPDEV_LANE/psp/lib/libGL.a" 2>/dev/null | cut -c1-16 || echo missing
@@ -104,6 +116,17 @@ case "$CMD" in
         exec flock /tmp/psp-lane-$PORT.lock -c \
             "timeout 20 pspsh -p $PORT -e reset >/dev/null 2>&1; sleep 9; \
              ( printf './$PRX\n'; sleep $SLIP ) | timeout $((SLIP + 30)) pspsh -p $PORT 2>&1"
+        ;;
+    up)
+        if bridge_on_port; then echo "bridge already serving -b $PORT"; exit 0; fi
+        [ -d "$HOSTFS" ] || { echo "psp-lane: missing root $HOSTFS" >&2; exit 1; }
+        setsid nohup usbhostfs_pc -p "$PID" -b "$PORT" "$HOSTFS" > "/tmp/usbhostfs-$PORT.log" 2>&1 &
+        sleep 1
+        bridge_on_port && echo "bridge up: -p $PID -b $PORT root $HOSTFS" || { echo "psp-lane: bridge failed to start" >&2; exit 1; }
+        ;;
+    down)
+        pids=$(pgrep -af usbhostfs_pc 2>/dev/null | awk -v pat="-b $PORT" 'index($0, pat) {print $1}')
+        if [ -n "$pids" ]; then echo "$pids" | xargs -r kill; echo "bridge stopped for lane $LANE"; else echo "no bridge on -b $PORT"; fi
         ;;
     *)
         usage
