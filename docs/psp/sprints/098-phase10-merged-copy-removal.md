@@ -40,24 +40,39 @@ argument and its counter, the pixel gates, the ceiling A/B, the RAM ledger.
 **Out:** the expansion loop (096 T4 showed no single line dominates); index-run caching beyond T2a; strips (096 T3,
 still deferred); anything on the per-object path.
 
-## 4. The lifetime argument, stated before it is coded
+## 3b. Preconditions, checked 2026-11-28
 
-The driver owns two lists (`lists 2 x 240 KiB` in the boot line) and rotates them: starting list *n+2* waits for
-list *n* to be done. The merge buffer is written during a frame, i.e. **after** `sceGuStart` for that frame. Therefore
-a slot may be reused once every two frames, and two slots are exactly enough — provided the build happens after the
-list start and the driver never draws from a slot whose list is still queued.
+- [x] `pspguBeginFrame` waits for the list it is about to start (`egl.c:536-542`).
+- [x] the flush sets `glVertexPointer`/`glTexCoordPointer`/`glNormalPointer` into the merge buffer, and the clip path
+  reads them through `arrVertex` — so the pointers must follow the slot.
+- [x] `pspMergeRoom` gates on `pspguArenaRoom()`; the pinned path must bypass it.
+- [x] the weak-symbol pattern already works for `pspguSetCleanHint`, `pspguArenaRoom` and `pspguDrawMergedArrays`.
+- [ ] `pspguWriteback` on a 336 KiB cached range measured before adoption (T2's number).
 
-That "provided" is the whole risk, and it is what T3 instruments: a counter of frames where the slot's owning list was
-not yet `PSP_GE_LIST_DONE` when its slot was reused. It must be **0** at 30 fps, 60 fps, `--vsync 0`, and at 1,200
-instances, or the arm is dropped.
+## 4. The lifetime argument, verified against the driver before coding
+
+`pspguBeginFrame` (`tools/pspgu/egl.c:516`) picks the next list, and **waits on that list's queue id before it starts
+it** (`:536-542`). So when a list is started, the work it did last time is finished. The merge buffer is written
+*after* that start (`DrawMesh` runs inside the frame), so a slot tied to **the current list index** is free by
+construction.
+
+That is why the slot is **not frame parity**: a frame can close and reopen lists (readback, 014's VRAM readback path),
+and two lists in one frame would then share a slot while the first still reads it. The driver knows the current list
+index; raylib asks for it (T1) and builds into that slot. With `PSPGU_SUBMIT_SINGLE` the index is always 0, so the
+single-list build uses one slot and the wait happens every frame.
+
+The instrument is therefore not a hypothesis test but an **ordering guard**: at draw time the driver compares the slot
+raylib built into with `pspgu.listIndex` and counts mismatches (T3). Before this change the expected count is 0 by the
+argument above; if a later edit moves the build before `pspguBeginFrame`, the counter says so instead of the screen
+tearing silently.
 
 ## 5. Tasks
 
 | # | Task | Status | Acceptance | Result |
 |---|---|---|---|---|
-| T1 | **Slots.** `pspMergeVerts`/`pspMergeIdx` become `[PSP_MERGE_SLOTS][…]` with `PSP_MERGE_SLOTS=2`; `pspMergeBuild` writes slot `frameCount & 1`; the run records its slot | `todo` | build cost unchanged (±0.2 ms at COUNT=270); slot recorded in the flush | — |
-| T2 | **`pspguDrawMergedArraysPinned(mode, count, indices, vertexCount, verts, flags)`** (weak): same contract as `pspguDrawMergedArrays` but no `pspguArenaAlloc` and no `memcpy`; `pspguWriteback(verts, vb+ib)` then `sceGuDrawArray` from the caller's pointers. Returns 0 if the layout is unsupported, and raylib then falls back to the existing entry | `todo` | the copy disappears from the flush; pspGL build unaffected (weak symbol absent) | — |
-| T3 | **Hazard counter.** At each slot reuse, ask the driver whether the list that drew from that slot is done; count violations; log `MERGEHZ slots=… hazards=…` once per session | `todo` | **0 hazards** at 270 / 610, `--vsync 0`, and 1,200 instances | — |
+| T1 | **Slots keyed to the list.** `pspMergeVerts`/`pspMergeIdx` become `[2][…]`, `aligned(64)`, selected by a new weak `pspguMergeSlot()` (the driver's `pspgu.listIndex`; absent ⇒ 0). The three `gl*Pointer` calls in the flush must point into the selected slot — the clip path reads `arrVertex`, so a stale pointer would clip against the previous slot. The T2a index-reuse statics become **per slot** | `todo` | build cost unchanged (±0.2 ms at COUNT=270); a run records its slot; with the arm off nothing changes | — |
+| T2 | **`pspguDrawMergedArraysPinned(mode, count, indices, vertexCount, verts, slot, flags)`** (weak, declared beside `pspguDrawMergedArrays`): same contract, no `pspguArenaAlloc`, no `memcpy`; `pspguBeginFrame()` as today, `pspguWriteback(verts, vb+ib)`, keep the `PSP_MERGE_CLEAN`/clip semantics, then `sceGuDrawArray` from the caller's pointers. Returns 0 when the layout is unsupported, and raylib falls back to the copying entry. `pspMergeRoom` must skip `pspguArenaRoom` when the pinned entry exists — otherwise the arena still caps the run size it no longer uses | `todo` | the copy disappears from the flush; pspGL links unchanged (weak symbol absent) | — |
+| T3 | **Ordering guard.** At draw time the pinned entry compares `slot` with `pspgu.listIndex` and counts mismatches; raylib logs `MERGEHZ slots=… mismatches=…` once per session | `todo` | **0 mismatches** at 270 / 610, `--vsync 0`, and 1,200 instances | — |
 | T4 | **Gates.** `batch_check` 613, `basic_shapes` 284, checksum `86b1e3c2 / c4b13eb4 / 670d502c`, `scene_3d SCENE=both` 0 diff | `todo` | all four exact | — |
 | T5 | **Ceiling A/B.** The step-free metric: 270/610 today (§9.9 of 096). Measure the last count at 60 fps and at 30 fps with and without the arm, **interleaved in one session**, two runs per point | `todo` | ≥ **+40 cubes at 30 fps** (half the predicted 75) or the arm is dropped with the number | — |
 | T6 | **RAM ledger and close.** Second slot bytes against the arena and against the 32 MB budget; adopt, gate, or drop | `todo` | a number per arm; docs strict; lane unlocked | — |
@@ -72,6 +87,10 @@ just wrote; the copy it replaces reads 336 KiB out of cache and writes it throug
 
 **Fallback is mandatory.** A single `libraylib.a` links against pspgu and pspGL; the weak symbol keeps the reference
 build working exactly as 092's bake did.
+
+**The writeback is the risk, not the copy.** If flushing 336 KiB in hardware costs what the memcpy cost, the arm buys
+nothing and is dropped with the number. The instrument is `MERGEX`'s flush time at a fixed 400 cubes (4.9 ms today),
+not the pair.
 
 **At 1,200 instances the arena wall is the failure mode.** The pinned path removes the arena from the merge path
 entirely for these runs, which is a second, unlooked-for benefit — record whether 1,200 now draws without replays, but
@@ -89,7 +108,8 @@ do not adopt on it.
 
 ## 8. Exit criteria
 
-- [ ] the copy is gone from the flush, or the arm is dropped with its measured cost
+- [ ] the copy is gone from the flush (no `pspguArenaAlloc`/`memcpy` on the pinned branch), or the arm is dropped with
+  its measured cost — `MERGEX` flush time at 400 cubes is the number
 - [ ] hazards 0 in every configuration named above
 - [ ] pixel gates exact on all four
 - [ ] ceiling counts reported per arm, same session, interleaved
